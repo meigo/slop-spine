@@ -12,6 +12,10 @@ document.density = 24;
 
 let nextLayerId = 1;
 let nextBoneIndex = 1;
+// Monotonic, not derived from document.slots.length — a slot can be removed (see removeLayer),
+// so array length is not a stable draw-order value across an add/remove/add cycle. Only relative
+// order matters, not contiguity, so a plain counter that never decreases is sufficient.
+let nextSlotOrder = 0;
 
 function createLayer(name: string): Layer {
   const canvas = globalThis.document.createElement("canvas");
@@ -41,7 +45,7 @@ function uniqueSlotName(base: string): string {
 export function addLayer(name: string): number {
   const layer = createLayer(name);
   document.layers.push(layer);
-  const slot: Slot = { name: uniqueSlotName(name), layerId: layer.id, bone: "root", order: document.slots.length };
+  const slot: Slot = { name: uniqueSlotName(name), layerId: layer.id, bone: "root", order: nextSlotOrder++ };
   document.slots.push(slot);
   document.binds.push({ slot: slot.name, bones: defaultBind(document, slot) });
   return layer.id;
