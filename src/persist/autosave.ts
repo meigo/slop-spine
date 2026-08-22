@@ -13,7 +13,9 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 export function armAutosave(getDoc: () => RigDocument): void {
   clearTimeout(timer);
   timer = setTimeout(() => {
-    void saveProject(getDoc()).then((blob) => idbDo(KV_STORE, "readwrite", (s) => s.put(blob, KEY)));
+    void saveProject(getDoc())
+      .then((blob) => idbDo(KV_STORE, "readwrite", (s) => s.put(blob, KEY)))
+      .catch((e) => console.error("autosave failed", e));
   }, DEBOUNCE_MS);
 }
 

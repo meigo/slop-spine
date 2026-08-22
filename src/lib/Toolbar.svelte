@@ -6,13 +6,17 @@
   let fileInput: HTMLInputElement | undefined = $state();
 
   async function onSave() {
-    const blob = await saveProject(doc);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "project.zip";
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = await saveProject(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "project.zip";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("save failed", e);
+    }
   }
 
   async function onFileChosen(e: Event) {
@@ -20,7 +24,11 @@
     const file = input.files?.[0];
     input.value = "";
     if (!file) return;
-    loadDocument(await loadProject(file));
+    try {
+      loadDocument(await loadProject(file));
+    } catch (err) {
+      console.error("load failed", err);
+    }
   }
 </script>
 
