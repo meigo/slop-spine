@@ -36,6 +36,31 @@
   // directly, which are already reactive. ---
   let poseDrag = $state<{ bone: string; dx: number; dy: number } | null>(null);
 
+  // Screen-only page ground: a checkerboard so a white stroke (now paintable, Task 14) reads
+  // against the page instead of vanishing into a flat white fill. Never touches a layer.canvas —
+  // export trims each layer to its own alpha, so a checkerboard baked into a layer would trim to
+  // the full 2048x2048 page and destroy the atlas. Built once from a small offscreen tile and
+  // tiled via createPattern rather than looping fillRect at low zoom.
+  const CHECKER_SQUARE = 32; // document units per square
+  const CHECKER_LIGHT = "#f2f2f2";
+  const CHECKER_DARK = "#dcdcdc";
+  let checkerPattern: CanvasPattern | null = null;
+
+  function getCheckerPattern(context: CanvasRenderingContext2D): CanvasPattern {
+    if (checkerPattern) return checkerPattern;
+    const tile = document.createElement("canvas");
+    tile.width = CHECKER_SQUARE * 2;
+    tile.height = CHECKER_SQUARE * 2;
+    const tctx = tile.getContext("2d")!;
+    tctx.fillStyle = CHECKER_LIGHT;
+    tctx.fillRect(0, 0, tile.width, tile.height);
+    tctx.fillStyle = CHECKER_DARK;
+    tctx.fillRect(0, 0, CHECKER_SQUARE, CHECKER_SQUARE);
+    tctx.fillRect(CHECKER_SQUARE, CHECKER_SQUARE, CHECKER_SQUARE, CHECKER_SQUARE);
+    checkerPattern = context.createPattern(tile, "repeat")!;
+    return checkerPattern;
+  }
+
   function redraw() {
     if (!ctx || !viewport || !canvasEl) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -44,10 +69,11 @@
     ctx.rotate(viewport.rotation);
     ctx.scale(viewport.zoom, viewport.zoom);
     // Page bounds, screen-draw only (never fills a layer.canvas — export trims each layer to its
-    // own alpha, so an opaque layer would trim to the full page). White is the expected ground:
-    // this project's art is grayscale line work on white over transparent layers. The border
-    // keeps the edge visible once the fill is too small on screen to read as a page.
-    ctx.fillStyle = "#fff";
+    // own alpha, so an opaque layer would trim to the full page). Checkerboard, not flat white:
+    // this project's art is grayscale line work with a paintable white value, and a white stroke
+    // on a flat white page would be invisible. The border keeps the edge visible once the fill is
+    // too small on screen to read as a page.
+    ctx.fillStyle = getCheckerPattern(ctx);
     ctx.fillRect(0, 0, doc.canvas.width, doc.canvas.height);
     ctx.lineWidth = 2 / viewport.zoom;
     ctx.strokeStyle = "#000";

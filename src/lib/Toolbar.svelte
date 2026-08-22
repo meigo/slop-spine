@@ -7,6 +7,8 @@
 
   let fileInput: HTMLInputElement | undefined = $state();
 
+  const BRUSH_VALUES = ["#000000", "#404040", "#808080", "#b0b0b0", "#e0e0e0", "#ffffff"];
+
   function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -124,6 +126,17 @@
       >
         Pencil
       </button>
+    </div>
+
+    <div class="flex overflow-hidden rounded border border-neutral-700">
+      {#each BRUSH_VALUES as value (value)}
+        <button
+          class="h-6 w-6 {ui.brushValue === value ? 'ring-2 ring-inset ring-blue-400' : ''}"
+          style="background-color: {value};"
+          aria-label="Value {value}"
+          onclick={() => (ui.brushValue = value)}
+        ></button>
+      {/each}
     </div>
 
     <label class="flex items-center gap-1">

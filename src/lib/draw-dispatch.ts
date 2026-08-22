@@ -18,7 +18,6 @@ import { history } from "../state/history.svelte";
 // Pressure widens/thins the nominal size by this factor; mouse (no pressure) always draws at
 // constant nominal width (see widthRange in brush.ts).
 const PRESSURE_SIZE_RANGE = 1.8;
-const FILL_COLOR = "#000000";
 
 export function createDrawDispatch() {
   const pressureCurve = new PressureCurve();
@@ -30,7 +29,7 @@ export function createDrawDispatch() {
   function buildBrushSettings(isEraser: boolean): BrushSettings {
     return {
       size: ui.brushSize,
-      color: FILL_COLOR,
+      color: ui.brushValue,
       opacity: ui.brushOpacity,
       smoothing: 0,
       isEraser,
@@ -154,7 +153,7 @@ export function createDrawDispatch() {
           const cw = layer.canvas.width;
           const ch = layer.canvas.height;
           const before = fctx.getImageData(0, 0, cw, ch);
-          floodFill(fctx, p.x, p.y, hexToRgba(FILL_COLOR, 100), { alphaThreshold: 128 });
+          floodFill(fctx, p.x, p.y, hexToRgba(ui.brushValue, 100), { alphaThreshold: 128 });
           markLayerDirty(layer.id);
           const after = fctx.getImageData(0, 0, cw, ch);
           pushPixelCommand(layer, fctx, { x: 0, y: 0, w: cw, h: ch }, before, after);

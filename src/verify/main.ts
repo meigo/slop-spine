@@ -61,6 +61,27 @@ async function loadDoc(): Promise<RigDocument> {
   return buildFixture();
 }
 
+/** Decodes the exported atlas PNG and counts alpha values. This is the permanent transparency
+ *  guard: white paint (Task 14) and empty space are visually identical, and a screen-only
+ *  checkerboard must never bake into a layer, so this is the one property that can't be checked
+ *  by looking — it has to be read back from the alpha channel. */
+function analyzeAlpha(img: HTMLImageElement) {
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth;
+  c.height = img.naturalHeight;
+  const actx = c.getContext("2d")!;
+  actx.drawImage(img, 0, 0);
+  const { data } = actx.getImageData(0, 0, c.width, c.height);
+  const alpha = { transparent: 0, opaque: 0, partial: 0, cornerAlpha: data[3] };
+  for (let i = 3; i < data.length; i += 4) {
+    const a = data[i];
+    if (a === 0) alpha.transparent++;
+    else if (a === 255) alpha.opaque++;
+    else alpha.partial++;
+  }
+  return alpha;
+}
+
 async function main() {
   const doc = await loadDoc();
   const bundle = await exportBundle(doc);
@@ -73,6 +94,8 @@ async function main() {
   const img = new Image();
   img.src = pngUrl;
   await img.decode();
+
+  const alpha = analyzeAlpha(img);
 
   const app = new PIXI.Application();
   await app.init({ background: 0xffffff, resizeTo: window });
@@ -98,9 +121,13 @@ async function main() {
     bones: data.bones.length,
     slots: data.slots.length,
     bounds: { x: b.x, y: b.y, w: b.width, h: b.height },
+    alpha,
   };
   console.log("[verify]", JSON.stringify(report));
   (window as unknown as { __verify: unknown }).__verify = report;
+  if (alpha.cornerAlpha !== 0 || alpha.transparent === 0) {
+    console.log("[verify] ALPHA FAIL");
+  }
 }
 
 main().catch((err) => {
