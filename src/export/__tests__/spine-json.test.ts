@@ -30,6 +30,45 @@ describe("coordinate conversion", () => {
   });
 });
 
+describe("relative bone transform (non-degenerate parent rotation)", () => {
+  // "arm" is the parent (canvas rotation -90 -> world rotation 90), "hand" is its child, offset
+  // and rotated in canvas space. The root->arm parent is irrelevant here; we only assert the
+  // arm->hand relative transform, which is the case the original fixture's rotation-0 parent
+  // could not distinguish from a bug that used world-space deltas or swapped toBoneLocal's args.
+  const rotBones: Bone[] = [
+    { name: "root", parent: null, x: 1024, y: 1024, rotation: 0, length: 0, wobble: 0 },
+    { name: "arm", parent: "root", x: 1024, y: 1524, rotation: -90, length: 200, wobble: 0 },
+    { name: "hand", parent: "arm", x: 1124, y: 1424, rotation: 30, length: 50, wobble: 0 },
+  ];
+  const input = {
+    doc: {
+      canvas: { width: 2048, height: 2048 },
+      layers: [],
+      slots: [],
+      bones: rotBones,
+      binds: [],
+      density: 48,
+    },
+    meshes: {},
+    weights: {},
+    regions: [],
+    page: { width: 2048, height: 256 },
+  };
+
+  it("expresses the child's emitted x,y,rotation in the parent's rotated frame, not world space", () => {
+    const s = writeSkeleton(input) as any;
+    const hand = s.bones.find((b: { name: string }) => b.name === "hand");
+    // Hand derivation (see task-6-report.md for the full arithmetic):
+    // arm world  = { x: 0,   y: -500, rotation: 90 }
+    // hand world = { x: 100, y: -400, rotation: -30 }
+    // local = R(-90deg) * (100 - 0, -400 - (-500)) = R(-90deg) * (100, 100) = (100, -100)
+    // rotation = -30 - 90 = -120
+    expect(hand.x).toBeCloseTo(100, 6);
+    expect(hand.y).toBeCloseTo(-100, 6);
+    expect(hand.rotation).toBeCloseTo(-120, 6);
+  });
+});
+
 describe("writeSkeleton", () => {
   const input = {
     doc: {
@@ -65,10 +104,51 @@ describe("writeSkeleton", () => {
     expect(mesh.vertices[0]).toBe(1);
     expect(mesh.uvs.length).toBe(6);
     for (const uv of mesh.uvs) { expect(uv).toBeGreaterThanOrEqual(0); expect(uv).toBeLessThanOrEqual(1); }
+    // Exact uv for vertex 0, hand-derived from the fixture's region and page (see report): vertex
+    // (1000,1400) minus trim origin (1000,1300) = (0,100) local-to-region; region sits at
+    // (pageX,pageY)=(2,2) on a 2048x256 page, so uv = ((2+0)/2048, (2+100)/256).
+    // Asserted exactly (not toBeCloseTo): both denominators are powers of two, so the divisions
+    // are exact in double precision. This would catch a v-flip (e.g. using trim.height - ly),
+    // which `toBeGreaterThanOrEqual(0)`/`toBeLessThanOrEqual(1)` alone cannot.
+    expect(mesh.uvs[0]).toBe(2 / 2048);
+    expect(mesh.uvs[1]).toBe(102 / 256);
   });
 
   it("emits physics only for bones with wobble", () => {
     const s = writeSkeleton(input) as any;
     expect(s.physics ?? []).toEqual([]);
+  });
+});
+
+describe("physics", () => {
+  // Two bones with non-zero wobble in a parent/child relationship. "root" keeps wobble 0 (it
+  // always does in every fixture in this plan), so physics should contain exactly "upper" and
+  // "lower", in that order.
+  const wobbleBones: Bone[] = [
+    { name: "root", parent: null, x: 1024, y: 1024, rotation: 0, length: 0, wobble: 0 },
+    { name: "upper", parent: "root", x: 1024, y: 1400, rotation: -90, length: 200, wobble: 0.4 },
+    { name: "lower", parent: "upper", x: 1024, y: 1600, rotation: 0, length: 150, wobble: 0.8 },
+  ];
+  const input = {
+    doc: {
+      canvas: { width: 2048, height: 2048 },
+      layers: [],
+      slots: [],
+      bones: wobbleBones,
+      binds: [],
+      density: 48,
+    },
+    meshes: {},
+    weights: {},
+    regions: [],
+    page: { width: 2048, height: 256 },
+  };
+
+  it("includes only the wobbling bones, with inertia scaled from wobble and parent-before-child order", () => {
+    const s = writeSkeleton(input) as any;
+    expect(s.physics).toEqual([
+      { name: "upper", order: 0, bone: "upper", rotate: 1, inertia: 0.2, damping: 0.85 },
+      { name: "lower", order: 1, bone: "lower", rotate: 1, inertia: 0.4, damping: 0.85 },
+    ]);
   });
 });
