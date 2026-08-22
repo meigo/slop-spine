@@ -3,6 +3,7 @@
   import { document as doc, loadDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
   import { exportBundle } from "../export/bundle";
+  import { history, historyState } from "../state/history.svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
 
@@ -51,6 +52,22 @@
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={onSave}>Save</button>
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={() => fileInput?.click()}>Load</button>
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={onExport}>Export</button>
+  </div>
+  <div class="flex overflow-hidden rounded border border-neutral-700">
+    <button
+      class="px-3 py-1 hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent"
+      disabled={!historyState.canUndo}
+      onclick={() => history.undo()}
+    >
+      Undo
+    </button>
+    <button
+      class="px-3 py-1 hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent"
+      disabled={!historyState.canRedo}
+      onclick={() => history.redo()}
+    >
+      Redo
+    </button>
   </div>
   <div class="flex overflow-hidden rounded border border-neutral-700">
     <button

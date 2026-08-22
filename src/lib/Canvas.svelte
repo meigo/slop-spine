@@ -12,6 +12,7 @@
   import { setupInput } from "../core/input";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
+  import { history } from "../state/history.svelte";
   import { deriveSlot } from "../rig/derive";
   import { drawRigOverlay, poseDeform, drawWarpedLayer } from "./RigOverlay";
   import type { Bone } from "../rig/document";
@@ -123,6 +124,13 @@
     if (e.key === " ") {
       spaceHeld = true;
       e.preventDefault();
+    }
+    // Cmd on Mac, Ctrl elsewhere. Redo is Shift+Z, not the Ctrl+Y some apps also bind — this
+    // project only wires the one shortcut.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) history.redo();
+      else history.undo();
     }
   }
   function onKeyUp(e: KeyboardEvent) {
@@ -295,8 +303,8 @@
     resizeObserver.observe(stage);
 
     const cleanupTouch = setupTouchGestures(stage, viewport, {
-      onUndo: () => {},
-      onRedo: () => {},
+      onUndo: () => history.undo(),
+      onRedo: () => history.redo(),
       onToggleEraser: () => {},
       onViewportChange: redraw,
     });
