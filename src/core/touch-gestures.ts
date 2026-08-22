@@ -1,0 +1,335 @@
+/**
+ * Touch gesture handling for iPad / touch devices.
+ *
+ * - One finger touch: pan canvas
+ * - One-finger double-tap: toggle eraser
+ * - Two-finger pinch: zoom + pan + rotate; snap to 90° on lift if within ~3°
+ * - Two-finger tap: undo
+ * - Three-finger tap: redo
+ *
+ * Apple Pencil (pointerType "pen") bypasses this entirely — it goes to input.ts for drawing.
+ */
+
+import { Viewport } from "./viewport";
+import { isStageChromeTarget } from "./input";
+
+interface ActiveTouch {
+  id: number;
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
+  startTime: number;
+}
+
+export interface TouchGestureCallbacks {
+  onUndo: () => void;
+  onRedo: () => void;
+  onToggleEraser: () => void;
+  onViewportChange: () => void;
+}
+
+const TAP_MAX_DURATION = 300; // ms
+const TAP_MAX_DISTANCE = 15; // px
+const DOUBLE_TAP_WINDOW = 300; // ms between two 1-finger taps to count as a double-tap
+/** Snap to nearest 90° when within this window on lift. ~3° (Procreate-like):
+ *  accidental pan tilt pops back; a deliberate 8° rotate stays. Was 5°. */
+export const SNAP_ANGLE = 3 * (Math.PI / 180);
+
+/** Nearest 90° if `rotation` is inside the snap window; otherwise unchanged. */
+export function snappedRotation(rotation: number, snap = SNAP_ANGLE): number {
+  const half = Math.PI;
+  const quarter = Math.PI / 2;
+  let r = rotation % (2 * Math.PI);
+  if (r > half) r -= 2 * Math.PI;
+  if (r < -half) r += 2 * Math.PI;
+  const nearest = Math.round(r / quarter) * quarter;
+  if (Math.abs(r - nearest) >= snap) return rotation;
+  return nearest === 0 ? 0 : nearest;
+}
+
+export function setupTouchGestures(
+  /** The stable workspace container (not the transformed element) */
+  workspace: HTMLElement,
+  viewport: Viewport,
+  callbacks: TouchGestureCallbacks,
+) {
+  const touches = new Map<number, ActiveTouch>();
+
+  // Track initial pinch state
+  let pinchStartDist = 0;
+  let pinchStartAngle = 0;
+  let pinchStartZoom = 1;
+  let pinchStartRotation = 0;
+  let pinchStartMidX = 0;
+  let pinchStartMidY = 0;
+  let pinchStartPanX = 0;
+  let pinchStartPanY = 0;
+  let pinchActive = false;
+  let lastPinchMidX = 0;
+  let lastPinchMidY = 0;
+
+  // Single-finger pan state
+  let singlePanActive = false;
+  let singlePanStartX = 0;
+  let singlePanStartY = 0;
+  let singlePanStartPanX = 0;
+  let singlePanStartPanY = 0;
+
+  // Track if gesture moved (to distinguish taps from drags)
+  let gestureDidMove = false;
+
+  // Tap detection
+  let maxSimultaneousTouches = 0;
+  let lastTouchEndTime = 0;
+  let lastSingleTapTime = 0;
+
+  function onPointerDown(e: PointerEvent) {
+    if (e.pointerType !== "touch") return;
+    // Don't intercept taps on the floating selection action panel — those are buttons.
+    const target = e.target as Element | null;
+    if (isStageChromeTarget(e.target)) return;
+    // Don't pan/pinch when a finger lands on a reference-transform handle — let it drag the handle.
+    if (target?.closest?.("[data-ref-handle]")) return;
+    e.preventDefault();
+
+    workspace.setPointerCapture(e.pointerId);
+
+    touches.set(e.pointerId, {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      startX: e.clientX,
+      startY: e.clientY,
+      startTime: e.timeStamp,
+    });
+
+    gestureDidMove = false;
+    maxSimultaneousTouches = Math.max(maxSimultaneousTouches, touches.size);
+
+    if (touches.size === 1) {
+      // Start single-finger pan
+      singlePanActive = true;
+      singlePanStartX = e.clientX;
+      singlePanStartY = e.clientY;
+      singlePanStartPanX = viewport.panX;
+      singlePanStartPanY = viewport.panY;
+    } else if (touches.size === 2) {
+      // Switch from pan to pinch+rotate
+      singlePanActive = false;
+      initPinch();
+    }
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    if (e.pointerType !== "touch") return;
+
+    const t = touches.get(e.pointerId);
+    if (!t) return;
+
+    t.x = e.clientX;
+    t.y = e.clientY;
+
+    // Check if this counts as movement
+    const dx = t.x - t.startX;
+    const dy = t.y - t.startY;
+    if (Math.abs(dx) > TAP_MAX_DISTANCE || Math.abs(dy) > TAP_MAX_DISTANCE) {
+      gestureDidMove = true;
+    }
+
+    if (touches.size === 1 && singlePanActive) {
+      // Single finger pan
+      viewport.panX = singlePanStartPanX + (t.x - singlePanStartX);
+      viewport.panY = singlePanStartPanY + (t.y - singlePanStartY);
+      viewport.applyTransformPublic();
+      callbacks.onViewportChange();
+    } else if (touches.size === 2) {
+      // Pinch zoom + pan + rotate
+      updatePinch();
+    }
+  }
+
+  function onPointerUp(e: PointerEvent) {
+    if (e.pointerType !== "touch") return;
+
+    const t = touches.get(e.pointerId);
+    touches.delete(e.pointerId);
+
+    if (!t) return;
+
+    // If all fingers lifted, check for tap gestures
+    if (touches.size === 0 && !gestureDidMove) {
+      const duration = e.timeStamp - t.startTime;
+      if (duration < TAP_MAX_DURATION) {
+        checkTapGesture();
+      }
+    }
+
+    if (touches.size === 0) {
+      if (pinchActive) snapRotation();
+      pinchActive = false;
+    }
+
+    singlePanActive = false;
+    restartSinglePan();
+  }
+
+  function onPointerCancel(e: PointerEvent) {
+    if (e.pointerType !== "touch") return;
+    touches.delete(e.pointerId);
+    singlePanActive = false;
+    // Clear the pinch WITHOUT snapping: a cancelled gesture's rotation is whatever it happened to be
+    // when the OS took the pointer away, so snapping it would twist the canvas unasked. Leaving
+    // pinchActive set also meant the next lift snapped on those stale numbers.
+    pinchActive = false;
+    restartSinglePan();
+  }
+
+  /** After one finger goes away, hand the survivor back to single-finger pan from where it is now
+   *  (no move branch matches one touch with singlePanActive false — the finger would be dead). */
+  function restartSinglePan() {
+    if (touches.size !== 1) return;
+    const remaining = touches.values().next().value!;
+    singlePanActive = true;
+    singlePanStartX = remaining.x;
+    singlePanStartY = remaining.y;
+    singlePanStartPanX = viewport.panX;
+    singlePanStartPanY = viewport.panY;
+  }
+
+  // --- Pinch + rotate helpers ---
+
+  function angleBetween(ax: number, ay: number, bx: number, by: number): number {
+    return Math.atan2(by - ay, bx - ax);
+  }
+
+  function initPinch() {
+    const pts = Array.from(touches.values());
+    if (pts.length < 2) return;
+
+    const [a, b] = pts;
+    pinchStartDist = dist(a.x, a.y, b.x, b.y);
+    pinchStartAngle = angleBetween(a.x, a.y, b.x, b.y);
+    pinchStartZoom = viewport.zoom;
+    pinchStartRotation = viewport.rotation;
+    pinchStartMidX = (a.x + b.x) / 2;
+    pinchStartMidY = (a.y + b.y) / 2;
+    lastPinchMidX = pinchStartMidX;
+    lastPinchMidY = pinchStartMidY;
+    pinchStartPanX = viewport.panX;
+    pinchStartPanY = viewport.panY;
+    pinchActive = true;
+  }
+
+  function updatePinch() {
+    const pts = Array.from(touches.values());
+    if (pts.length < 2) return;
+
+    const [a, b] = pts;
+    const currentDist = dist(a.x, a.y, b.x, b.y);
+    const currentAngle = angleBetween(a.x, a.y, b.x, b.y);
+    const currentMidX = (a.x + b.x) / 2;
+    const currentMidY = (a.y + b.y) / 2;
+    lastPinchMidX = currentMidX;
+    lastPinchMidY = currentMidY;
+
+    // New zoom & rotation
+    const scale = currentDist / pinchStartDist;
+    const newZoom = Math.max(0.1, Math.min(20, pinchStartZoom * scale));
+    const newRotation = pinchStartRotation + (currentAngle - pinchStartAngle);
+
+    // The canvas point under the original pinch midpoint (using start state)
+    const rect = workspace.getBoundingClientRect();
+    const rx0 = pinchStartMidX - rect.left;
+    const ry0 = pinchStartMidY - rect.top;
+    // Inverse of start transform: undo translate, undo rotate, undo scale
+    const dx0 = rx0 - pinchStartPanX;
+    const dy0 = ry0 - pinchStartPanY;
+    const startRot = pinchStartRotation;
+    const cos0 = Math.cos(-startRot);
+    const sin0 = Math.sin(-startRot);
+    const cx = (dx0 * cos0 - dy0 * sin0) / pinchStartZoom;
+    const cy = (dx0 * sin0 + dy0 * cos0) / pinchStartZoom;
+
+    // Forward transform with new state: that canvas point should land at the new midpoint
+    // screen = pan + rotate(scale(canvas))
+    const cosN = Math.cos(newRotation);
+    const sinN = Math.sin(newRotation);
+    const sx = cx * newZoom;
+    const sy = cy * newZoom;
+    const screenFromCanvas_x = sx * cosN - sy * sinN;
+    const screenFromCanvas_y = sx * sinN + sy * cosN;
+
+    const newRx = currentMidX - rect.left;
+    const newRy = currentMidY - rect.top;
+
+    viewport.zoom = newZoom;
+    viewport.rotation = newRotation;
+    viewport.panX = newRx - screenFromCanvas_x;
+    viewport.panY = newRy - screenFromCanvas_y;
+
+    viewport.applyTransformPublic();
+    callbacks.onViewportChange();
+  }
+
+  function snapRotation() {
+    const next = snappedRotation(viewport.rotation);
+    if (next === viewport.rotation) return;
+    // Rotate about the last pinch midpoint — same pivot as the live twist.
+    // Setting rotation alone uses the CSS origin (top-left) and the canvas jumps.
+    viewport.setRotationAroundScreenPoint(lastPinchMidX, lastPinchMidY, next);
+    callbacks.onViewportChange();
+  }
+
+  // --- Tap detection ---
+
+  function checkTapGesture() {
+    const count = maxSimultaneousTouches;
+    maxSimultaneousTouches = 0;
+    const now = performance.now();
+
+    if (count === 1) {
+      // Two quick 1-finger taps → toggle eraser (own window, independent of the multi-finger debounce).
+      if (now - lastSingleTapTime < DOUBLE_TAP_WINDOW) {
+        lastSingleTapTime = 0; // consume the pair so a third tap starts fresh
+        callbacks.onToggleEraser();
+      } else {
+        lastSingleTapTime = now;
+      }
+      return;
+    }
+
+    // Debounce multi-finger taps: avoid double-firing
+    if (now - lastTouchEndTime < 100) return;
+    lastTouchEndTime = now;
+
+    if (count === 2) {
+      callbacks.onUndo();
+    } else if (count === 3) {
+      callbacks.onRedo();
+    }
+  }
+
+  function dist(x1: number, y1: number, x2: number, y2: number) {
+    return Math.hypot(x2 - x1, y2 - y1);
+  }
+
+  workspace.addEventListener("pointerdown", onPointerDown, { capture: true });
+  workspace.addEventListener("pointermove", onPointerMove, { capture: true });
+  workspace.addEventListener("pointerup", onPointerUp, { capture: true });
+  workspace.addEventListener("pointercancel", onPointerCancel, { capture: true });
+
+  // Prevent default touch behaviors on the workspace
+  const preventTouch = (e: Event) => e.preventDefault();
+  workspace.addEventListener("touchstart", preventTouch, { passive: false });
+  workspace.addEventListener("touchmove", preventTouch, { passive: false });
+
+  return () => {
+    workspace.removeEventListener("pointerdown", onPointerDown, { capture: true });
+    workspace.removeEventListener("pointermove", onPointerMove, { capture: true });
+    workspace.removeEventListener("pointerup", onPointerUp, { capture: true });
+    workspace.removeEventListener("pointercancel", onPointerCancel, { capture: true });
+    workspace.removeEventListener("touchstart", preventTouch);
+    workspace.removeEventListener("touchmove", preventTouch);
+  };
+}
