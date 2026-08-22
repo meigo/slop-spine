@@ -1,16 +1,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { document as doc, markLayerDirty } from "../state/doc.svelte";
+  import {
+    document as doc,
+    addBone,
+    moveBone,
+    setBoneLength,
+    setBoneRotation,
+  } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
   import { Viewport } from "../core/viewport";
-  import { setupInput, type InputPoint } from "../core/input";
+  import { setupInput } from "../core/input";
   import { setupTouchGestures } from "../core/touch-gestures";
-  import { drawStroke, type BrushSettings } from "../core/brush";
-  import { drawInkStrokeIncremental, resetInkState } from "../core/ink-brush";
-  import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
-  import { floodFill, hexToRgba } from "../core/fill";
-  import { PressureCurve } from "../core/pressure-curve";
-  import type { Layer } from "../rig/document";
+  import { createDrawDispatch } from "./draw-dispatch";
+  import { deriveSlot } from "../rig/derive";
+  import { drawRigOverlay, poseDeform, drawWarpedLayer } from "./RigOverlay";
+  import type { Bone } from "../rig/document";
 
   let stage: HTMLDivElement;
   // Viewport needs a real element with a parent to transform; it stays invisible and its CSS
@@ -24,6 +28,12 @@
 
   // Bumped by the resize observer so the redraw $effect also reruns on container resize.
   let size = $state({ width: 0, height: 0 });
+
+  // --- Rig mode: transient pose-drag offset. This is the ONE piece of rig state that must be
+  // $state — it never touches doc.bones (pose is never stored), so it needs its own reactive
+  // trigger for the redraw below. Everything else rig-related reads doc.bones/doc.density/ui
+  // directly, which are already reactive. ---
+  let poseDrag = $state<{ bone: string; dx: number; dy: number } | null>(null);
 
   function redraw() {
     if (!ctx || !viewport || !canvasEl) return;
@@ -41,12 +51,44 @@
     ctx.lineWidth = 2 / viewport.zoom;
     ctx.strokeStyle = "#000";
     ctx.strokeRect(0, 0, doc.canvas.width, doc.canvas.height);
+
     for (const layer of doc.layers) {
       if (!layer.visible) continue;
       ctx.globalAlpha = layer.opacity;
-      ctx.drawImage(layer.canvas, 0, 0);
+      const warped = poseDrag && warpFor(layer.id, poseDrag.bone);
+      if (warped) {
+        const deformed = poseDeform(warped.mesh, warped.weights, poseDrag!.bone, poseDrag!.dx, poseDrag!.dy);
+        drawWarpedLayer(ctx, layer.canvas, warped.mesh, deformed);
+      } else {
+        ctx.drawImage(layer.canvas, 0, 0);
+      }
     }
     ctx.globalAlpha = 1;
+
+    if (ui.mode === "rig") {
+      const slot = doc.slots.find((s) => s.layerId === ui.selectedLayerId);
+      const derived = slot ? deriveSlot(doc, slot.name) : null;
+      drawRigOverlay(
+        ctx,
+        {
+          bones: doc.bones,
+          selectedBone: ui.selectedBone,
+          mesh: derived?.mesh ?? null,
+          weights: derived?.weights ?? null,
+        },
+        viewport.zoom,
+      );
+    }
+  }
+
+  /** The slot bound to `layer`, if `bone` is among its influencing bones — that's the mesh/weights
+   *  a live pose-drag on `bone` needs to warp that layer's drawing. */
+  function warpFor(layerId: number, bone: string) {
+    const slot = doc.slots.find((s) => s.layerId === layerId);
+    if (!slot) return null;
+    const bindBones = doc.binds.find((b) => b.slot === slot.name)?.bones ?? [];
+    if (!bindBones.includes(bone)) return null;
+    return deriveSlot(doc, slot.name);
   }
 
   $effect(() => {
@@ -54,98 +96,18 @@
     void doc.layers.map((l) => [l.id, l.visible, l.opacity, l.revision]);
     void size.width;
     void size.height;
+    // Rig mode: mode/selection changes and bone edits also need a redraw. doc.bones is read
+    // field-by-field (not just .length) so dragging a bone re-triggers this.
+    void ui.mode;
+    void ui.selectedBone;
+    void ui.selectedLayerId;
+    void doc.density;
+    void doc.bones.map((b) => [b.name, b.x, b.y, b.rotation, b.length]);
+    void poseDrag;
     redraw();
   });
 
-  // --- Drawing: pointer events (already parsed into document-space InputPoints by input.ts) land
-  // on ui.selectedLayerId's own canvas, resolved by id (layer array order is a display concern,
-  // not identity). Mild pressure-response curve, applied uniformly regardless of brush engine. ---
-  const pressureCurve = new PressureCurve();
-  // Pressure widens/thins the nominal size by this factor; mouse (no pressure) always draws at
-  // constant nominal width (see widthRange in brush.ts).
-  const PRESSURE_SIZE_RANGE = 1.8;
-  const FILL_COLOR = "#000000";
-
-  function resolveSelectedLayer(): Layer | null {
-    return doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null;
-  }
-
-  function buildBrushSettings(isEraser: boolean): BrushSettings {
-    return {
-      size: ui.brushSize,
-      color: FILL_COLOR,
-      opacity: ui.brushOpacity,
-      smoothing: 0,
-      isEraser,
-      drawBehind: false,
-      alphaLock: false,
-    };
-  }
-
-  // Locked to the layer the current stroke started on, so a mid-stroke selection change (unlikely,
-  // but possible via a keyboard shortcut) can't redirect it mid-flight.
-  let strokeLayer: Layer | null = null;
-  let strokeCtx: CanvasRenderingContext2D | null = null;
-  let strokeSnapshot: ImageData | null = null;
-  let fillFired = false;
-
-  function endStroke() {
-    strokeLayer = null;
-    strokeCtx = null;
-    strokeSnapshot = null;
-  }
-
-  function handleStroke(points: InputPoint[], done: boolean) {
-    if (points.length === 0) return;
-
-    if (ui.tool === "fill") {
-      if (!fillFired) {
-        const layer = resolveSelectedLayer();
-        const fctx = layer?.canvas.getContext("2d") ?? null;
-        if (layer && fctx) {
-          const p = points[0];
-          floodFill(fctx, p.x, p.y, hexToRgba(FILL_COLOR, 100), { alphaThreshold: 128 });
-          markLayerDirty(layer.id);
-        }
-        fillFired = true;
-      }
-      if (done) fillFired = false;
-      return;
-    }
-
-    if (!strokeLayer) {
-      strokeLayer = resolveSelectedLayer();
-      strokeCtx = strokeLayer ? strokeLayer.canvas.getContext("2d") : null;
-      strokeSnapshot = strokeCtx
-        ? strokeCtx.getImageData(0, 0, strokeCtx.canvas.width, strokeCtx.canvas.height)
-        : null;
-      resetInkState();
-      resetStampState();
-    }
-    if (!strokeLayer || !strokeCtx) {
-      if (done) endStroke();
-      return;
-    }
-
-    const curved = points.map((p) => ({ ...p, pressure: pressureCurve.evaluate(p.pressure) }));
-    const sizeRange = curved[0]?.hasPressure ? PRESSURE_SIZE_RANGE : 1;
-    const settings = buildBrushSettings(ui.tool === "eraser");
-    const brushType = ui.brushType; // local so TS narrows it across the branches
-
-    if (brushType === "smooth") {
-      // perfect-freehand renders the whole path every call, so each call must restore the
-      // pre-stroke snapshot first or the shape would double up on itself.
-      if (strokeSnapshot) strokeCtx.putImageData(strokeSnapshot, 0, 0);
-      drawStroke(strokeCtx, curved, settings, done, sizeRange);
-    } else if (brushType === "ink") {
-      drawInkStrokeIncremental(strokeCtx, curved, settings, sizeRange);
-    } else {
-      drawStampStrokeIncremental(strokeCtx, curved, { ...settings, brushType }, sizeRange);
-    }
-
-    markLayerDirty(strokeLayer.id);
-    if (done) endStroke();
-  }
+  const drawDispatch = createDrawDispatch();
 
   function transformCoords(sx: number, sy: number): { x: number; y: number } {
     return viewport ? viewport.screenToCanvas(sx, sy) : { x: sx, y: sy };
@@ -196,6 +158,125 @@
     viewport.zoomAt(e.clientX, e.clientY, e.deltaY);
   }
 
+  // --- Rig mode: bones. Runs alongside setupInput's own listeners on canvasEl (handleStroke
+  // no-ops outside draw mode, so the two never fight over a stroke). Raw PointerEvents rather than
+  // input.ts's InputPoint pipeline, because bone dragging wants exact deltas and shift/alt, neither
+  // of which the stroke pipeline carries. ---
+  const RIG_HIT_RADIUS = 14; // screen px, converted to canvas px by dividing by zoom below
+
+  function nonRootBones(): Bone[] {
+    return doc.bones.filter((b) => b.name !== "root");
+  }
+  function boneTip(b: Bone) {
+    const rad = (b.rotation * Math.PI) / 180;
+    return { x: b.x + Math.cos(rad) * b.length, y: b.y + Math.sin(rad) * b.length };
+  }
+  /** Always returns the closest bone, with no distance cutoff — "drag from empty space" is
+   *  defined by the brief as grabbing whichever bone origin is nearest, however far that is. */
+  function nearestBone(pt: { x: number; y: number }): Bone | null {
+    let best: Bone | null = null;
+    let bestD = Infinity;
+    for (const b of nonRootBones()) {
+      const d = Math.hypot(b.x - pt.x, b.y - pt.y);
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+  function tipHit(pt: { x: number; y: number }, radius: number): Bone | null {
+    let best: Bone | null = null;
+    let bestD = Infinity;
+    for (const b of nonRootBones()) {
+      if (b.length <= 0) continue; // zero-length bone has no distinct tip to grab
+      const tip = boneTip(b);
+      const d = Math.hypot(tip.x - pt.x, tip.y - pt.y);
+      if (d < radius && d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  type DragState = { type: "move" | "length"; bone: string } | { type: "pose"; bone: string };
+  let dragState: DragState | null = null;
+  let poseStart: { x: number; y: number } | null = null;
+
+  function onRigPointerDown(e: PointerEvent) {
+    if (ui.mode !== "rig" || e.button !== 0) return;
+    if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
+    if (!viewport) return;
+    e.preventDefault();
+    canvasEl.setPointerCapture(e.pointerId);
+    const pt = viewport.screenToCanvas(e.clientX, e.clientY);
+    const hitRadius = RIG_HIT_RADIUS / viewport.zoom;
+
+    if (e.shiftKey) {
+      // Root counts as an existing parent, so the very first bone can be shift-dragged from
+      // empty canvas with nothing placed yet.
+      const parent = nearestBone(pt) ?? doc.bones.find((b) => b.name === "root") ?? null;
+      if (!parent) return;
+      const name = addBone(parent.name, pt.x, pt.y);
+      if (name) {
+        ui.selectedBone = name;
+        dragState = { type: "length", bone: name };
+      }
+      return;
+    }
+    if (e.altKey) {
+      const b = nearestBone(pt);
+      if (!b) return;
+      dragState = { type: "pose", bone: b.name };
+      poseStart = pt;
+      poseDrag = { bone: b.name, dx: 0, dy: 0 };
+      return;
+    }
+    const tip = tipHit(pt, hitRadius);
+    if (tip) {
+      ui.selectedBone = tip.name;
+      dragState = { type: "length", bone: tip.name };
+      return;
+    }
+    const near = nearestBone(pt);
+    if (near) {
+      ui.selectedBone = near.name;
+      dragState = { type: "move", bone: near.name };
+    }
+  }
+
+  function onRigPointerMove(e: PointerEvent) {
+    if (!dragState || !viewport) return;
+    const pt = viewport.screenToCanvas(e.clientX, e.clientY);
+    if (dragState.type === "move") {
+      moveBone(dragState.bone, pt.x, pt.y);
+    } else if (dragState.type === "length") {
+      const bone = doc.bones.find((b) => b.name === dragState!.bone);
+      if (bone) {
+        const dx = pt.x - bone.x;
+        const dy = pt.y - bone.y;
+        setBoneLength(dragState.bone, Math.hypot(dx, dy));
+        setBoneRotation(dragState.bone, (Math.atan2(dy, dx) * 180) / Math.PI);
+      }
+    } else if (dragState.type === "pose" && poseStart && poseDrag) {
+      poseDrag.dx = pt.x - poseStart.x;
+      poseDrag.dy = pt.y - poseStart.y;
+    }
+  }
+
+  function onRigPointerUp(e: PointerEvent) {
+    if (!dragState) return;
+    dragState = null;
+    poseStart = null;
+    poseDrag = null;
+    try {
+      canvasEl.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  }
+
   onMount(() => {
     ctx = canvasEl.getContext("2d");
     viewport = new Viewport(anchor);
@@ -220,7 +301,7 @@
       onViewportChange: redraw,
     });
 
-    const cleanupInput = setupInput(canvasEl, handleStroke, transformCoords);
+    const cleanupInput = setupInput(canvasEl, drawDispatch.handleStroke, transformCoords);
 
     // Capture-phase on `stage` so a pan preempts input.ts's bubble-phase listeners on `canvasEl`
     // (same precedence slop-animator's Canvas.svelte uses).
@@ -229,6 +310,10 @@
     stage.addEventListener("pointerup", onStagePointerUp, { capture: true });
     stage.addEventListener("pointercancel", onStagePointerUp, { capture: true });
     stage.addEventListener("wheel", onWheel, { passive: false });
+    canvasEl.addEventListener("pointerdown", onRigPointerDown);
+    canvasEl.addEventListener("pointermove", onRigPointerMove);
+    canvasEl.addEventListener("pointerup", onRigPointerUp);
+    canvasEl.addEventListener("pointercancel", onRigPointerUp);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
 
@@ -241,6 +326,10 @@
       stage.removeEventListener("pointerup", onStagePointerUp, { capture: true });
       stage.removeEventListener("pointercancel", onStagePointerUp, { capture: true });
       stage.removeEventListener("wheel", onWheel);
+      canvasEl.removeEventListener("pointerdown", onRigPointerDown);
+      canvasEl.removeEventListener("pointermove", onRigPointerMove);
+      canvasEl.removeEventListener("pointerup", onRigPointerUp);
+      canvasEl.removeEventListener("pointercancel", onRigPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };

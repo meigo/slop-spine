@@ -1,10 +1,17 @@
-import { emptyDocument, type RigDocument, type Layer } from "../rig/document";
+import { emptyDocument, defaultBind, type RigDocument, type Layer, type Slot, type Bone } from "../rig/document";
+import { invalidate } from "../rig/derive";
 
 /** The single open document. Mutated in place (push/splice/property writes) so the
  *  exported binding never needs reassigning — see the mutations below. */
 export let document = $state<RigDocument>(emptyDocument());
 
+// Task 7's milestone found 48 (emptyDocument's own default, used by export fixtures/tests) too
+// coarse for thin limbs; Task 10's slider defaults new documents to 24 instead. Not changed in
+// document.ts itself, which fixture.ts and the spine-json tests pin to 48 independently.
+document.density = 24;
+
 let nextLayerId = 1;
+let nextBoneIndex = 1;
 
 function createLayer(name: string): Layer {
   const canvas = globalThis.document.createElement("canvas");
@@ -20,10 +27,23 @@ function createLayer(name: string): Layer {
   };
 }
 
-/** Adds a new layer on top of the stack (end of the array). Returns its id. */
+/** Slot.name must be unique (see document.ts); layer names aren't, so a colliding layer name
+ *  gets a numeric suffix on its slot rather than silently overwriting another slot's attachment. */
+function uniqueSlotName(base: string): string {
+  let name = base;
+  let i = 2;
+  while (document.slots.some((s) => s.name === name)) name = `${base}-${i++}`;
+  return name;
+}
+
+/** Adds a new layer on top of the stack (end of the array), plus the one slot every layer has
+ *  (bound to root by default — override its influencing bones via setBind). Returns the layer id. */
 export function addLayer(name: string): number {
   const layer = createLayer(name);
   document.layers.push(layer);
+  const slot: Slot = { name: uniqueSlotName(name), layerId: layer.id, bone: "root", order: document.slots.length };
+  document.slots.push(slot);
+  document.binds.push({ slot: slot.name, bones: defaultBind(document, slot) });
   return layer.id;
 }
 
@@ -31,6 +51,11 @@ export function removeLayer(id: number) {
   const index = document.layers.findIndex((l) => l.id === id);
   if (index === -1) return;
   document.layers.splice(index, 1);
+  const slotIndex = document.slots.findIndex((s) => s.layerId === id);
+  if (slotIndex === -1) return;
+  const [slot] = document.slots.splice(slotIndex, 1);
+  document.binds = document.binds.filter((b) => b.slot !== slot.name);
+  invalidate(slot.name);
 }
 
 /** Moves the layer to array index `index` (0 = bottom of the stack). */
@@ -57,4 +82,117 @@ export function toggleVisible(id: number) {
 export function markLayerDirty(id: number) {
   const l = document.layers.find((x) => x.id === id);
   if (l) l.revision += 1;
+}
+
+// --- Bones -------------------------------------------------------------------------------------
+// Two invariants the Spine writer (Task 6) silently depends on:
+//  1. doc.bones lists parents before children — enforced here by construction: addBone always
+//     appends, removeBone always takes its descendants with it. There is no setParent; if
+//     re-parenting is ever added, the writer needs a topological sort first.
+//  2. root stays at canvas centre with rotation 0 — moveBone, removeBone and setBoneRotation all
+//     refuse to touch it. The UI (Canvas.svelte) also never offers it as a drag target.
+
+/** All bones transitively parented under `name` (not including `name` itself). */
+function descendantsOf(name: string): Bone[] {
+  const result: Bone[] = [];
+  const stack = [name];
+  while (stack.length > 0) {
+    const parent = stack.pop()!;
+    for (const b of document.bones) {
+      if (b.parent === parent) {
+        result.push(b);
+        stack.push(b.name);
+      }
+    }
+  }
+  return result;
+}
+
+/** Adds a child of `parent` at (x, y), length 0, rotation 0. Appends to doc.bones, which is what
+ *  keeps parents ahead of children — a bone can only be created from one that already exists.
+ *  Returns the new bone's name, or null if `parent` doesn't exist. */
+export function addBone(parent: string, x: number, y: number): string | null {
+  if (!document.bones.some((b) => b.name === parent)) return null;
+  let name = `bone${nextBoneIndex++}`;
+  while (document.bones.some((b) => b.name === name)) name = `bone${nextBoneIndex++}`;
+  document.bones.push({ name, parent, x, y, rotation: 0, length: 0, wobble: 0 });
+  return name;
+}
+
+/** Sets a bone's absolute position and drags its descendants by the same delta — bones are
+ *  stored absolute, so without this a moved limb's children would separate from it. Refuses root. */
+export function moveBone(name: string, x: number, y: number) {
+  if (name === "root") return;
+  const bone = document.bones.find((b) => b.name === name);
+  if (!bone) return;
+  const dx = x - bone.x;
+  const dy = y - bone.y;
+  bone.x = x;
+  bone.y = y;
+  for (const child of descendantsOf(name)) {
+    child.x += dx;
+    child.y += dy;
+  }
+}
+
+export function setBoneLength(name: string, len: number) {
+  const bone = document.bones.find((b) => b.name === name);
+  if (bone) bone.length = Math.max(0, len);
+}
+
+/** Degrees, screen-space CCW-positive (matches Bone.rotation). Refuses root: its rotation must
+ *  stay 0 because the Spine writer emits it as a bare `{ name }` with no transform. */
+export function setBoneRotation(name: string, deg: number) {
+  if (name === "root") return;
+  const bone = document.bones.find((b) => b.name === name);
+  if (bone) bone.rotation = deg;
+}
+
+/** Removes a bone and everything parented under it, directly or transitively — otherwise a
+ *  surviving bone's `parent` would dangle. Refuses root. Also strips the removed names out of
+ *  any bind list and resets any slot pointing at one back to root, so nothing is left dangling. */
+export function removeBone(name: string) {
+  if (name === "root") return;
+  if (!document.bones.some((b) => b.name === name)) return;
+  const removed = new Set([name, ...descendantsOf(name).map((b) => b.name)]);
+  document.bones = document.bones.filter((b) => !removed.has(b.name));
+  for (const bind of document.binds) {
+    bind.bones = bind.bones.filter((n) => !removed.has(n));
+  }
+  for (const slot of document.slots) {
+    if (removed.has(slot.bone)) slot.bone = "root";
+  }
+}
+
+/** Renames a bone and every reference to it (children's `parent`, binds, slots). Refuses root
+ *  (its literal name is load-bearing — document.ts's defaultBind filters on the string "root")
+ *  and refuses a name collision. */
+export function renameBone(oldName: string, newName: string) {
+  const trimmed = newName.trim();
+  if (!trimmed || oldName === "root" || trimmed === oldName) return;
+  if (document.bones.some((b) => b.name === trimmed)) return;
+  const bone = document.bones.find((b) => b.name === oldName);
+  if (!bone) return;
+  bone.name = trimmed;
+  for (const b of document.bones) {
+    if (b.parent === oldName) b.parent = trimmed;
+  }
+  for (const bind of document.binds) {
+    bind.bones = bind.bones.map((n) => (n === oldName ? trimmed : n));
+  }
+  for (const slot of document.slots) {
+    if (slot.bone === oldName) slot.bone = trimmed;
+  }
+}
+
+export function setWobble(name: string, v: number) {
+  const bone = document.bones.find((b) => b.name === name);
+  if (bone) bone.wobble = Math.max(0, Math.min(1, v));
+}
+
+/** Replaces the set of bones that influence `slotName`'s weights (see rig/derive.ts). */
+export function setBind(slotName: string, bones: string[]) {
+  const bind = document.binds.find((b) => b.slot === slotName);
+  if (bind) bind.bones = bones;
+  else document.binds.push({ slot: slotName, bones });
 }
