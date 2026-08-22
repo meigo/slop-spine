@@ -698,6 +698,13 @@ export function packAtlas(
   canvasH: number,
   pageWidth = 2048,
 ): { regions: Region[]; pageWidth: number; pageHeight: number; text: string } {
+  // Grow the page to fit the widest item. Without this, an item wider than pageWidth - PAD is
+  // placed at pageX = PAD and its right edge runs off the page: the wrap guard uses 2*PAD, so it
+  // fires but has nowhere to wrap to. Silent failure — a well-formed .atlas with wrong UVs.
+  const widest = items.length ? Math.max(...items.map((it) => it.trim.width)) : 0;
+  const needed = widest + 2 * PAD;
+  pageWidth = Math.max(pageWidth, needed > 0 ? 2 ** Math.ceil(Math.log2(needed)) : 0);
+
   const sorted = [...items].sort((a, b) => b.trim.height - a.trim.height);
   const regions: Region[] = [];
   let x = PAD, y = PAD, rowHeight = 0;
@@ -1017,7 +1024,8 @@ git add -A && git commit -m "feat: spine 4.2 skeleton json writer"
 
 **Files:**
 - Create: `src/export/bundle.ts`, `src/export/__tests__/fixture.ts`,
-  `scripts/export-fixture.ts`
+  `public/verify/index.html`
+- Modify: `.gitignore` (add `public/verify/skeleton.*`)
 - Test: manual — this is the milestone gate
 
 **Interfaces:**
@@ -1111,20 +1119,58 @@ function canvasBlob(c: HTMLCanvasElement): Promise<Blob> {
 A single button that calls `exportBundle(buildFixture())` and triggers a download. It is
 scaffolding; Task 9 replaces it with the real export action.
 
-- [ ] **Step 4: THE MILESTONE — verify in the sloppets test page**
+- [ ] **Step 4: THE MILESTONE — verify the export renders**
 
-```bash
-unzip -o ~/Downloads/slop-spine-export.zip -d /Users/meigo/Projects/slop/sloppets/spine/fixture
-cd /Users/meigo/Projects/slop/sloppets && node engine/server.mjs
+**Do not modify the sloppets repo.** The original plan said to unzip into
+`/Users/meigo/Projects/slop/sloppets/spine/` and edit its `spine-test.html`; that mutates another
+project. Instead, build a self-contained check inside slop-spine.
+
+Create `public/verify/index.html` — a bare page that loads the same runtime sloppets uses, from CDN:
+
+```html
+<!doctype html>
+<meta charset="utf-8" />
+<title>slop-spine export check</title>
+<style>body{margin:0;background:#fff}</style>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+<script src="https://unpkg.com/@esotericsoftware/spine-pixi-v8@4.2.106/dist/iife/spine-pixi-v8.js"></script>
+<script type="module">
+  const app = new PIXI.Application();
+  await app.init({ background: 0xffffff, resizeTo: window, antialias: true });
+  document.body.appendChild(app.canvas);
+
+  const s = window.spine;
+  PIXI.Assets.add({ alias: "atlas", src: "/verify/skeleton.atlas" });
+  const [atlas, skel] = await Promise.all([
+    PIXI.Assets.load("atlas"),
+    fetch("/verify/skeleton.spinejson").then((r) => r.json()),
+  ]);
+  const data = new s.SkeletonJson(new s.AtlasAttachmentLoader(atlas)).readSkeletonData(skel);
+  const fig = new s.Spine(data);
+  fig.skeleton.setToSetupPose();
+  fig.skeleton.updateWorldTransform(0);
+  fig.x = app.screen.width / 2;
+  fig.y = app.screen.height / 2;
+  fig.scale.set(0.35);
+  app.stage.addChild(fig);
+
+  // Report what the runtime actually parsed, so failures are attributable.
+  const b = fig.getBounds();
+  console.log("[verify] bones", data.bones.length, "slots", data.slots.length);
+  console.log("[verify] bounds", JSON.stringify({ x: b.x, y: b.y, w: b.width, h: b.height }));
+  window.__verify = { bones: data.bones.length, slots: data.slots.length, bounds: b };
+</script>
 ```
 
-Open `client/public/test/spine-test.html`, change the three asset paths to
-`/spine/fixture/skeleton.*`, and load it.
+Unzip the exported bundle into `public/verify/` (git-ignore that directory — it is build output,
+not source), run `npm run dev`, and open `/verify/`.
 
-Expected: the stick figure renders in the right place, at the right scale, right way up. Dragging
-the body slider moves it. This is the pass/fail gate for the whole format chain.
+Expected: the stick figure renders — upright, roughly centred, limbs in the right places relative
+to each other. The console `[verify]` lines report 4 bones and 3 slots and a bounds box with
+positive width and height.
 
-Failure guide:
+This is the pass/fail gate for the whole format chain. Failure guide:
+
 - Upside down → y-flip in `toSkeletonSpace`.
 - Parts in the wrong places → `offsets` in `packAtlas`, or UV maths in `writeSkeleton`.
 - Parts render but smear when bones move → bone-local transform in `toBoneLocal`.
