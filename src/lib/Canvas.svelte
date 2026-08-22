@@ -25,6 +25,15 @@
     ctx.translate(viewport.panX, viewport.panY);
     ctx.rotate(viewport.rotation);
     ctx.scale(viewport.zoom, viewport.zoom);
+    // Page bounds, screen-draw only (never fills a layer.canvas — export trims each layer to its
+    // own alpha, so an opaque layer would trim to the full page). White is the expected ground:
+    // this project's art is grayscale line work on white over transparent layers. The border
+    // keeps the edge visible once the fill is too small on screen to read as a page.
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, doc.canvas.width, doc.canvas.height);
+    ctx.lineWidth = 2 / viewport.zoom;
+    ctx.strokeStyle = "#000";
+    ctx.strokeRect(0, 0, doc.canvas.width, doc.canvas.height);
     for (const layer of doc.layers) {
       if (!layer.visible) continue;
       ctx.globalAlpha = layer.opacity;
