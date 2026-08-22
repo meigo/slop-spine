@@ -1023,9 +1023,7 @@ git add -A && git commit -m "feat: spine 4.2 skeleton json writer"
 ## Task 7: Export bundle and the round-trip milestone
 
 **Files:**
-- Create: `src/export/bundle.ts`, `src/export/__tests__/fixture.ts`,
-  `public/verify/index.html`
-- Modify: `.gitignore` (add `public/verify/skeleton.*`)
+- Create: `src/export/bundle.ts`, `src/export/fixture.ts`, `verify.html`, `src/verify/main.ts`
 - Test: manual — this is the milestone gate
 
 **Interfaces:**
@@ -1040,7 +1038,7 @@ problem is in Tasks 5–6, not in something you have yet to build.
 
 - [ ] **Step 1: Write the fixture**
 
-`src/export/__tests__/fixture.ts` builds a `RigDocument` in code using
+`src/export/fixture.ts` builds a `RigDocument` in code using
 `OffscreenCanvas`-compatible 2D drawing: three layers on a 2048² canvas — `body` (a filled
 rounded rect from (950,900) to (1100,1500)), `head` (a filled circle centred (1024,800) r 180),
 `arm` (a filled rect from (1100,950) to (1400,1030)). Bones: `root` at canvas centre;
@@ -1114,18 +1112,14 @@ function canvasBlob(c: HTMLCanvasElement): Promise<Blob> {
 }
 ```
 
-- [ ] **Step 3: Wire a temporary "Export fixture" button into `App.svelte`**
+- [ ] **Step 3: Build the verification page**
 
-A single button that calls `exportBundle(buildFixture())` and triggers a download. It is
-scaffolding; Task 9 replaces it with the real export action.
+The export chain needs a browser (canvas drawing, `toBlob`), so it cannot be exercised from node.
+But it also must not need a human to click through a download-and-unzip dance. So the check is
+**one page load that runs the whole chain in memory and renders the result.**
 
-- [ ] **Step 4: THE MILESTONE — verify the export renders**
-
-**Do not modify the sloppets repo.** The original plan said to unzip into
-`/Users/meigo/Projects/slop/sloppets/spine/` and edit its `spine-test.html`; that mutates another
-project. Instead, build a self-contained check inside slop-spine.
-
-Create `public/verify/index.html` — a bare page that loads the same runtime sloppets uses, from CDN:
+Create `verify.html` at the project root (Vite serves it at `/verify.html` in dev with no config
+change) — it pulls the real runtime from CDN as globals, then hands off to a module:
 
 ```html
 <!doctype html>
@@ -1134,47 +1128,63 @@ Create `public/verify/index.html` — a bare page that loads the same runtime sl
 <style>body{margin:0;background:#fff}</style>
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
 <script src="https://unpkg.com/@esotericsoftware/spine-pixi-v8@4.2.106/dist/iife/spine-pixi-v8.js"></script>
-<script type="module">
-  const app = new PIXI.Application();
-  await app.init({ background: 0xffffff, resizeTo: window, antialias: true });
-  document.body.appendChild(app.canvas);
-
-  const s = window.spine;
-  PIXI.Assets.add({ alias: "atlas", src: "/verify/skeleton.atlas" });
-  const [atlas, skel] = await Promise.all([
-    PIXI.Assets.load("atlas"),
-    fetch("/verify/skeleton.spinejson").then((r) => r.json()),
-  ]);
-  const data = new s.SkeletonJson(new s.AtlasAttachmentLoader(atlas)).readSkeletonData(skel);
-  const fig = new s.Spine(data);
-  fig.skeleton.setToSetupPose();
-  fig.skeleton.updateWorldTransform(0);
-  fig.x = app.screen.width / 2;
-  fig.y = app.screen.height / 2;
-  fig.scale.set(0.35);
-  app.stage.addChild(fig);
-
-  // Report what the runtime actually parsed, so failures are attributable.
-  const b = fig.getBounds();
-  console.log("[verify] bones", data.bones.length, "slots", data.slots.length);
-  console.log("[verify] bounds", JSON.stringify({ x: b.x, y: b.y, w: b.width, h: b.height }));
-  window.__verify = { bones: data.bones.length, slots: data.slots.length, bounds: b };
-</script>
+<script type="module" src="/src/verify/main.ts"></script>
 ```
 
-Unzip the exported bundle into `public/verify/` (git-ignore that directory — it is build output,
-not source), run `npm run dev`, and open `/verify/`.
+CDN script tags rather than dependencies: the module runs after both load, so `window.PIXI` and
+`window.spine` are ready. This keeps the runtime out of `package.json` while still parsing the
+export with the *real* Spine parser rather than a stand-in.
 
-Expected: the stick figure renders — upright, roughly centred, limbs in the right places relative
-to each other. The console `[verify]` lines report 4 bones and 3 slots and a bounds box with
-positive width and height.
+Create `src/verify/main.ts`. It must, in this order:
 
-This is the pass/fail gate for the whole format chain. Failure guide:
+1. Build the fixture document from Step 1.
+2. Run the real export chain on it — the same `meshFromMask` / `computeWeights` / `trimLayer` /
+   `packAtlas` / `writeSkeleton` calls `exportBundle` makes. Reuse `exportBundle` and read the
+   files back out of the zip if that is simpler than duplicating the assembly; either way the
+   bytes rendered must be the bytes exported, not a parallel code path.
+3. Feed the atlas PNG to the runtime as an object URL, and the atlas text and skeleton JSON as
+   strings, via `s.TextureAtlas` / `s.AtlasAttachmentLoader` / `s.SkeletonJson`.
+4. Render it centred at scale 0.35 on a white background.
+5. Publish what the runtime actually parsed, so a failure is attributable rather than a blank page:
 
-- Upside down → y-flip in `toSkeletonSpace`.
-- Parts in the wrong places → `offsets` in `packAtlas`, or UV maths in `writeSkeleton`.
-- Parts render but smear when bones move → bone-local transform in `toBoneLocal`.
-- Nothing renders → check the browser console; a malformed `vertices` array throws in the parser.
+```ts
+const b = fig.getBounds();
+const report = {
+  bones: data.bones.length,
+  slots: data.slots.length,
+  bounds: { x: b.x, y: b.y, w: b.width, h: b.height },
+};
+console.log("[verify]", JSON.stringify(report));
+(window as unknown as { __verify: unknown }).__verify = report;
+```
+
+Wrap the whole thing in a try/catch that logs `[verify] FAILED` plus the error — a thrown parser
+error must reach the console, not vanish.
+
+- [ ] **Step 4: THE MILESTONE — run it and report what the page says**
+
+```bash
+npm run dev
+```
+
+Open `/verify.html`. Report **verbatim** what the `[verify]` console line prints, and whether the
+canvas shows a figure at all.
+
+Expected: `bones: 4, slots: 3`, and a bounds box with positive width and height, roughly 600×900
+at scale 0.35 for the fixture's geometry. A thrown error, zero bones, or a zero-area bounds box is
+a failure.
+
+**You are not the judge of whether it looks right** — you cannot see the canvas, and saying it
+looks correct when you cannot see it would be worse than useless. Report the numbers and the
+console output; the controller does the visual check. If the page throws, that IS your finding and
+you should report it rather than working around it.
+
+Failure guide, for attributing what the console tells you:
+
+- Parser throws on `vertices` → the weighted-mesh array layout is wrong.
+- Zero bones/slots parsed → the skeleton JSON's top-level shape is wrong.
+- Bounds box present but tiny or enormous → scale or the y-flip in `toSkeletonSpace`.
+- Bounds box offset far from origin → the canvas-centre origin convention.
 
 - [ ] **Step 5: Commit**
 
@@ -1310,6 +1320,20 @@ git add -A && git commit -m "feat: drawing tools on layers"
   - `invalidate(slotName?)`
   - `doc` mutations: `addBone(parent, x, y)`, `moveBone(name, x, y)`, `setBoneLength(name, len)`,
     `removeBone(name)`, `setWobble(name, v)`, `setBind(slot, bones)`
+
+**Two invariants the exporter silently depends on.** Task 6's writer was reviewed and found correct,
+but its correctness rests on these — break either and the export misrenders without erroring:
+
+1. **`doc.bones` lists parents before children.** Spine requires it in the `bones` array, and the
+   physics `order` field is taken from array position rather than derived topologically. Enforce it
+   by construction rather than by sorting defensively: `addBone` **appends** (a child is always
+   created from an existing parent, so it lands after it), `removeBone` removes the bone **and all
+   its descendants** (otherwise a survivor's `parent` dangles), and **v1 has no re-parenting** — do
+   not add a `setParent` mutation. If re-parenting is ever wanted, the writer needs a topological
+   sort first.
+2. **`root` stays at canvas centre with rotation 0.** The writer emits it as a bare `{ name }` with
+   no transform. So `moveBone` and `removeBone` must both refuse to act on `root`, and the UI must
+   not offer it as a drag target. If root ever needs to move, the writer must emit its transform.
 
 **No unit test for this task.** `deriveSlot` reaches a layer's `HTMLCanvasElement` through
 `maskFromCanvas`, so testing it in node would mean adding jsdom or happy-dom. The cache is verified
