@@ -70,7 +70,7 @@ export function writeSkeleton(input: SkeletonInput) {
       const layer = doc.layers.find((l) => l.id === s.layerId);
       const alpha = layer ? Math.round(Math.max(0, Math.min(1, layer.opacity)) * 255) : 255;
       const color = alpha < 255 ? { color: `ffffff${alpha.toString(16).padStart(2, "0")}` } : {};
-      return { name: s.name, bone: s.bone, attachment: s.name, ...color };
+      return { name: s.name, bone: s.bone, attachment: layer?.visible === false ? null : s.name, ...color };
     });
 
   const attachments: Record<string, Record<string, unknown>> = {};
