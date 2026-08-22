@@ -196,6 +196,20 @@ Two modes over one canvas.
 Mesh and weights render as an overlay in rig mode — triangles, and weight tint for the selected
 bone. Seeing wrong weights is what makes the upstream fix obvious.
 
+## Hard requirement: the exported background is transparent
+
+A character composites over a backdrop, so the exported atlas PNG must be transparent everywhere the
+artist did not paint, with antialiased edges preserved as partial alpha. Layer surfaces stay alpha 0
+where nothing is drawn; the white/checkerboard page is painted at render time into the on-screen
+canvas only and must never reach a `layer.canvas`.
+
+This is not merely a nicety — export trims each layer to its opaque bounding box via the alpha
+channel, so a layer with an opaque background trims to the full 2048² page and destroys the atlas.
+
+It is also the one property that **cannot be eyeballed**: white paint and empty space are visually
+identical. So it is checked, not looked at — `verify.html` counts alpha in the exported PNG and
+fails loudly if a background has been baked in.
+
 ## Verification
 
 The one criterion that matters:
@@ -223,12 +237,14 @@ is a reference for *structure* (bone names, physics values, slot layout), not a 
 
 ## v1 scope
 
-**In:** drawing (brush, eraser, fill, lasso), layers, bone placement, auto-mesh, auto-weights
+**In:** drawing (brush, eraser, fill), layers, bone placement, auto-mesh, auto-weights
 (Euclidean), wobble, pose preview, atlas packing with trim, Spine 4.2 export, loose PNG export,
 save/load, autosave.
 
 **Out:** animation timeline, IK, path constraints, skins, deform sculpting, PSD import, weight
-painting, vertex dragging, geodesic weights, multiple atlas pages, multiple templates.
+painting, vertex dragging, geodesic weights, multiple atlas pages, multiple templates, lasso
+selection (slop-animator's `selection.ts` drags in its frame-centric cell-mapping layer; not worth
+it for the least load-bearing drawing tool).
 
 PSD import is out only because nothing needs it yet — `slop-paint` already writes Spine-tagged
 PSDs, so it's additive whenever existing art must come in.
@@ -243,8 +259,12 @@ Non-blocking; resolve while building.
    wrong place.
 2. **Bone creation gesture.** Drag-from-parent is conventional. Check it against Pencil on iPad,
    where slop-animator's finger/Pencil split applies.
-3. **Mesh density default.** The hand-made rig runs 10–44 vertices per part. Pick a default
-   spacing that lands there on a 2048² canvas.
+3. **Mesh density default.** ~~Pick a default spacing~~ **Resolved 2026-08-22 by Task 7's render.**
+   At `density: 48` the milestone fixture's limbs were visibly under-covered — a 300×80 arm tapered
+   to a wedge, the body's corner was shaved — because `boundaryPoints` decimates to at least
+   `density` apart, so a thin shape gets ~2 boundary points across its short dimension. Default is
+   **24**, slider range 8–96, with the mesh overlay visible while dragging. The right value is a
+   judgement about the character's thinnest limb, easier to see than to derive.
 4. **Bone naming.** sloppets drives bones by name. v1 is conventional — you name them right.
    Whether it ever becomes an enforced template is the template-vs-inference question, deferred
    until a second character exists.

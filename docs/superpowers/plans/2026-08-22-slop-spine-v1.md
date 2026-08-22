@@ -33,6 +33,10 @@ we write the format ourselves.
 - Package versions matching slop-animator: svelte ^5.55.1, vite ^8.0.1, tailwindcss ^4.2.2,
   typescript ~5.9.3, vitest ^4.1.2, delaunator ^5.1.0, perfect-freehand ^1.2.3, fflate ^0.8.3.
 - Source of copied modules: `/Users/meigo/Projects/slop/slop-animator/src/core/`.
+- **Every task runs `npm test` AND `npm run check` before committing, and both must be clean.**
+  `npm run check` is svelte-check; `npm run build` runs it before `tsc`, so a check failure is a
+  broken build. Tasks 1-3 originally verified only `npm test`, and a svelte-check failure
+  introduced in Task 1 survived two clean reviews as a result.
 
 ---
 
@@ -90,8 +94,25 @@ writing (testable, no DOM), `lib/` is UI. Nothing in `rig/` or `export/` imports
 
 ```bash
 A=/Users/meigo/Projects/slop/slop-animator
-cp $A/vite.config.ts $A/svelte.config.js $A/tsconfig.json $A/.gitignore .
+cp $A/svelte.config.js $A/tsconfig.json $A/.gitignore .
 ```
+
+Do **not** copy `vite.config.ts` — slop-animator's imports `@vitejs/plugin-basic-ssl`, which this
+project does not depend on. Write this instead:
+
+```ts
+import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import tailwindcss from "@tailwindcss/vite";
+
+export default defineConfig({
+  plugins: [svelte(), tailwindcss()],
+  test: { passWithNoTests: true },
+});
+```
+
+`passWithNoTests` is load-bearing for Step 4. The copied `.gitignore` already ignores
+`.superpowers/`, `node_modules/` and `dist/` — leave it as is.
 
 - [ ] **Step 2: Write `package.json`**
 
@@ -149,10 +170,17 @@ export default mount(App, { target: document.getElementById("app")! });
 
 `src/App.svelte`:
 ```svelte
+<script lang="ts"></script>
+
 <main class="h-dvh w-dvw bg-neutral-900 text-neutral-200">
   <p class="p-4 font-mono text-sm">slop-spine</p>
 </main>
 ```
+
+The empty `<script lang="ts">` block is required, not decoration: without a script block svelte2tsx
+emits no type declaration for the component, so `main.ts`'s default import resolves to implicit
+`any` and the strict tsconfig rejects it — which breaks `svelte-check`, and therefore
+`npm run build`.
 
 `src/app.css`:
 ```css
@@ -166,6 +194,10 @@ Expected: dev server starts, page shows "slop-spine".
 
 Run: `npm test`
 Expected: vitest exits 0 with "No test files found" (or passes trivially).
+
+Run: `npm run check`
+Expected: `0 ERRORS 0 WARNINGS`. If it reports a missing declaration file for `./App.svelte`, the
+`<script lang="ts">` block above is missing.
 
 - [ ] **Step 5: Commit**
 
@@ -666,6 +698,13 @@ export function packAtlas(
   canvasH: number,
   pageWidth = 2048,
 ): { regions: Region[]; pageWidth: number; pageHeight: number; text: string } {
+  // Grow the page to fit the widest item. Without this, an item wider than pageWidth - PAD is
+  // placed at pageX = PAD and its right edge runs off the page: the wrap guard uses 2*PAD, so it
+  // fires but has nowhere to wrap to. Silent failure — a well-formed .atlas with wrong UVs.
+  const widest = items.length ? Math.max(...items.map((it) => it.trim.width)) : 0;
+  const needed = widest + 2 * PAD;
+  pageWidth = Math.max(pageWidth, needed > 0 ? 2 ** Math.ceil(Math.log2(needed)) : 0);
+
   const sorted = [...items].sort((a, b) => b.trim.height - a.trim.height);
   const regions: Region[] = [];
   let x = PAD, y = PAD, rowHeight = 0;
@@ -810,14 +849,16 @@ describe("writeSkeleton", () => {
   };
 
   it("emits 4.2 with the expected top-level shape", () => {
-    const s = writeSkeleton(input as never);
+    const s = writeSkeleton(input) as any;
     expect(s.skeleton.spine).toBe("4.2");
     expect(s.bones.map((b: { name: string }) => b.name)).toEqual(["root", "body"]);
+    // `as any` above is deliberate: the return value is a file format, not an API, so it has no
+    // declared interface. Tests live under src/ and `npm run build` typechecks them.
     expect(s.slots[0]).toEqual({ name: "body", bone: "body", attachment: "body" });
   });
 
   it("emits a weighted mesh: boneCount then (index,x,y,weight) per influence", () => {
-    const s = writeSkeleton(input as never);
+    const s = writeSkeleton(input) as any;
     const mesh = s.skins[0].attachments.body.body;
     expect(mesh.type).toBe("mesh");
     expect(mesh.hull).toBe(3);
@@ -829,7 +870,7 @@ describe("writeSkeleton", () => {
   });
 
   it("emits physics only for bones with wobble", () => {
-    const s = writeSkeleton(input as never);
+    const s = writeSkeleton(input) as any;
     expect(s.physics ?? []).toEqual([]);
   });
 });
@@ -982,8 +1023,7 @@ git add -A && git commit -m "feat: spine 4.2 skeleton json writer"
 ## Task 7: Export bundle and the round-trip milestone
 
 **Files:**
-- Create: `src/export/bundle.ts`, `src/export/__tests__/fixture.ts`,
-  `scripts/export-fixture.ts`
+- Create: `src/export/bundle.ts`, `src/export/fixture.ts`, `verify.html`, `src/verify/main.ts`
 - Test: manual — this is the milestone gate
 
 **Interfaces:**
@@ -998,7 +1038,7 @@ problem is in Tasks 5–6, not in something you have yet to build.
 
 - [ ] **Step 1: Write the fixture**
 
-`src/export/__tests__/fixture.ts` builds a `RigDocument` in code using
+`src/export/fixture.ts` builds a `RigDocument` in code using
 `OffscreenCanvas`-compatible 2D drawing: three layers on a 2048² canvas — `body` (a filled
 rounded rect from (950,900) to (1100,1500)), `head` (a filled circle centred (1024,800) r 180),
 `arm` (a filled rect from (1100,950) to (1400,1030)). Bones: `root` at canvas centre;
@@ -1072,29 +1112,79 @@ function canvasBlob(c: HTMLCanvasElement): Promise<Blob> {
 }
 ```
 
-- [ ] **Step 3: Wire a temporary "Export fixture" button into `App.svelte`**
+- [ ] **Step 3: Build the verification page**
 
-A single button that calls `exportBundle(buildFixture())` and triggers a download. It is
-scaffolding; Task 9 replaces it with the real export action.
+The export chain needs a browser (canvas drawing, `toBlob`), so it cannot be exercised from node.
+But it also must not need a human to click through a download-and-unzip dance. So the check is
+**one page load that runs the whole chain in memory and renders the result.**
 
-- [ ] **Step 4: THE MILESTONE — verify in the sloppets test page**
+Create `verify.html` at the project root (Vite serves it at `/verify.html` in dev with no config
+change) — it pulls the real runtime from CDN as globals, then hands off to a module:
 
-```bash
-unzip -o ~/Downloads/slop-spine-export.zip -d /Users/meigo/Projects/slop/sloppets/spine/fixture
-cd /Users/meigo/Projects/slop/sloppets && node engine/server.mjs
+```html
+<!doctype html>
+<meta charset="utf-8" />
+<title>slop-spine export check</title>
+<style>body{margin:0;background:#fff}</style>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+<script src="https://unpkg.com/@esotericsoftware/spine-pixi-v8@4.2.106/dist/iife/spine-pixi-v8.js"></script>
+<script type="module" src="/src/verify/main.ts"></script>
 ```
 
-Open `client/public/test/spine-test.html`, change the three asset paths to
-`/spine/fixture/skeleton.*`, and load it.
+CDN script tags rather than dependencies: the module runs after both load, so `window.PIXI` and
+`window.spine` are ready. This keeps the runtime out of `package.json` while still parsing the
+export with the *real* Spine parser rather than a stand-in.
 
-Expected: the stick figure renders in the right place, at the right scale, right way up. Dragging
-the body slider moves it. This is the pass/fail gate for the whole format chain.
+Create `src/verify/main.ts`. It must, in this order:
 
-Failure guide:
-- Upside down → y-flip in `toSkeletonSpace`.
-- Parts in the wrong places → `offsets` in `packAtlas`, or UV maths in `writeSkeleton`.
-- Parts render but smear when bones move → bone-local transform in `toBoneLocal`.
-- Nothing renders → check the browser console; a malformed `vertices` array throws in the parser.
+1. Build the fixture document from Step 1.
+2. Run the real export chain on it — the same `meshFromMask` / `computeWeights` / `trimLayer` /
+   `packAtlas` / `writeSkeleton` calls `exportBundle` makes. Reuse `exportBundle` and read the
+   files back out of the zip if that is simpler than duplicating the assembly; either way the
+   bytes rendered must be the bytes exported, not a parallel code path.
+3. Feed the atlas PNG to the runtime as an object URL, and the atlas text and skeleton JSON as
+   strings, via `s.TextureAtlas` / `s.AtlasAttachmentLoader` / `s.SkeletonJson`.
+4. Render it centred at scale 0.35 on a white background.
+5. Publish what the runtime actually parsed, so a failure is attributable rather than a blank page:
+
+```ts
+const b = fig.getBounds();
+const report = {
+  bones: data.bones.length,
+  slots: data.slots.length,
+  bounds: { x: b.x, y: b.y, w: b.width, h: b.height },
+};
+console.log("[verify]", JSON.stringify(report));
+(window as unknown as { __verify: unknown }).__verify = report;
+```
+
+Wrap the whole thing in a try/catch that logs `[verify] FAILED` plus the error — a thrown parser
+error must reach the console, not vanish.
+
+- [ ] **Step 4: THE MILESTONE — run it and report what the page says**
+
+```bash
+npm run dev
+```
+
+Open `/verify.html`. Report **verbatim** what the `[verify]` console line prints, and whether the
+canvas shows a figure at all.
+
+Expected: `bones: 4, slots: 3`, and a bounds box with positive width and height, roughly 600×900
+at scale 0.35 for the fixture's geometry. A thrown error, zero bones, or a zero-area bounds box is
+a failure.
+
+**You are not the judge of whether it looks right** — you cannot see the canvas, and saying it
+looks correct when you cannot see it would be worse than useless. Report the numbers and the
+console output; the controller does the visual check. If the page throws, that IS your finding and
+you should report it rather than working around it.
+
+Failure guide, for attributing what the console tells you:
+
+- Parser throws on `vertices` → the weighted-mesh array layout is wrong.
+- Zero bones/slots parsed → the skeleton JSON's top-level shape is wrong.
+- Bounds box present but tiny or enormous → scale or the y-flip in `toSkeletonSpace`.
+- Bounds box offset far from origin → the canvas-centre origin convention.
 
 - [ ] **Step 5: Commit**
 
@@ -1164,7 +1254,11 @@ git add -A && git commit -m "feat: app shell with canvas, viewport and layer pan
 **Files:**
 - Modify: `src/lib/Canvas.svelte`, `src/lib/Toolbar.svelte`
 - Copy: `src/core/brush.ts`, `ink-brush.ts`, `stamp-brush.ts`, `brush-textures.ts`,
-  `pressure-curve.ts`, `fill.ts`, `fill-holes.ts`, `selection.ts`, `mask-ops.ts`
+  `pressure-curve.ts`, `fill.ts`, `fill-holes.ts`, `mask-ops.ts`
+
+**No lasso in v1.** slop-animator's `selection.ts` imports `ref-transform.ts`, `rigid-grid.ts` and
+`selection-map.ts`; the last maps document coordinates onto per-frame cells, which is that app's
+frame-centric model and meaningless here. Do not copy `selection.ts` and do not reimplement lasso.
 
 **Interfaces:**
 - Consumes: `ui.selectedLayerId` (Task 8)
@@ -1176,10 +1270,10 @@ git add -A && git commit -m "feat: app shell with canvas, viewport and layer pan
 ```bash
 A=/Users/meigo/Projects/slop/slop-animator/src/core
 cp $A/brush.ts $A/ink-brush.ts $A/stamp-brush.ts $A/brush-textures.ts $A/pressure-curve.ts \
-   $A/fill.ts $A/fill-holes.ts $A/selection.ts $A/mask-ops.ts src/core/
+   $A/fill.ts $A/fill-holes.ts $A/mask-ops.ts src/core/
 ```
 
-- [ ] **Step 2: Wire brush, eraser, fill and lasso to the selected layer**
+- [ ] **Step 2: Wire brush, eraser and fill to the selected layer**
 
 Pointer events → `input.ts` → brush engine → draw into `layer.canvas`. Tool selection and brush
 size/opacity live in `ui.svelte.ts`; Toolbar renders them.
@@ -1195,13 +1289,13 @@ export function markLayerDirty(id: number) {
 ```
 
 `Layer.revision` is already declared in `src/rig/document.ts` (Task 3). Call this at the end of
-every stroke, fill and lasso operation. Task 10 keys its derivation cache on it.
+every stroke and fill operation. Task 10 keys its derivation cache on it.
 
 - [ ] **Step 4: Verify by looking at it**
 
 Run: `npm run dev`
-Expected: draw on a layer, erase, fill an enclosed area, lasso-select. Pressure works with a
-pointer that reports it.
+Expected: draw on a layer, erase, fill an enclosed area. Pressure works with a pointer that
+reports it.
 
 - [ ] **Step 5: Commit**
 
@@ -1227,38 +1321,39 @@ git add -A && git commit -m "feat: drawing tools on layers"
   - `doc` mutations: `addBone(parent, x, y)`, `moveBone(name, x, y)`, `setBoneLength(name, len)`,
     `removeBone(name)`, `setWobble(name, v)`, `setBind(slot, bones)`
 
-- [ ] **Step 1: Write the failing test for cache invalidation**
+**Two invariants the exporter silently depends on.** Task 6's writer was reviewed and found correct,
+but its correctness rests on these — break either and the export misrenders without erroring:
 
-```ts
-import { describe, it, expect } from "vitest";
-import { deriveSlot, invalidate, __cacheSize } from "../derive";
+1. **`doc.bones` lists parents before children.** Spine requires it in the `bones` array, and the
+   physics `order` field is taken from array position rather than derived topologically. Enforce it
+   by construction rather than by sorting defensively: `addBone` **appends** (a child is always
+   created from an existing parent, so it lands after it), `removeBone` removes the bone **and all
+   its descendants** (otherwise a survivor's `parent` dangles), and **v1 has no re-parenting** — do
+   not add a `setParent` mutation. If re-parenting is ever wanted, the writer needs a topological
+   sort first.
+2. **`root` stays at canvas centre with rotation 0.** The writer emits it as a bare `{ name }` with
+   no transform. So `moveBone` and `removeBone` must both refuse to act on `root`, and the UI must
+   not offer it as a drag target. If root ever needs to move, the writer must emit its transform.
 
-describe("derive cache", () => {
-  it("recomputes when the bone signature changes", () => {
-    // Build a minimal doc with one slot; derive twice with the same input, then move a bone.
-    // Expect: identical object on the second call, a different object after the move.
-  });
-});
-```
+**No unit test for this task.** `deriveSlot` reaches a layer's `HTMLCanvasElement` through
+`maskFromCanvas`, so testing it in node would mean adding jsdom or happy-dom. The cache is verified
+by eye in Step 5 instead, which is the stronger check anyway: redraw a limb and watch the mesh and
+weights regenerate on their own.
 
-Fill this in against the real `deriveSlot` signature once written — the assertion that matters is
-that moving a bone produces a **new** weights array while leaving the mesh object identical (the
-mesh does not depend on bones).
-
-- [ ] **Step 2: Write `src/rig/derive.ts`**
+- [ ] **Step 1: Write `src/rig/derive.ts`**
 
 A `Map<string, { key: string; mesh: RigMesh; weights: Influence[][] }>`. The key is
 `` `${layer.revision}|${doc.density}|${boneSig}` `` where `boneSig` is the bound bones' names,
 positions, rotations and lengths joined. On a miss, recompute mesh (only if the mesh part of the
 key changed) and weights, then store.
 
-- [ ] **Step 3: Write `RigOverlay.ts`**
+- [ ] **Step 2: Write `RigOverlay.ts`**
 
 Given a 2D context and the derived data, draw: mesh triangles as thin lines; bones as tapered
 segments from origin to tip with a circle at the origin; the selected bone highlighted; and, when
 a bone is selected, tint each vertex by its weight for that bone (0 → transparent, 1 → solid).
 
-- [ ] **Step 4: Wire rig-mode interaction into `Canvas.svelte`**
+- [ ] **Step 3: Wire rig-mode interaction into `Canvas.svelte`**
 
 - Drag from empty space → move the nearest bone origin, **dragging its descendants with it** by
   the same delta (bones are stored absolute, so children do not follow automatically).
@@ -1268,19 +1363,30 @@ a bone is selected, tint each vertex by its weight for that bone (0 → transpar
 - Alt-drag a bone in "pose" state → temporarily offset it so deformation can be checked live,
   released on mouse-up. Pose is transient and never stored.
 
-- [ ] **Step 5: Write `RigPanel.svelte`**
+- [ ] **Step 4: Write `RigPanel.svelte`**
 
 Density slider (global), wobble slider (selected bone), bind checkbox list (selected slot), and a
 bone-name field.
 
-- [ ] **Step 6: Verify by looking at it**
+**Density range and default, informed by Task 7's render** (this resolves spec open question #3).
+The milestone rendered its fixture at `density: 48` and the limbs came out visibly under-covered —
+a 300×80 arm tapered to a wedge and the body's corner was shaved. The cause is that `boundaryPoints`
+decimates silhouette points to at least `density` apart, so an 80px-tall shape gets roughly two
+boundary points across its short dimension and the hull under-covers the source rect.
+
+So: slider range **8–96**, default **24**. Make the mesh overlay visible while dragging it, because
+the right value is a judgement about the character's thinnest limb and is much easier to see than to
+reason about. Do not try to derive density per-slot from shape size — one global slider you can see
+the effect of is the simpler thing that works.
+
+- [ ] **Step 5: Verify by looking at it**
 
 Run: `npm run dev`
 Expected: draw a limb, place two bones down it, see the mesh appear, select a bone and see the
 weight tint, alt-drag it and watch the drawing deform. **Then redraw part of the limb and confirm
 the mesh and weights regenerate on their own** — this is the core principle, visible.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "feat: rig mode with bones, derivation cache and overlay"
@@ -1355,19 +1461,44 @@ Downloads `<projectName>.zip`.
 
 - [ ] **Step 3: Draw a real sloppets character and export it**
 
+Before drawing, set density from what Task 7's render showed: 48 under-covers thin limbs, so start
+around 24 and check the mesh overlay against the character's thinnest part (usually an arm or a
+hair strand) before exporting.
+
 Bones named to the sloppets contract: `root`, `body`, `head`, `mouth`, `arm-front1/2`,
 `arm-back1/2`, `hair1/2`. Slots `body`, `head`, `mouth`, `eyes`, `arm-front`, `arm-back`.
 Wobble on hair, arms and head.
 
-- [ ] **Step 4: Load it in `spine-test.html` unmodified**
+- [ ] **Step 4: Render the real character through the same verification page**
 
-Expected: the existing viseme and bone-poking code drives it. The eyes slot will need `Eyes open`
-/ `Eyes closed` attachments, which v1 does not produce — note what is missing rather than
-building it now (this is spec open question #5, and the answer should come from seeing the gap).
+**Do not modify the sloppets repo** — same rule as Task 7. Reuse `verify.html` instead.
 
-- [ ] **Step 5: Redraw a layer, re-export, load again**
+Extend `src/verify/main.ts` to accept a source: default stays the code-built fixture, but
+`?source=autosave` restores the autosaved document from IndexedDB and runs the identical export
+chain on it. That is a small change and it keeps one verification path rather than two — the page
+still renders exactly the bytes `exportBundle` produced.
 
-Expected: still works. This is the manual check that guards the core principle.
+Then: draw the character, let autosave settle, open `/verify.html?source=autosave`, and report the
+`[verify]` line plus a screenshot.
+
+Expected: a recognisable character, upright, parts in the right places relative to each other.
+
+**Known gap, do not fix:** the `eyes` slot in the sloppets contract needs `Eyes open` / `Eyes
+closed` attachments, and v1 emits one attachment per slot with no swap mechanism. Report what is
+missing and what it would take. This is spec open question #5, and the point is to answer it from
+having seen the gap rather than guessing at it now.
+
+- [ ] **Step 5: Redraw a layer, re-export, render again — the core principle**
+
+Change the art: redraw part of a limb, or move a bone. Let autosave settle, reload
+`/verify.html?source=autosave`, and confirm the character still exports and still renders.
+
+This is the check the entire project exists to pass. Everything else in the plan is machinery for
+it: because mesh and weights are *derived* rather than stored, changing the drawing after rigging
+must require no repair work. Report the `[verify]` line before and after, and both screenshots.
+
+If this step fails, that is the most important finding in the project — report it rather than
+working around it.
 
 - [ ] **Step 6: Commit**
 

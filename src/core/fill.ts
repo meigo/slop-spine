@@ -1,0 +1,259 @@
+/**
+ * Flood fill (paint bucket) using a scanline algorithm.
+ * Operates on raw ImageData for performance.
+ */
+
+import { dilateMask } from "./mask-ops";
+import { enclosedRegion } from "./fill-holes";
+
+export interface FillOptions {
+  /** Color tolerance for matching the clicked pixel's color (0-255) */
+  tolerance?: number;
+  /** Alpha threshold (0-255): pixels with alpha >= this are treated as walls */
+  alphaThreshold?: number;
+  /** Expand fill by this many pixels to cover antialiased edges. Fill draws behind existing content. */
+  expand?: number;
+}
+
+export function floodFill(
+  ctx: CanvasRenderingContext2D,
+  startX: number,
+  startY: number,
+  fillColor: { r: number; g: number; b: number; a: number },
+  options: FillOptions = {},
+) {
+  const tolerance = options.tolerance ?? 32;
+  const alphaThreshold = options.alphaThreshold ?? 0;
+  const expand = options.expand ?? 0;
+
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+
+  const sx = Math.round(startX);
+  const sy = Math.round(startY);
+  if (sx < 0 || sx >= w || sy < 0 || sy >= h) return;
+
+  const startIdx = (sy * w + sx) * 4;
+  const targetR = data[startIdx];
+  const targetG = data[startIdx + 1];
+  const targetB = data[startIdx + 2];
+  const targetA = data[startIdx + 3];
+
+  // Don't fill if clicking on a wall pixel
+  if (alphaThreshold > 0 && targetA >= alphaThreshold) return;
+
+  // Don't fill if clicking on the same color
+  if (
+    Math.abs(targetR - fillColor.r) <= tolerance &&
+    Math.abs(targetG - fillColor.g) <= tolerance &&
+    Math.abs(targetB - fillColor.b) <= tolerance &&
+    Math.abs(targetA - fillColor.a) <= tolerance
+  ) {
+    return;
+  }
+
+  // --- Pass 1: Scanline flood fill to build a fill mask ---
+  const mask = new Uint8Array(w * h); // 1 = fill, 0 = no fill
+
+  function isWall(pixelIdx: number): boolean {
+    if (alphaThreshold > 0) {
+      return data[pixelIdx + 3] >= alphaThreshold;
+    }
+    return false;
+  }
+
+  function matches(pixelIdx: number): boolean {
+    const pi = pixelIdx >> 2;
+    if (mask[pi]) return false;
+    if (isWall(pixelIdx)) return false;
+    return (
+      Math.abs(data[pixelIdx] - targetR) <= tolerance &&
+      Math.abs(data[pixelIdx + 1] - targetG) <= tolerance &&
+      Math.abs(data[pixelIdx + 2] - targetB) <= tolerance &&
+      Math.abs(data[pixelIdx + 3] - targetA) <= tolerance
+    );
+  }
+
+  const stack: [number, number][] = [[sx, sy]];
+
+  while (stack.length > 0) {
+    const [x, y] = stack.pop()!;
+    let idx = (y * w + x) * 4;
+
+    if (!matches(idx)) continue;
+
+    // Find left edge
+    let lx = x;
+    while (lx > 0 && matches((y * w + lx - 1) * 4)) {
+      lx--;
+    }
+
+    // Scan right, filling mask
+    let rx = lx;
+    let aboveAdded = false;
+    let belowAdded = false;
+
+    while (rx < w) {
+      idx = (y * w + rx) * 4;
+      if (!matches(idx)) break;
+
+      mask[y * w + rx] = 1;
+
+      if (y > 0) {
+        const aboveIdx = ((y - 1) * w + rx) * 4;
+        if (matches(aboveIdx)) {
+          if (!aboveAdded) {
+            stack.push([rx, y - 1]);
+            aboveAdded = true;
+          }
+        } else {
+          aboveAdded = false;
+        }
+      }
+
+      if (y < h - 1) {
+        const belowIdx = ((y + 1) * w + rx) * 4;
+        if (matches(belowIdx)) {
+          if (!belowAdded) {
+            stack.push([rx, y + 1]);
+            belowAdded = true;
+          }
+        } else {
+          belowAdded = false;
+        }
+      }
+
+      rx++;
+    }
+  }
+
+  // --- Pass 2: Expand the mask by N pixels (morphological dilation) ---
+  let finalMask: Uint8Array<ArrayBuffer> = mask;
+  if (expand > 0) {
+    finalMask = dilateMask(mask, w, h, expand) as Uint8Array<ArrayBuffer>;
+  }
+
+  // --- Pass 3: Apply fill behind existing content ---
+  if (expand > 0) {
+    // Draw fill to a temp canvas, then composite behind existing content
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const tempCtx = tempCanvas.getContext("2d")!;
+    const tempData = tempCtx.createImageData(w, h);
+    const td = tempData.data;
+
+    for (let i = 0; i < w * h; i++) {
+      if (finalMask[i]) {
+        const pi = i * 4;
+        td[pi] = fillColor.r;
+        td[pi + 1] = fillColor.g;
+        td[pi + 2] = fillColor.b;
+        td[pi + 3] = fillColor.a;
+      }
+    }
+    tempCtx.putImageData(tempData, 0, 0);
+
+    // Draw fill behind existing content using destination-over
+    ctx.save();
+    ctx.resetTransform();
+    ctx.globalCompositeOperation = "destination-over";
+    ctx.drawImage(tempCanvas, 0, 0);
+    ctx.restore();
+  } else {
+    // No expand — write directly to the image data (original behavior)
+    for (let i = 0; i < w * h; i++) {
+      if (finalMask[i]) {
+        const pi = i * 4;
+        data[pi] = fillColor.r;
+        data[pi + 1] = fillColor.g;
+        data[pi + 2] = fillColor.b;
+        data[pi + 3] = fillColor.a;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+}
+
+/** [0..255] r,g,b → "#rrggbb" (lowercase); clamps + rounds. */
+export function rgbToHex(r: number, g: number, b: number): string {
+  const h = (n: number) =>
+    Math.max(0, Math.min(255, Math.round(n)))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
+export function hexToRgba(
+  hex: string,
+  opacity: number,
+): { r: number; g: number; b: number; a: number } {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const a = Math.round((opacity / 100) * 255);
+  return { r, g, b, a };
+}
+
+/**
+ * Every region the ink on `canvas` encloses, as a device-px mask — READ-ONLY, so the caller can ask
+ * "is there anything to fill?" before it touches the document. `area` 0 means nothing was enclosed
+ * (an open outline, or art that is already solid), which the caller must report rather than
+ * silently no-op: a no-op and a successful fill of an already-white interior look identical.
+ *
+ * Split from the paint step on purpose. `fillAllEnclosed` used to do both, which forced the caller
+ * to materialise a keyframe (and, past a layer's end, EXTEND the layer) before it could know the
+ * answer — leaving the model mutated on the nothing-to-fill path.
+ */
+export function enclosedFillRegion(
+  canvas: HTMLCanvasElement,
+  opts: { gap?: number; expand?: number } = {},
+): { region: Uint8Array; area: number } {
+  const w = canvas.width,
+    h = canvas.height;
+  if (w === 0 || h === 0) return { region: new Uint8Array(0), area: 0 };
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  const { data } = ctx.getImageData(0, 0, w, h);
+  return enclosedRegion(data, w, h, { gap: opts.gap, expand: opts.expand });
+}
+
+/**
+ * Paint `region` (device px, sized to the ctx's canvas) in one pass BEHIND existing content — the
+ * animator's white-under-black-outline.
+ *
+ * Always composites with destination-over, unlike `floodFill`, which only takes that path when
+ * `expand > 0`. Painting behind is the point here, not an artefact of the expand pass.
+ */
+export function fillRegionBehind(
+  ctx: CanvasRenderingContext2D,
+  region: Uint8Array,
+  fillColor: { r: number; g: number; b: number; a: number },
+): void {
+  const w = ctx.canvas.width,
+    h = ctx.canvas.height;
+  if (w === 0 || h === 0 || region.length < w * h) return;
+
+  const temp = document.createElement("canvas");
+  temp.width = w;
+  temp.height = h;
+  const tctx = temp.getContext("2d")!;
+  const img = tctx.createImageData(w, h);
+  const td = img.data;
+  for (let i = 0; i < w * h; i++) {
+    if (!region[i]) continue;
+    const pi = i * 4;
+    td[pi] = fillColor.r;
+    td[pi + 1] = fillColor.g;
+    td[pi + 2] = fillColor.b;
+    td[pi + 3] = fillColor.a;
+  }
+  tctx.putImageData(img, 0, 0);
+
+  ctx.save();
+  ctx.resetTransform(); // the region is in device px; the caller's CTM must not scale it
+  ctx.globalCompositeOperation = "destination-over";
+  ctx.drawImage(temp, 0, 0);
+  ctx.restore();
+}
