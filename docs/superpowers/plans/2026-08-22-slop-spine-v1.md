@@ -33,6 +33,10 @@ we write the format ourselves.
 - Package versions matching slop-animator: svelte ^5.55.1, vite ^8.0.1, tailwindcss ^4.2.2,
   typescript ~5.9.3, vitest ^4.1.2, delaunator ^5.1.0, perfect-freehand ^1.2.3, fflate ^0.8.3.
 - Source of copied modules: `/Users/meigo/Projects/slop/slop-animator/src/core/`.
+- **Every task runs `npm test` AND `npm run check` before committing, and both must be clean.**
+  `npm run check` is svelte-check; `npm run build` runs it before `tsc`, so a check failure is a
+  broken build. Tasks 1-3 originally verified only `npm test`, and a svelte-check failure
+  introduced in Task 1 survived two clean reviews as a result.
 
 ---
 
@@ -166,10 +170,17 @@ export default mount(App, { target: document.getElementById("app")! });
 
 `src/App.svelte`:
 ```svelte
+<script lang="ts"></script>
+
 <main class="h-dvh w-dvw bg-neutral-900 text-neutral-200">
   <p class="p-4 font-mono text-sm">slop-spine</p>
 </main>
 ```
+
+The empty `<script lang="ts">` block is required, not decoration: without a script block svelte2tsx
+emits no type declaration for the component, so `main.ts`'s default import resolves to implicit
+`any` and the strict tsconfig rejects it — which breaks `svelte-check`, and therefore
+`npm run build`.
 
 `src/app.css`:
 ```css
@@ -183,6 +194,10 @@ Expected: dev server starts, page shows "slop-spine".
 
 Run: `npm test`
 Expected: vitest exits 0 with "No test files found" (or passes trivially).
+
+Run: `npm run check`
+Expected: `0 ERRORS 0 WARNINGS`. If it reports a missing declaration file for `./App.svelte`, the
+`<script lang="ts">` block above is missing.
 
 - [ ] **Step 5: Commit**
 
