@@ -104,14 +104,16 @@ describe("writeSkeleton", () => {
     expect(mesh.vertices[0]).toBe(1);
     expect(mesh.uvs.length).toBe(6);
     for (const uv of mesh.uvs) { expect(uv).toBeGreaterThanOrEqual(0); expect(uv).toBeLessThanOrEqual(1); }
-    // Exact uv for vertex 0, hand-derived from the fixture's region and page (see report): vertex
-    // (1000,1400) minus trim origin (1000,1300) = (0,100) local-to-region; region sits at
-    // (pageX,pageY)=(2,2) on a 2048x256 page, so uv = ((2+0)/2048, (2+100)/256).
-    // Asserted exactly (not toBeCloseTo): both denominators are powers of two, so the divisions
-    // are exact in double precision. This would catch a v-flip (e.g. using trim.height - ly),
-    // which `toBeGreaterThanOrEqual(0)`/`toBeLessThanOrEqual(1)` alone cannot.
-    expect(mesh.uvs[0]).toBe(2 / 2048);
-    expect(mesh.uvs[1]).toBe(102 / 256);
+    // Exact uv for vertex 0, hand-derived from the fixture's canvas (see report): Spine mesh uvs
+    // are normalized against the ORIGINAL untrimmed canvas, y-down — not the trimmed region and
+    // not the atlas page (the runtime's own AtlasAttachmentLoader remaps region-local uvs into the
+    // packed atlas using the .atlas file's offsets/bounds; doing that remapping here as well would
+    // double-apply it). Vertex (1000,1400) on a 2048x2048 canvas gives uv = (1000/2048, 1400/2048).
+    // Asserted exactly (not toBeCloseTo): the denominator is a power of two, so the division is
+    // exact in double precision. This would catch a v-flip (e.g. using canvas.height - v.y), which
+    // `toBeGreaterThanOrEqual(0)`/`toBeLessThanOrEqual(1)` alone cannot.
+    expect(mesh.uvs[0]).toBe(1000 / 2048);
+    expect(mesh.uvs[1]).toBe(1400 / 2048);
   });
 
   it("emits physics only for bones with wobble", () => {

@@ -36,7 +36,7 @@ export function toBoneLocal(w: World, p: { x: number; y: number }) {
 }
 
 export function writeSkeleton(input: SkeletonInput) {
-  const { doc, meshes, weights, regions, page } = input;
+  const { doc, meshes, weights, regions } = input;
   const canvas = doc.canvas;
   const conv = (x: number, y: number) => toSkeletonSpace(canvas, x, y);
 
@@ -74,9 +74,11 @@ export function writeSkeleton(input: SkeletonInput) {
     const uvs: number[] = [];
     const verts: number[] = [];
     mesh.vertices.forEach((v, i) => {
-      const lx = v.x - region.trim.x;
-      const ly = v.y - region.trim.y;
-      uvs.push((region.pageX + lx) / page.width, (region.pageY + ly) / page.height);
+      // Spine mesh uvs are normalized against the ORIGINAL untrimmed canvas, y-down — not the
+      // trimmed region and not the atlas page. The runtime's own AtlasAttachmentLoader remaps
+      // these into the packed region using the .atlas file's offsets/bounds; baking any of that
+      // placement into the uvs here double-applies it.
+      uvs.push(v.x / canvas.width, v.y / canvas.height);
 
       const world = conv(v.x, v.y);
       const infl = w[i];
