@@ -53,15 +53,33 @@ export function addLayer(name: string): number {
   return layer.id;
 }
 
+/** Undoable: pushes a command that re-inserts the layer, its slot (at its original `order` —
+ *  see Slot.order's comment) and its bind at their original array indices. The layer's `canvas`
+ *  is retained by the closure, so undo brings the pixels back for free. */
 export function removeLayer(id: number) {
   const index = document.layers.findIndex((l) => l.id === id);
   if (index === -1) return;
-  document.layers.splice(index, 1);
   const slotIndex = document.slots.findIndex((s) => s.layerId === id);
   if (slotIndex === -1) return;
+  const [layer] = document.layers.splice(index, 1);
   const [slot] = document.slots.splice(slotIndex, 1);
-  document.binds = document.binds.filter((b) => b.slot !== slot.name);
+  const bindIndex = document.binds.findIndex((b) => b.slot === slot.name);
+  const [bind] = bindIndex === -1 ? [undefined] : document.binds.splice(bindIndex, 1);
   invalidate(slot.name);
+  history.push({
+    undo() {
+      document.layers.splice(index, 0, layer);
+      document.slots.splice(slotIndex, 0, slot);
+      if (bind !== undefined) document.binds.splice(bindIndex, 0, bind);
+      markLayerDirty(id);
+    },
+    redo() {
+      document.layers.splice(document.layers.findIndex((l) => l.id === id), 1);
+      document.slots.splice(document.slots.findIndex((s) => s.name === slot.name), 1);
+      document.binds = document.binds.filter((b) => b.slot !== slot.name);
+      invalidate(slot.name);
+    },
+  });
 }
 
 /** Moves the layer to array index `index` (0 = bottom of the stack). */
