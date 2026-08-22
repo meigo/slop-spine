@@ -1469,15 +1469,36 @@ Bones named to the sloppets contract: `root`, `body`, `head`, `mouth`, `arm-fron
 `arm-back1/2`, `hair1/2`. Slots `body`, `head`, `mouth`, `eyes`, `arm-front`, `arm-back`.
 Wobble on hair, arms and head.
 
-- [ ] **Step 4: Load it in `spine-test.html` unmodified**
+- [ ] **Step 4: Render the real character through the same verification page**
 
-Expected: the existing viseme and bone-poking code drives it. The eyes slot will need `Eyes open`
-/ `Eyes closed` attachments, which v1 does not produce — note what is missing rather than
-building it now (this is spec open question #5, and the answer should come from seeing the gap).
+**Do not modify the sloppets repo** — same rule as Task 7. Reuse `verify.html` instead.
 
-- [ ] **Step 5: Redraw a layer, re-export, load again**
+Extend `src/verify/main.ts` to accept a source: default stays the code-built fixture, but
+`?source=autosave` restores the autosaved document from IndexedDB and runs the identical export
+chain on it. That is a small change and it keeps one verification path rather than two — the page
+still renders exactly the bytes `exportBundle` produced.
 
-Expected: still works. This is the manual check that guards the core principle.
+Then: draw the character, let autosave settle, open `/verify.html?source=autosave`, and report the
+`[verify]` line plus a screenshot.
+
+Expected: a recognisable character, upright, parts in the right places relative to each other.
+
+**Known gap, do not fix:** the `eyes` slot in the sloppets contract needs `Eyes open` / `Eyes
+closed` attachments, and v1 emits one attachment per slot with no swap mechanism. Report what is
+missing and what it would take. This is spec open question #5, and the point is to answer it from
+having seen the gap rather than guessing at it now.
+
+- [ ] **Step 5: Redraw a layer, re-export, render again — the core principle**
+
+Change the art: redraw part of a limb, or move a bone. Let autosave settle, reload
+`/verify.html?source=autosave`, and confirm the character still exports and still renders.
+
+This is the check the entire project exists to pass. Everything else in the plan is machinery for
+it: because mesh and weights are *derived* rather than stored, changing the drawing after rigging
+must require no repair work. Report the `[verify]` line before and after, and both screenshots.
+
+If this step fails, that is the most important finding in the project — report it rather than
+working around it.
 
 - [ ] **Step 6: Commit**
 
