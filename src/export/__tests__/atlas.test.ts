@@ -31,4 +31,10 @@ describe("packAtlas", () => {
       expect(r.pageY + r.trim.height).toBeLessThanOrEqual(pageHeight);
     }
   });
+
+  it("grows page width to fit wide regions", () => {
+    const { regions, pageWidth } = packAtlas([item("wide", 2048, 100)], 2048, 2048);
+    const r = regions[0];
+    expect(r.pageX + r.trim.width).toBeLessThanOrEqual(pageWidth);
+  });
 });

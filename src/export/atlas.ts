@@ -18,6 +18,10 @@ export function packAtlas(
   pageWidth = 2048,
 ): { regions: Region[]; pageWidth: number; pageHeight: number; text: string } {
   const sorted = [...items].sort((a, b) => b.trim.height - a.trim.height);
+  // Grow page width to fit the widest item with padding.
+  const widest = items.length ? Math.max(...items.map((it) => it.trim.width)) : 0;
+  const needed = widest + 2 * PAD;
+  pageWidth = Math.max(pageWidth, needed > 0 ? 2 ** Math.ceil(Math.log2(needed)) : 0);
   const regions: Region[] = [];
   let x = PAD, y = PAD, rowHeight = 0;
   for (const it of sorted) {
