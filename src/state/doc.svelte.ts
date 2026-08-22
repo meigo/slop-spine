@@ -51,3 +51,10 @@ export function toggleVisible(id: number) {
   const layer = document.layers.find((l) => l.id === id);
   if (layer) layer.visible = !layer.visible;
 }
+
+/** Bumps a layer's revision. Call after any operation that changes its pixels — Task 10's
+ *  derivation cache keys on this to know when to regenerate the mesh and weights. */
+export function markLayerDirty(id: number) {
+  const l = document.layers.find((x) => x.id === id);
+  if (l) l.revision += 1;
+}
