@@ -350,6 +350,11 @@
     canvasEl.addEventListener("pointercancel", onRigPointerUp);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    // Bridge for Toolbar.svelte's "Fit View" button — the viewport instance is local to this
+    // component (needs its own anchor element), so a window event is the smallest cross-component
+    // link back to it. See Toolbar.svelte's dispatch.
+    const onFitViewRequest = () => viewport?.fitView(doc.canvas.width, doc.canvas.height);
+    window.addEventListener("slop-spine:fit-view", onFitViewRequest);
 
     return () => {
       cleanupTouch();
@@ -366,6 +371,7 @@
       canvasEl.removeEventListener("pointercancel", onRigPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("slop-spine:fit-view", onFitViewRequest);
     };
   });
 </script>

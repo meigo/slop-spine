@@ -82,6 +82,13 @@ export function toggleVisible(id: number) {
   if (layer) layer.visible = !layer.visible;
 }
 
+/** Sets a layer's opacity (0-1, clamped). Honoured by Canvas.svelte's redraw (`ctx.globalAlpha`)
+ *  and, below 1, by the Spine writer (emits slot `color` alpha — see spine-json.ts). */
+export function setLayerOpacity(id: number, opacity: number) {
+  const layer = document.layers.find((l) => l.id === id);
+  if (layer) layer.opacity = Math.max(0, Math.min(1, opacity));
+}
+
 /** Bumps a layer's revision. Call after any operation that changes its pixels — Task 10's
  *  derivation cache keys on this to know when to regenerate the mesh and weights. */
 export function markLayerDirty(id: number) {

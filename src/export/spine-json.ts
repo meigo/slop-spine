@@ -66,7 +66,12 @@ export function writeSkeleton(input: SkeletonInput) {
   const layerIndex = (s: Slot) => doc.layers.findIndex((l) => l.id === s.layerId);
   const slots = [...doc.slots]
     .sort((a, b) => layerIndex(a) - layerIndex(b))
-    .map((s) => ({ name: s.name, bone: s.bone, attachment: s.name }));
+    .map((s) => {
+      const layer = doc.layers.find((l) => l.id === s.layerId);
+      const alpha = layer ? Math.round(Math.max(0, Math.min(1, layer.opacity)) * 255) : 255;
+      const color = alpha < 255 ? { color: `ffffff${alpha.toString(16).padStart(2, "0")}` } : {};
+      return { name: s.name, bone: s.bone, attachment: s.name, ...color };
+    });
 
   const attachments: Record<string, Record<string, unknown>> = {};
   for (const slot of doc.slots) {

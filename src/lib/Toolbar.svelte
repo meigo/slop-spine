@@ -45,11 +45,18 @@
       console.error("load failed", err);
     }
   }
+
+  // Canvas.svelte owns the Viewport instance (created against its own anchor element in
+  // onMount) and isn't in this task's file scope, so a plain window event is the smallest
+  // bridge from this button to `viewport.fitView()` — see Canvas.svelte's matching listener.
+  function onFitView() {
+    window.dispatchEvent(new Event("slop-spine:fit-view"));
+  }
 </script>
 
 <input type="file" accept=".zip" class="hidden" bind:this={fileInput} onchange={onFileChosen} />
 
-<div class="flex items-center gap-2 border-b border-neutral-800 bg-neutral-900 p-2 text-sm text-neutral-200">
+<div class="flex flex-wrap items-center gap-2 border-b border-neutral-800 bg-neutral-900 p-2 text-sm text-neutral-200">
   <div class="flex overflow-hidden rounded border border-neutral-700">
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={onSave}>Save</button>
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={() => fileInput?.click()}>Load</button>
@@ -70,6 +77,9 @@
     >
       Redo
     </button>
+  </div>
+  <div class="flex overflow-hidden rounded border border-neutral-700">
+    <button class="px-3 py-1 hover:bg-neutral-800" onclick={onFitView}>Fit View</button>
   </div>
   <div class="flex overflow-hidden rounded border border-neutral-700">
     <button
