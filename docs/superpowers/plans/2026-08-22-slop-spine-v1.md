@@ -90,8 +90,25 @@ writing (testable, no DOM), `lib/` is UI. Nothing in `rig/` or `export/` imports
 
 ```bash
 A=/Users/meigo/Projects/slop/slop-animator
-cp $A/vite.config.ts $A/svelte.config.js $A/tsconfig.json $A/.gitignore .
+cp $A/svelte.config.js $A/tsconfig.json $A/.gitignore .
 ```
+
+Do **not** copy `vite.config.ts` — slop-animator's imports `@vitejs/plugin-basic-ssl`, which this
+project does not depend on. Write this instead:
+
+```ts
+import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import tailwindcss from "@tailwindcss/vite";
+
+export default defineConfig({
+  plugins: [svelte(), tailwindcss()],
+  test: { passWithNoTests: true },
+});
+```
+
+`passWithNoTests` is load-bearing for Step 4. The copied `.gitignore` already ignores
+`.superpowers/`, `node_modules/` and `dist/` — leave it as is.
 
 - [ ] **Step 2: Write `package.json`**
 
@@ -810,14 +827,16 @@ describe("writeSkeleton", () => {
   };
 
   it("emits 4.2 with the expected top-level shape", () => {
-    const s = writeSkeleton(input as never);
+    const s = writeSkeleton(input) as any;
     expect(s.skeleton.spine).toBe("4.2");
     expect(s.bones.map((b: { name: string }) => b.name)).toEqual(["root", "body"]);
+    // `as any` above is deliberate: the return value is a file format, not an API, so it has no
+    // declared interface. Tests live under src/ and `npm run build` typechecks them.
     expect(s.slots[0]).toEqual({ name: "body", bone: "body", attachment: "body" });
   });
 
   it("emits a weighted mesh: boneCount then (index,x,y,weight) per influence", () => {
-    const s = writeSkeleton(input as never);
+    const s = writeSkeleton(input) as any;
     const mesh = s.skins[0].attachments.body.body;
     expect(mesh.type).toBe("mesh");
     expect(mesh.hull).toBe(3);
@@ -829,7 +848,7 @@ describe("writeSkeleton", () => {
   });
 
   it("emits physics only for bones with wobble", () => {
-    const s = writeSkeleton(input as never);
+    const s = writeSkeleton(input) as any;
     expect(s.physics ?? []).toEqual([]);
   });
 });
@@ -1164,7 +1183,11 @@ git add -A && git commit -m "feat: app shell with canvas, viewport and layer pan
 **Files:**
 - Modify: `src/lib/Canvas.svelte`, `src/lib/Toolbar.svelte`
 - Copy: `src/core/brush.ts`, `ink-brush.ts`, `stamp-brush.ts`, `brush-textures.ts`,
-  `pressure-curve.ts`, `fill.ts`, `fill-holes.ts`, `selection.ts`, `mask-ops.ts`
+  `pressure-curve.ts`, `fill.ts`, `fill-holes.ts`, `mask-ops.ts`
+
+**No lasso in v1.** slop-animator's `selection.ts` imports `ref-transform.ts`, `rigid-grid.ts` and
+`selection-map.ts`; the last maps document coordinates onto per-frame cells, which is that app's
+frame-centric model and meaningless here. Do not copy `selection.ts` and do not reimplement lasso.
 
 **Interfaces:**
 - Consumes: `ui.selectedLayerId` (Task 8)
@@ -1176,10 +1199,10 @@ git add -A && git commit -m "feat: app shell with canvas, viewport and layer pan
 ```bash
 A=/Users/meigo/Projects/slop/slop-animator/src/core
 cp $A/brush.ts $A/ink-brush.ts $A/stamp-brush.ts $A/brush-textures.ts $A/pressure-curve.ts \
-   $A/fill.ts $A/fill-holes.ts $A/selection.ts $A/mask-ops.ts src/core/
+   $A/fill.ts $A/fill-holes.ts $A/mask-ops.ts src/core/
 ```
 
-- [ ] **Step 2: Wire brush, eraser, fill and lasso to the selected layer**
+- [ ] **Step 2: Wire brush, eraser and fill to the selected layer**
 
 Pointer events → `input.ts` → brush engine → draw into `layer.canvas`. Tool selection and brush
 size/opacity live in `ui.svelte.ts`; Toolbar renders them.
@@ -1195,13 +1218,13 @@ export function markLayerDirty(id: number) {
 ```
 
 `Layer.revision` is already declared in `src/rig/document.ts` (Task 3). Call this at the end of
-every stroke, fill and lasso operation. Task 10 keys its derivation cache on it.
+every stroke and fill operation. Task 10 keys its derivation cache on it.
 
 - [ ] **Step 4: Verify by looking at it**
 
 Run: `npm run dev`
-Expected: draw on a layer, erase, fill an enclosed area, lasso-select. Pressure works with a
-pointer that reports it.
+Expected: draw on a layer, erase, fill an enclosed area. Pressure works with a pointer that
+reports it.
 
 - [ ] **Step 5: Commit**
 
@@ -1227,38 +1250,25 @@ git add -A && git commit -m "feat: drawing tools on layers"
   - `doc` mutations: `addBone(parent, x, y)`, `moveBone(name, x, y)`, `setBoneLength(name, len)`,
     `removeBone(name)`, `setWobble(name, v)`, `setBind(slot, bones)`
 
-- [ ] **Step 1: Write the failing test for cache invalidation**
+**No unit test for this task.** `deriveSlot` reaches a layer's `HTMLCanvasElement` through
+`maskFromCanvas`, so testing it in node would mean adding jsdom or happy-dom. The cache is verified
+by eye in Step 5 instead, which is the stronger check anyway: redraw a limb and watch the mesh and
+weights regenerate on their own.
 
-```ts
-import { describe, it, expect } from "vitest";
-import { deriveSlot, invalidate, __cacheSize } from "../derive";
-
-describe("derive cache", () => {
-  it("recomputes when the bone signature changes", () => {
-    // Build a minimal doc with one slot; derive twice with the same input, then move a bone.
-    // Expect: identical object on the second call, a different object after the move.
-  });
-});
-```
-
-Fill this in against the real `deriveSlot` signature once written — the assertion that matters is
-that moving a bone produces a **new** weights array while leaving the mesh object identical (the
-mesh does not depend on bones).
-
-- [ ] **Step 2: Write `src/rig/derive.ts`**
+- [ ] **Step 1: Write `src/rig/derive.ts`**
 
 A `Map<string, { key: string; mesh: RigMesh; weights: Influence[][] }>`. The key is
 `` `${layer.revision}|${doc.density}|${boneSig}` `` where `boneSig` is the bound bones' names,
 positions, rotations and lengths joined. On a miss, recompute mesh (only if the mesh part of the
 key changed) and weights, then store.
 
-- [ ] **Step 3: Write `RigOverlay.ts`**
+- [ ] **Step 2: Write `RigOverlay.ts`**
 
 Given a 2D context and the derived data, draw: mesh triangles as thin lines; bones as tapered
 segments from origin to tip with a circle at the origin; the selected bone highlighted; and, when
 a bone is selected, tint each vertex by its weight for that bone (0 → transparent, 1 → solid).
 
-- [ ] **Step 4: Wire rig-mode interaction into `Canvas.svelte`**
+- [ ] **Step 3: Wire rig-mode interaction into `Canvas.svelte`**
 
 - Drag from empty space → move the nearest bone origin, **dragging its descendants with it** by
   the same delta (bones are stored absolute, so children do not follow automatically).
@@ -1268,19 +1278,19 @@ a bone is selected, tint each vertex by its weight for that bone (0 → transpar
 - Alt-drag a bone in "pose" state → temporarily offset it so deformation can be checked live,
   released on mouse-up. Pose is transient and never stored.
 
-- [ ] **Step 5: Write `RigPanel.svelte`**
+- [ ] **Step 4: Write `RigPanel.svelte`**
 
 Density slider (global), wobble slider (selected bone), bind checkbox list (selected slot), and a
 bone-name field.
 
-- [ ] **Step 6: Verify by looking at it**
+- [ ] **Step 5: Verify by looking at it**
 
 Run: `npm run dev`
 Expected: draw a limb, place two bones down it, see the mesh appear, select a bone and see the
 weight tint, alt-drag it and watch the drawing deform. **Then redraw part of the limb and confirm
 the mesh and weights regenerate on their own** — this is the core principle, visible.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "feat: rig mode with bones, derivation cache and overlay"

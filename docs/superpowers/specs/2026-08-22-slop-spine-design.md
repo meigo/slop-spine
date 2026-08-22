@@ -223,12 +223,14 @@ is a reference for *structure* (bone names, physics values, slot layout), not a 
 
 ## v1 scope
 
-**In:** drawing (brush, eraser, fill, lasso), layers, bone placement, auto-mesh, auto-weights
+**In:** drawing (brush, eraser, fill), layers, bone placement, auto-mesh, auto-weights
 (Euclidean), wobble, pose preview, atlas packing with trim, Spine 4.2 export, loose PNG export,
 save/load, autosave.
 
 **Out:** animation timeline, IK, path constraints, skins, deform sculpting, PSD import, weight
-painting, vertex dragging, geodesic weights, multiple atlas pages, multiple templates.
+painting, vertex dragging, geodesic weights, multiple atlas pages, multiple templates, lasso
+selection (slop-animator's `selection.ts` drags in its frame-centric cell-mapping layer; not worth
+it for the least load-bearing drawing tool).
 
 PSD import is out only because nothing needs it yet — `slop-paint` already writes Spine-tagged
 PSDs, so it's additive whenever existing art must come in.
