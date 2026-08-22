@@ -1,0 +1,61 @@
+import { zipSync, strToU8 } from "fflate";
+import type { RigDocument } from "../rig/document";
+import { maskFromCanvas, meshFromMask, type RigMesh } from "../rig/mesh";
+import { computeWeights, type Influence } from "../rig/weights";
+import { trimLayer } from "./trim";
+import { packAtlas } from "./atlas";
+import { writeSkeleton } from "./spine-json";
+
+async function blobBytes(b: Blob): Promise<Uint8Array> {
+  return new Uint8Array(await b.arrayBuffer());
+}
+
+export async function exportBundle(doc: RigDocument): Promise<Blob> {
+  const meshes: Record<string, RigMesh> = {};
+  const weights: Record<string, Influence[][]> = {};
+  const items: { name: string; trim: ReturnType<typeof trimLayer> }[] = [];
+
+  for (const slot of doc.slots) {
+    const layer = doc.layers.find((l) => l.id === slot.layerId)!;
+    const bindNames = doc.binds.find((b) => b.slot === slot.name)?.bones ?? [slot.bone];
+    const bones = doc.bones.filter((b) => bindNames.includes(b.name));
+    const mesh = meshFromMask(maskFromCanvas(layer.canvas), doc.density);
+    meshes[slot.name] = mesh;
+    weights[slot.name] = computeWeights(mesh, bones);
+    items.push({ name: slot.name, trim: trimLayer(layer.canvas) });
+  }
+
+  const atlas = packAtlas(items, doc.canvas.width, doc.canvas.height);
+
+  // Blit each trimmed layer onto the atlas page.
+  const page = document.createElement("canvas");
+  page.width = atlas.pageWidth;
+  page.height = atlas.pageHeight;
+  const pctx = page.getContext("2d")!;
+  for (const r of atlas.regions) {
+    const slot = doc.slots.find((s) => s.name === r.name)!;
+    const layer = doc.layers.find((l) => l.id === slot.layerId)!;
+    pctx.drawImage(layer.canvas, r.trim.x, r.trim.y, r.trim.width, r.trim.height,
+                   r.pageX, r.pageY, r.trim.width, r.trim.height);
+  }
+
+  const skeleton = writeSkeleton({
+    doc, meshes, weights,
+    regions: atlas.regions,
+    page: { width: atlas.pageWidth, height: atlas.pageHeight },
+  });
+
+  const files: Record<string, Uint8Array> = {
+    "skeleton.spinejson": strToU8(JSON.stringify(skeleton)),
+    "skeleton.atlas": strToU8(atlas.text),
+    "skeleton.png": await blobBytes(await canvasBlob(page)),
+  };
+  for (const layer of doc.layers) {
+    files[`layers/${layer.name}.png`] = await blobBytes(await canvasBlob(layer.canvas));
+  }
+  return new Blob([zipSync(files)], { type: "application/zip" });
+}
+
+function canvasBlob(c: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((res) => c.toBlob((b) => res(b!), "image/png"));
+}
