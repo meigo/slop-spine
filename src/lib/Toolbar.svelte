@@ -1,8 +1,36 @@
 <script lang="ts">
   import { ui } from "../state/ui.svelte";
+  import { document as doc, loadDocument } from "../state/doc.svelte";
+  import { saveProject, loadProject } from "../persist/project-file";
+
+  let fileInput: HTMLInputElement | undefined = $state();
+
+  async function onSave() {
+    const blob = await saveProject(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "project.zip";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function onFileChosen(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    loadDocument(await loadProject(file));
+  }
 </script>
 
+<input type="file" accept=".zip" class="hidden" bind:this={fileInput} onchange={onFileChosen} />
+
 <div class="flex items-center gap-2 border-b border-neutral-800 bg-neutral-900 p-2 text-sm text-neutral-200">
+  <div class="flex overflow-hidden rounded border border-neutral-700">
+    <button class="px-3 py-1 hover:bg-neutral-800" onclick={onSave}>Save</button>
+    <button class="px-3 py-1 hover:bg-neutral-800" onclick={() => fileInput?.click()}>Load</button>
+  </div>
   <div class="flex overflow-hidden rounded border border-neutral-700">
     <button
       class="px-3 py-1 {ui.mode === 'draw' ? 'bg-neutral-700' : 'hover:bg-neutral-800'}"

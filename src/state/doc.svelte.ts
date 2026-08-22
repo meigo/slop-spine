@@ -200,3 +200,27 @@ export function setBind(slotName: string, bones: string[]) {
   if (bind) bind.bones = bones;
   else document.binds.push({ slot: slotName, bones });
 }
+
+// --- Persistence (Task 11) ----------------------------------------------------------------------
+
+/** Replaces the live document's contents in place — keeps the same $state object so existing
+ *  bindings stay wired, only its fields change — and fast-forwards the id counters past whatever
+ *  is in `doc`. Without this, a reloaded document whose highest layer id (or slot order) exceeds
+ *  the reset-to-1 counters would collide with restored ids on the next add. */
+export function loadDocument(doc: RigDocument) {
+  document.canvas = doc.canvas;
+  document.density = doc.density;
+  document.layers = doc.layers;
+  document.slots = doc.slots;
+  document.bones = doc.bones;
+  document.binds = doc.binds;
+  invalidate();
+
+  nextLayerId = doc.layers.reduce((m, l) => Math.max(m, l.id), 0) + 1;
+  nextSlotOrder = doc.slots.reduce((m, s) => Math.max(m, s.order), -1) + 1;
+  const boneIndices = doc.bones
+    .map((b) => /^bone(\d+)$/.exec(b.name))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => Number(m[1]));
+  nextBoneIndex = boneIndices.length > 0 ? Math.max(...boneIndices) + 1 : 1;
+}
