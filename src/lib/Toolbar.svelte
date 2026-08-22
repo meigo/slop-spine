@@ -2,20 +2,32 @@
   import { ui } from "../state/ui.svelte";
   import { document as doc, loadDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
+  import { exportBundle } from "../export/bundle";
 
   let fileInput: HTMLInputElement | undefined = $state();
 
+  function downloadBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function onSave() {
     try {
-      const blob = await saveProject(doc);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "project.zip";
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(await saveProject(doc), "project.zip");
     } catch (e) {
       console.error("save failed", e);
+    }
+  }
+
+  async function onExport() {
+    try {
+      downloadBlob(await exportBundle(doc), "character.zip");
+    } catch (e) {
+      console.error("export failed", e);
     }
   }
 
@@ -38,6 +50,7 @@
   <div class="flex overflow-hidden rounded border border-neutral-700">
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={onSave}>Save</button>
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={() => fileInput?.click()}>Load</button>
+    <button class="px-3 py-1 hover:bg-neutral-800" onclick={onExport}>Export</button>
   </div>
   <div class="flex overflow-hidden rounded border border-neutral-700">
     <button

@@ -1,6 +1,8 @@
 import { unzipSync, strFromU8 } from "fflate";
 import { buildFixture } from "../export/fixture";
 import { exportBundle } from "../export/bundle";
+import { restore } from "../persist/autosave";
+import type { RigDocument } from "../rig/document";
 
 // Narrow shims for the CDN globals — just the surface this page touches.
 interface PixiBounds {
@@ -46,8 +48,21 @@ interface SpineNS {
 
 const { PIXI, spine } = window as unknown as { PIXI: PixiNS; spine: SpineNS };
 
+/** Default is the code-built fixture; `?source=autosave` restores the autosaved document from
+ *  IndexedDB instead and runs it through the identical export chain — one verification path,
+ *  not two, so this page always renders exactly the bytes `exportBundle` produced. */
+async function loadDoc(): Promise<RigDocument> {
+  const source = new URLSearchParams(location.search).get("source");
+  if (source === "autosave") {
+    const doc = await restore();
+    if (!doc) throw new Error("no autosave found");
+    return doc;
+  }
+  return buildFixture();
+}
+
 async function main() {
-  const doc = buildFixture();
+  const doc = await loadDoc();
   const bundle = await exportBundle(doc);
   const zip = unzipSync(new Uint8Array(await bundle.arrayBuffer()));
 

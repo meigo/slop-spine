@@ -1,7 +1,8 @@
 import { zipSync, strToU8 } from "fflate";
 import type { RigDocument } from "../rig/document";
-import { maskFromCanvas, meshFromMask, type RigMesh } from "../rig/mesh";
-import { computeWeights, type Influence } from "../rig/weights";
+import type { RigMesh } from "../rig/mesh";
+import type { Influence } from "../rig/weights";
+import { deriveSlot } from "../rig/derive";
 import { trimLayer } from "./trim";
 import { packAtlas } from "./atlas";
 import { writeSkeleton } from "./spine-json";
@@ -17,11 +18,11 @@ export async function exportBundle(doc: RigDocument): Promise<Blob> {
 
   for (const slot of doc.slots) {
     const layer = doc.layers.find((l) => l.id === slot.layerId)!;
-    const bindNames = doc.binds.find((b) => b.slot === slot.name)?.bones ?? [slot.bone];
-    const bones = doc.bones.filter((b) => bindNames.includes(b.name));
-    const mesh = meshFromMask(maskFromCanvas(layer.canvas), doc.density);
+    // Same cache the rig overlay reads (Task 10) — export and the on-screen mesh/weights can
+    // never disagree, since both derive from the identical (layer.revision, density, bind) key.
+    const { mesh, weights: slotWeights } = deriveSlot(doc, slot.name);
     meshes[slot.name] = mesh;
-    weights[slot.name] = computeWeights(mesh, bones);
+    weights[slot.name] = slotWeights;
     items.push({ name: slot.name, trim: trimLayer(layer.canvas) });
   }
 
