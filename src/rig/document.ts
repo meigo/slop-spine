@@ -15,7 +15,9 @@ export interface Slot {
   layerId: number;
   /** Bone this slot hangs from. */
   bone: string;
-  /** Draw order, ascending = drawn first (behind). */
+  /** No longer read anywhere — the Spine writer sorts slots by the slot's layer's index in
+   *  doc.layers instead, since that's the one array a layer reorder actually mutates. Kept on
+   *  the type rather than removed (a later cleanup); don't trust it for draw order. */
   order: number;
 }
 

@@ -1,4 +1,4 @@
-import type { RigDocument, Bone } from "../rig/document";
+import type { RigDocument, Bone, Slot } from "../rig/document";
 import type { RigMesh } from "../rig/mesh";
 import type { Influence } from "../rig/weights";
 import type { Region } from "./atlas";
@@ -60,8 +60,12 @@ export function writeSkeleton(input: SkeletonInput) {
   });
 
   const boneIndex = new Map(doc.bones.map((b, i) => [b.name, i]));
+  // doc.layers array order is what the canvas already draws (and what the layer panel's drag
+  // reorder mutates) — sort by that instead of slot.order, which is assigned once at layer
+  // creation and never rewritten by a reorder (see Slot.order's comment in rig/document.ts).
+  const layerIndex = (s: Slot) => doc.layers.findIndex((l) => l.id === s.layerId);
   const slots = [...doc.slots]
-    .sort((a, b) => a.order - b.order)
+    .sort((a, b) => layerIndex(a) - layerIndex(b))
     .map((s) => ({ name: s.name, bone: s.bone, attachment: s.name }));
 
   const attachments: Record<string, Record<string, unknown>> = {};
