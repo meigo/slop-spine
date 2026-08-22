@@ -1,5 +1,4 @@
 import type { Bone, RigDocument } from "./document";
-import { defaultBind } from "./document";
 import { maskFromCanvas, meshFromMask, type RigMesh } from "./mesh";
 import { computeWeights, type Influence } from "./weights";
 
@@ -32,6 +31,11 @@ const EMPTY: { mesh: RigMesh; weights: Influence[][] } = {
   weights: [],
 };
 
+/** Every bone except root — the fallback for a slot whose stored bind list is empty (see below). */
+function allNonRootBoneNames(doc: RigDocument): string[] {
+  return doc.bones.filter((b) => b.name !== "root").map((b) => b.name);
+}
+
 /** Mesh + weights for one slot, memoised on (layer.revision, doc.density, bound-bone signature).
  *  The mesh depends only on the layer's pixels and density, not on bones — moving a bone reuses
  *  the same mesh object and only recomputes weights, which is what keeps bone-dragging responsive. */
@@ -41,7 +45,12 @@ export function deriveSlot(doc: RigDocument, slotName: string): { mesh: RigMesh;
   const layer = doc.layers.find((l) => l.id === slot.layerId);
   if (!layer) return EMPTY;
 
-  const bindNames = doc.binds.find((b) => b.slot === slotName)?.bones ?? defaultBind(doc, slot);
+  // A stored bind list can be empty — not just absent — when the layer was created before any
+  // bone existed (addLayer's defaultBind() call filters root out of an all-root bone list). An
+  // empty list is "not yet bound", not "bound to nothing": fall back to every bone rather than
+  // leaving the slot with zero influences, which collapses it to the skeleton origin on export.
+  const stored = doc.binds.find((b) => b.slot === slotName)?.bones;
+  const bindNames = stored?.length ? stored : allNonRootBoneNames(doc);
   const bones = doc.bones.filter((b) => bindNames.includes(b.name));
 
   const meshKey = `${layer.revision}|${doc.density}`;
