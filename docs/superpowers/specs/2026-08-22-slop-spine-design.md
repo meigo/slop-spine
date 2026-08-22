@@ -196,6 +196,20 @@ Two modes over one canvas.
 Mesh and weights render as an overlay in rig mode — triangles, and weight tint for the selected
 bone. Seeing wrong weights is what makes the upstream fix obvious.
 
+## Hard requirement: the exported background is transparent
+
+A character composites over a backdrop, so the exported atlas PNG must be transparent everywhere the
+artist did not paint, with antialiased edges preserved as partial alpha. Layer surfaces stay alpha 0
+where nothing is drawn; the white/checkerboard page is painted at render time into the on-screen
+canvas only and must never reach a `layer.canvas`.
+
+This is not merely a nicety — export trims each layer to its opaque bounding box via the alpha
+channel, so a layer with an opaque background trims to the full 2048² page and destroys the atlas.
+
+It is also the one property that **cannot be eyeballed**: white paint and empty space are visually
+identical. So it is checked, not looked at — `verify.html` counts alpha in the exported PNG and
+fails loudly if a background has been baked in.
+
 ## Verification
 
 The one criterion that matters:
