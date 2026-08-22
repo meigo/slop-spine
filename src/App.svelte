@@ -12,6 +12,10 @@
   // and arming on that blank state (see the $effect below) would overwrite a real autosave with
   // nothing if a stray change landed before `restore()` resolves.
   let ready = $state(false);
+  // A restore() that throws leaves `doc` blank for reasons that have nothing to do with there
+  // being no autosave (a first run) — arming autosave in that case would overwrite the real
+  // autosave with the blank document. Only a null restore (genuinely no autosave yet) arms.
+  let restoreFailed = false;
 
   onMount(async () => {
     try {
@@ -19,6 +23,7 @@
       if (restored) loadDocument(restored);
     } catch (e) {
       console.error("autosave restore failed", e);
+      restoreFailed = true;
     }
     ready = true;
   });
@@ -57,7 +62,7 @@
       for (const n of bd.bones) n;
     }
 
-    if (!ready) return;
+    if (!ready || restoreFailed) return;
     armAutosave(() => doc);
   });
 </script>
