@@ -1,6 +1,7 @@
 import { emptyDocument, defaultBind, type RigDocument, type Layer, type Slot, type Bone } from "../rig/document";
 import { invalidate } from "../rig/derive";
 import { ui } from "./ui.svelte";
+import { history } from "./history.svelte";
 
 /** The single open document. Mutated in place (push/splice/property writes) so the
  *  exported binding never needs reassigning — see the mutations below. */
@@ -228,6 +229,10 @@ export function loadDocument(doc: RigDocument) {
   // land on a layer that's hidden behind an opaque one.
   ui.selectedLayerId = null;
   ui.selectedBone = null;
+  // Otherwise every retained command still holds a ctx for the previous document's detached
+  // canvases — undoing after a load is a silent no-op that dirties whatever layer in the new
+  // document happens to share the old command's layer id.
+  history.clear();
 
   nextLayerId = doc.layers.reduce((m, l) => Math.max(m, l.id), 0) + 1;
   nextSlotOrder = doc.slots.reduce((m, s) => Math.max(m, s.order), -1) + 1;
