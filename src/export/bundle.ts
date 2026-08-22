@@ -52,7 +52,9 @@ export async function exportBundle(doc: RigDocument): Promise<Blob> {
     "skeleton.png": await blobBytes(await canvasBlob(page)),
   };
   for (const layer of doc.layers) {
-    files[`layers/${layer.name}.png`] = await blobBytes(await canvasBlob(layer.canvas));
+    // Keyed on id, not name: layer names aren't unique (only slot names are uniquified), so two
+    // layers named the same would collide on this key and one PNG would silently go missing.
+    files[`layers/${layer.id}.png`] = await blobBytes(await canvasBlob(layer.canvas));
   }
   return new Blob([zipSync(files)], { type: "application/zip" });
 }
