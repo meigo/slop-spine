@@ -68,7 +68,7 @@ for a stored sculpt to be destroyed.
 | Bone name, parent, position, length | world-space scalars | yes |
 | Slot → layer, draw order | names | yes |
 | Physics wobble amount per bone | one scalar | yes |
-| Mesh density | one parameter | yes |
+| Mesh density — document default + per-slot override | **parameters** | yes |
 | Mesh vertices dragged individually | per-vertex | no |
 | Weights painted per vertex | per-vertex | no |
 | Deform (sculpted mouth shapes) | index-welded | not in v1 |
@@ -97,7 +97,7 @@ RigDocument
   slots[]   { name, layerId, order }
   bones[]   { name, parentName, x, y, rotation, length, wobble }
   binds[]   { slotName, boneNames[] }        // defaulted, override by clicking
-  density   number                            // one global value
+  density   number                            // document default; Slot.density overrides per part
 
   derived (cache; delete it and nothing is lost but recompute time)
     meshes  : slotName → { vertices, triangles, hull, uvs }
@@ -190,7 +190,8 @@ wrong; the round-trip below catches it.
 Two modes over one canvas.
 
 - **Draw** — brush, eraser, fill, lasso; layer list with reorder, rename, visibility.
-- **Rig** — drag from a parent to create a child bone; click to set binds; one density slider;
+- **Rig** — drag from a parent to create a child bone; click to set binds; a density slider showing
+  the selected slot's effective value; every visible layer's mesh drawn, selected one highlighted;
   one wobble slider per bone; drag bones to check deformation live.
 
 Mesh and weights render as an overlay in rig mode — triangles, and weight tint for the selected
@@ -259,7 +260,16 @@ Non-blocking; resolve while building.
    wrong place.
 2. **Bone creation gesture.** Drag-from-parent is conventional. Check it against Pencil on iPad,
    where slop-animator's finger/Pencil split applies.
-3. **Mesh density default.** ~~Pick a default spacing~~ **Resolved 2026-08-22 by Task 7's render.**
+3. **Mesh density.** **Revised 2026-08-22 — one global value was wrong.** The hand-rigged reference
+   varies density **16x across parts**: Mouth 652 px/vertex, Arm b 1,970, Eyes 2,477, Head 5,266,
+   Body 10,586. The pattern tracks **how much a part deforms**, not how big it is — the mouth is
+   finely meshed because it is sculpted for visemes, the body is nearly rigid and barely needs
+   vertices. One slider cannot express that: too coarse and thin parts collapse, fine enough for hair
+   and the torso carries hundreds of useless vertices that are re-weighted on every bone drag. v1.1
+   adds `Slot.density?` overriding the document default. The earlier resolution, still correct as the
+   *default*, follows.
+
+   ~~Pick a default spacing~~ **Resolved 2026-08-22 by Task 7's render.**
    At `density: 48` the milestone fixture's limbs were visibly under-covered — a 300×80 arm tapered
    to a wedge, the body's corner was shaved — because `boundaryPoints` decimates to at least
    `density` apart, so a thin shape gets ~2 boundary points across its short dimension. Default is
