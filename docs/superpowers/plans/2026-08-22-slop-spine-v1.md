@@ -1368,6 +1368,17 @@ a bone is selected, tint each vertex by its weight for that bone (0 → transpar
 Density slider (global), wobble slider (selected bone), bind checkbox list (selected slot), and a
 bone-name field.
 
+**Density range and default, informed by Task 7's render** (this resolves spec open question #3).
+The milestone rendered its fixture at `density: 48` and the limbs came out visibly under-covered —
+a 300×80 arm tapered to a wedge and the body's corner was shaved. The cause is that `boundaryPoints`
+decimates silhouette points to at least `density` apart, so an 80px-tall shape gets roughly two
+boundary points across its short dimension and the hull under-covers the source rect.
+
+So: slider range **8–96**, default **24**. Make the mesh overlay visible while dragging it, because
+the right value is a judgement about the character's thinnest limb and is much easier to see than to
+reason about. Do not try to derive density per-slot from shape size — one global slider you can see
+the effect of is the simpler thing that works.
+
 - [ ] **Step 5: Verify by looking at it**
 
 Run: `npm run dev`
@@ -1449,6 +1460,10 @@ on-screen overlay can never disagree.
 Downloads `<projectName>.zip`.
 
 - [ ] **Step 3: Draw a real sloppets character and export it**
+
+Before drawing, set density from what Task 7's render showed: 48 under-covers thin limbs, so start
+around 24 and check the mesh overlay against the character's thinnest part (usually an arm or a
+hair strand) before exporting.
 
 Bones named to the sloppets contract: `root`, `body`, `head`, `mouth`, `arm-front1/2`,
 `arm-back1/2`, `hair1/2`. Slots `body`, `head`, `mouth`, `eyes`, `arm-front`, `arm-back`.

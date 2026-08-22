@@ -245,8 +245,12 @@ Non-blocking; resolve while building.
    wrong place.
 2. **Bone creation gesture.** Drag-from-parent is conventional. Check it against Pencil on iPad,
    where slop-animator's finger/Pencil split applies.
-3. **Mesh density default.** The hand-made rig runs 10–44 vertices per part. Pick a default
-   spacing that lands there on a 2048² canvas.
+3. **Mesh density default.** ~~Pick a default spacing~~ **Resolved 2026-08-22 by Task 7's render.**
+   At `density: 48` the milestone fixture's limbs were visibly under-covered — a 300×80 arm tapered
+   to a wedge, the body's corner was shaved — because `boundaryPoints` decimates to at least
+   `density` apart, so a thin shape gets ~2 boundary points across its short dimension. Default is
+   **24**, slider range 8–96, with the mesh overlay visible while dragging. The right value is a
+   judgement about the character's thinnest limb, easier to see than to derive.
 4. **Bone naming.** sloppets drives bones by name. v1 is conventional — you name them right.
    Whether it ever becomes an enforced template is the template-vs-inference question, deferred
    until a second character exists.
