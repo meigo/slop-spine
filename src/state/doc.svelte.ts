@@ -1,5 +1,6 @@
 import { emptyDocument, defaultBind, type RigDocument, type Layer, type Slot, type Bone } from "../rig/document";
 import { invalidate } from "../rig/derive";
+import { ui } from "./ui.svelte";
 
 /** The single open document. Mutated in place (push/splice/property writes) so the
  *  exported binding never needs reassigning — see the mutations below. */
@@ -215,6 +216,11 @@ export function loadDocument(doc: RigDocument) {
   document.bones = doc.bones;
   document.binds = doc.binds;
   invalidate();
+  // Otherwise a coincidental id match against the new document carries the old selection onto
+  // an unrelated layer/bone — nothing crashes (consumers degrade via `?? null`), but strokes can
+  // land on a layer that's hidden behind an opaque one.
+  ui.selectedLayerId = null;
+  ui.selectedBone = null;
 
   nextLayerId = doc.layers.reduce((m, l) => Math.max(m, l.id), 0) + 1;
   nextSlotOrder = doc.slots.reduce((m, s) => Math.max(m, s.order), -1) + 1;
