@@ -9,7 +9,7 @@
     setReach,
     descendantsOf,
   } from "../state/doc.svelte";
-  import { ui } from "../state/ui.svelte";
+  import { ui, overlayFlags } from "../state/ui.svelte";
   import type { Tool } from "../state/ui.svelte";
   import { Viewport } from "../core/viewport";
   import { setupInput } from "../core/input";
@@ -110,18 +110,22 @@
     }
     ctx.globalAlpha = 1;
 
-    if (ui.showBones || ui.tool === "bone") {
-      // Every visible layer's slot, not just the selected one — bleed (Task 21) is a relationship
-      // between two parts' meshes, invisible if only one is ever drawn.
-      const slots = doc.layers
-        .filter((l) => l.visible)
-        .map((l) => doc.slots.find((s) => s.layerId === l.id))
-        .filter((s) => s !== undefined)
-        .map((slot) => {
-          const derived = deriveSlot(doc, slot.name);
-          return { ...derived, selected: slot.layerId === ui.selectedLayerId };
-        });
-      drawRigOverlay(ctx, { bones: doc.bones, selectedBone: ui.selectedBone, slots }, viewport.zoom);
+    const flags = overlayFlags(ui.tool, ui.showBones);
+    if (flags.bones || flags.mesh || flags.tint) {
+      // Only derive when something that needs a mesh is actually being drawn. Under a paint tool
+      // this list stays empty and deriveSlot never runs — bones alone need no mesh.
+      const slots =
+        flags.mesh || flags.tint
+          ? doc.layers
+              .filter((l) => l.visible)
+              .map((l) => doc.slots.find((s) => s.layerId === l.id))
+              .filter((s) => s !== undefined)
+              .map((slot) => {
+                const derived = deriveSlot(doc, slot.name);
+                return { ...derived, selected: slot.layerId === ui.selectedLayerId };
+              })
+          : [];
+      drawRigOverlay(ctx, { bones: doc.bones, selectedBone: ui.selectedBone, slots }, viewport.zoom, flags);
     }
   }
 

@@ -28,3 +28,25 @@ export const ui = $state({
    *  RigOverlay's flags), full opacity under the bone tool. */
   showBones: true,
 });
+
+export interface OverlayFlags {
+  bones: boolean;
+  /** Draw bones at reduced alpha — a reference while painting, not the thing being edited. */
+  faint: boolean;
+  mesh: boolean;
+  tint: boolean;
+  capsule: boolean;
+}
+
+/** What the rig overlay draws, given the active tool and the bone-visibility toggle. Pure, so the
+ *  rule is testable without a canvas. */
+export function overlayFlags(tool: Tool, showBones: boolean): OverlayFlags {
+  const rigging = tool === "bone";
+  return {
+    bones: rigging || showBones,
+    faint: !rigging,
+    mesh: rigging,
+    tint: rigging,
+    capsule: rigging,
+  };
+}

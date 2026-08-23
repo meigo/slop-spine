@@ -1,6 +1,7 @@
 import type { Bone } from "../rig/document";
 import type { RigMesh } from "../rig/mesh";
 import type { Influence } from "../rig/weights";
+import type { OverlayFlags } from "../state/ui.svelte";
 
 /** One visible layer's derived slot, as the overlay needs it. */
 export interface SlotOverlay {
@@ -15,7 +16,8 @@ export interface RigOverlayData {
   selectedBone: string | null;
   /** Every visible layer's derived slot. Weight tint for `selectedBone` is drawn against each of
    *  these in place — a slot whose bind list excludes that bone simply has no weight for it, so
-   *  it stays untinted without this needing to filter by bind. */
+   *  it stays untinted without this needing to filter by bind. May be empty when the mesh and
+   *  tint are not being drawn. */
   slots: SlotOverlay[];
 }
 
@@ -27,37 +29,53 @@ const DIM_FACTOR = 0.35;
 /** Draws every visible slot's mesh (dimmed, selected slot on top at full strength), weight tint
  *  for the selected bone across all of them, and the bones. `zoom` is the viewport zoom so line
  *  widths and handle sizes stay a constant size on screen. */
-export function drawRigOverlay(ctx: CanvasRenderingContext2D, data: RigOverlayData, zoom: number) {
+export function drawRigOverlay(
+  ctx: CanvasRenderingContext2D,
+  data: RigOverlayData,
+  zoom: number,
+  flags: OverlayFlags,
+) {
   const { bones, selectedBone, slots } = data;
   const screenPx = (px: number) => px / zoom;
 
-  for (const slot of slots) {
-    if (slot.selected || slot.mesh.vertices.length === 0) continue;
-    drawMeshTriangles(ctx, slot.mesh, screenPx, DIM_FACTOR);
-  }
-  const selectedSlot = slots.find((s) => s.selected);
-  if (selectedSlot && selectedSlot.mesh.vertices.length > 0) {
-    drawMeshTriangles(ctx, selectedSlot.mesh, screenPx, 1);
-  }
-
-  if (selectedBone) {
+  if (flags.mesh) {
     for (const slot of slots) {
-      if (slot.mesh.vertices.length > 0) drawWeightTint(ctx, slot.mesh, slot.weights, selectedBone, screenPx);
+      if (slot.selected || slot.mesh.vertices.length === 0) continue;
+      drawMeshTriangles(ctx, slot.mesh, screenPx, DIM_FACTOR);
+    }
+    const selectedSlot = slots.find((s) => s.selected);
+    if (selectedSlot && selectedSlot.mesh.vertices.length > 0) {
+      drawMeshTriangles(ctx, selectedSlot.mesh, screenPx, 1);
     }
   }
 
-  for (const bone of bones) {
-    // root is canvas-centre with no length — not a drawable/editable bone (see document.ts).
-    if (bone.name === "root") continue;
-    drawBone(ctx, bone, bone.name === selectedBone, screenPx);
+  if (flags.tint) {
+    if (selectedBone) {
+      for (const slot of slots) {
+        if (slot.mesh.vertices.length > 0) drawWeightTint(ctx, slot.mesh, slot.weights, selectedBone, screenPx);
+      }
+    }
   }
 
-  // Selected bone only, on top of everything else — drawing every bone's region at once makes
-  // the canvas unreadable (Task 3 brief). A bone with reach === undefined draws nothing.
-  const selected = bones.find((b) => b.name === selectedBone);
-  if (selected && selected.reach !== undefined) {
-    drawCapsule(ctx, selected, selected.reach, screenPx);
-    drawReachHandle(ctx, selected, screenPx);
+  if (flags.bones) {
+    const prevAlpha = ctx.globalAlpha;
+    if (flags.faint) ctx.globalAlpha = 0.35;
+    for (const bone of bones) {
+      // root is canvas-centre with no length — not a drawable/editable bone (see document.ts).
+      if (bone.name === "root") continue;
+      drawBone(ctx, bone, bone.name === selectedBone, screenPx);
+    }
+    ctx.globalAlpha = prevAlpha;
+  }
+
+  if (flags.capsule) {
+    // Selected bone only, on top of everything else — drawing every bone's region at once makes
+    // the canvas unreadable (Task 3 brief). A bone with reach === undefined draws nothing.
+    const selected = bones.find((b) => b.name === selectedBone);
+    if (selected && selected.reach !== undefined) {
+      drawCapsule(ctx, selected, selected.reach, screenPx);
+      drawReachHandle(ctx, selected, screenPx);
+    }
   }
 }
 
