@@ -141,7 +141,7 @@
     void doc.layers.map((l) => [l.id, l.visible, l.opacity, l.revision]);
     void size.width;
     void size.height;
-    // Rig mode: mode/selection changes and bone edits also need a redraw. doc.bones is read
+    // Tool, bone-visibility, and selection changes, plus bone edits, all need a redraw. doc.bones is read
     // field-by-field (not just .length) so dragging a bone re-triggers this.
     void ui.tool;
     void ui.showBones;
@@ -261,7 +261,8 @@
   }
 
   // --- Rig mode: bones. Runs alongside setupInput's own listeners on canvasEl (handleStroke
-  // no-ops outside draw mode, so the two never fight over a stroke). Raw PointerEvents rather than
+  // no-ops for any non-painting tool (see isPaintTool), so the two never fight over a stroke).
+  // Raw PointerEvents rather than
   // input.ts's InputPoint pipeline, because bone dragging wants exact deltas and shift/alt, neither
   // of which the stroke pipeline carries. ---
   const RIG_HIT_RADIUS = 14; // screen px, converted to canvas px by dividing by zoom below
