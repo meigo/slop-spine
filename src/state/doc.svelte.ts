@@ -130,7 +130,7 @@ export function markLayerDirty(id: number) {
 //     refuse to touch it. The UI (Canvas.svelte) also never offers it as a drag target.
 
 /** All bones transitively parented under `name` (not including `name` itself). Exported for
- *  RigPanel.svelte, which needs the same set to exclude invalid parent choices from its dropdown. */
+ *  Inspector.svelte, which needs the same set to exclude invalid parent choices from its dropdown. */
 export function descendantsOf(name: string): Bone[] {
   const result: Bone[] = [];
   const stack = [name];

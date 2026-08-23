@@ -25,10 +25,12 @@
   function onAdd() {
     const id = addLayer(`Layer ${doc.layers.length + 1}`);
     ui.selectedLayerId = id;
+    ui.selectedBone = null;
   }
 
   function onSelect(layer: Layer) {
     ui.selectedLayerId = layer.id;
+    ui.selectedBone = null;
   }
 
   function onRemove(id: number) {
@@ -100,7 +102,7 @@
   }
 </script>
 
-<div class="flex w-56 flex-col border-l border-border bg-surface text-sm text-text">
+<div class="flex flex-col h-full bg-surface text-sm text-text">
   <div class="flex items-center justify-between border-b border-border p-2">
     <span class="font-mono text-xs uppercase text-text-secondary">Layers</span>
     <button

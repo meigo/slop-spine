@@ -3,8 +3,7 @@
   import Toolbar from "./lib/Toolbar.svelte";
   import Canvas from "./lib/Canvas.svelte";
   import LayerPanel from "./lib/LayerPanel.svelte";
-  import RigPanel from "./lib/RigPanel.svelte";
-  import { ui } from "./state/ui.svelte";
+  import Inspector from "./lib/Inspector.svelte";
   import { document as doc, loadDocument } from "./state/doc.svelte";
   import { armAutosave, restore } from "./persist/autosave";
 
@@ -48,12 +47,13 @@
     <div class="min-w-0 flex-1">
       <Canvas />
     </div>
-    <!-- Transitional and mode-ish on purpose: keeps density and the bind override reachable
-         until increment 2 replaces both panels with the tree and inspector. -->
-    {#if ui.tool === "bone"}
-      <RigPanel />
-    {:else}
-      <LayerPanel />
-    {/if}
+    <div class="flex w-56 flex-col border-l border-border bg-surface">
+      <div class="min-h-0 flex-1 overflow-hidden">
+        <LayerPanel />
+      </div>
+      <div class="max-h-[50%] shrink-0 overflow-y-auto border-t border-border">
+        <Inspector />
+      </div>
+    </div>
   </div>
 </main>

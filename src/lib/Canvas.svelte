@@ -403,6 +403,9 @@
     if (near) {
       ui.selectedBone = near.name;
       dragState = { type: "move", bone: near.name };
+    } else {
+      ui.selectedBone = null;
+      return;
     }
   }
 
