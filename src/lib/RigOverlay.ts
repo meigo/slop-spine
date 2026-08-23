@@ -2,23 +2,48 @@ import type { Bone } from "../rig/document";
 import type { RigMesh } from "../rig/mesh";
 import type { Influence } from "../rig/weights";
 
+/** One visible layer's derived slot, as the overlay needs it. */
+export interface SlotOverlay {
+  mesh: RigMesh;
+  weights: Influence[][];
+  /** True for the currently-selected layer's slot — drawn at full strength, on top. */
+  selected: boolean;
+}
+
 export interface RigOverlayData {
   bones: Bone[];
   selectedBone: string | null;
-  /** The selected layer's slot mesh/weights, or null if that layer has no slot yet. */
-  mesh: RigMesh | null;
-  weights: Influence[][] | null;
+  /** Every visible layer's derived slot. Weight tint for `selectedBone` is drawn against each of
+   *  these in place — a slot whose bind list excludes that bone simply has no weight for it, so
+   *  it stays untinted without this needing to filter by bind. */
+  slots: SlotOverlay[];
 }
 
-/** Draws the mesh, bones and (when a bone is selected) its weight tint on top of the canvas.
- *  `zoom` is the viewport zoom so line widths and handle sizes stay a constant size on screen. */
+/** Fraction of full mesh-line opacity used for every mesh except the selected one — faint enough
+ *  that the selected mesh reads as "in front", strong enough that the rest of the character (and
+ *  any weight tint drawn on it) stays visible rather than vanishing. */
+const DIM_FACTOR = 0.35;
+
+/** Draws every visible slot's mesh (dimmed, selected slot on top at full strength), weight tint
+ *  for the selected bone across all of them, and the bones. `zoom` is the viewport zoom so line
+ *  widths and handle sizes stay a constant size on screen. */
 export function drawRigOverlay(ctx: CanvasRenderingContext2D, data: RigOverlayData, zoom: number) {
-  const { bones, selectedBone, mesh, weights } = data;
+  const { bones, selectedBone, slots } = data;
   const screenPx = (px: number) => px / zoom;
 
-  if (mesh && mesh.vertices.length > 0) {
-    drawMeshTriangles(ctx, mesh, screenPx);
-    if (selectedBone && weights) drawWeightTint(ctx, mesh, weights, selectedBone, screenPx);
+  for (const slot of slots) {
+    if (slot.selected || slot.mesh.vertices.length === 0) continue;
+    drawMeshTriangles(ctx, slot.mesh, screenPx, DIM_FACTOR);
+  }
+  const selectedSlot = slots.find((s) => s.selected);
+  if (selectedSlot && selectedSlot.mesh.vertices.length > 0) {
+    drawMeshTriangles(ctx, selectedSlot.mesh, screenPx, 1);
+  }
+
+  if (selectedBone) {
+    for (const slot of slots) {
+      if (slot.mesh.vertices.length > 0) drawWeightTint(ctx, slot.mesh, slot.weights, selectedBone, screenPx);
+    }
   }
 
   for (const bone of bones) {
@@ -28,9 +53,14 @@ export function drawRigOverlay(ctx: CanvasRenderingContext2D, data: RigOverlayDa
   }
 }
 
-function drawMeshTriangles(ctx: CanvasRenderingContext2D, mesh: RigMesh, screenPx: (px: number) => number) {
+function drawMeshTriangles(
+  ctx: CanvasRenderingContext2D,
+  mesh: RigMesh,
+  screenPx: (px: number) => number,
+  alphaFactor: number,
+) {
   ctx.save();
-  ctx.strokeStyle = "rgba(56, 189, 248, 0.55)";
+  ctx.strokeStyle = `rgba(56, 189, 248, ${0.55 * alphaFactor})`;
   ctx.lineWidth = screenPx(1);
   for (const [a, b, c] of mesh.triangles) {
     const va = mesh.vertices[a];

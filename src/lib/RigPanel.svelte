@@ -39,8 +39,8 @@
   }
 </script>
 
-<div class="flex w-56 flex-col gap-3 overflow-y-auto border-l border-neutral-800 bg-neutral-900 p-2 text-sm text-neutral-200">
-  <span class="font-mono text-xs uppercase text-neutral-400">Rig</span>
+<div class="flex w-56 flex-col gap-3 overflow-y-auto border-l border-border bg-surface p-2 text-sm text-text">
+  <span class="font-mono text-xs uppercase text-text-secondary">Rig</span>
 
   <label class="flex flex-col gap-1">
     Density
@@ -55,12 +55,12 @@
       Bone name
       <div class="flex items-center gap-1">
         <input
-          class="min-w-0 flex-1 bg-neutral-950 px-1 text-neutral-200"
+          class="min-w-0 flex-1 bg-canvas-bg px-1 text-text"
           bind:value={nameDraft}
           onblur={commitName}
           onkeydown={(e) => e.key === "Enter" && commitName()}
         />
-        <button class="shrink-0 text-neutral-500 hover:text-neutral-200" onclick={onDeleteBone} title="Delete bone">
+        <button class="shrink-0 text-text-muted hover:text-text" onclick={onDeleteBone} title="Delete bone">
           ✕
         </button>
       </div>
@@ -74,14 +74,14 @@
       </div>
     </label>
   {:else}
-    <p class="text-xs text-neutral-500">Shift-drag from a bone (or empty canvas, for the first one) to add one.</p>
+    <p class="text-xs text-text-muted">Shift-drag from a bone (or empty canvas, for the first one) to add one.</p>
   {/if}
 
   {#if selectedSlot}
     <div class="flex flex-col gap-1">
-      <span class="text-xs text-neutral-400">Bind — {selectedSlot.name}</span>
+      <span class="text-xs text-text-secondary">Bind — {selectedSlot.name}</span>
       {#if bindableBones.length === 0}
-        <p class="text-xs text-neutral-500">No bones yet.</p>
+        <p class="text-xs text-text-muted">No bones yet.</p>
       {:else}
         <ul class="flex flex-col gap-0.5">
           {#each bindableBones as bone (bone.name)}
@@ -100,6 +100,6 @@
       {/if}
     </div>
   {:else}
-    <p class="text-xs text-neutral-500">Select a layer to bind bones to it.</p>
+    <p class="text-xs text-text-muted">Select a layer to bind bones to it.</p>
   {/if}
 </div>

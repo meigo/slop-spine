@@ -67,7 +67,7 @@
   });
 </script>
 
-<main class="flex h-dvh w-dvw flex-col bg-neutral-900 text-neutral-200">
+<main class="flex h-dvh w-dvw flex-col bg-surface text-text">
   <Toolbar />
   <div class="flex min-h-0 flex-1">
     <div class="min-w-0 flex-1">

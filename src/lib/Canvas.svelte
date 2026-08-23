@@ -8,6 +8,7 @@
     setBoneRotation,
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
+  import type { Tool } from "../state/ui.svelte";
   import { Viewport } from "../core/viewport";
   import { setupInput } from "../core/input";
   import { setupTouchGestures } from "../core/touch-gestures";
@@ -93,18 +94,17 @@
     ctx.globalAlpha = 1;
 
     if (ui.mode === "rig") {
-      const slot = doc.slots.find((s) => s.layerId === ui.selectedLayerId);
-      const derived = slot ? deriveSlot(doc, slot.name) : null;
-      drawRigOverlay(
-        ctx,
-        {
-          bones: doc.bones,
-          selectedBone: ui.selectedBone,
-          mesh: derived?.mesh ?? null,
-          weights: derived?.weights ?? null,
-        },
-        viewport.zoom,
-      );
+      // Every visible layer's slot, not just the selected one — bleed (Task 21) is a relationship
+      // between two parts' meshes, invisible if only one is ever drawn.
+      const slots = doc.layers
+        .filter((l) => l.visible)
+        .map((l) => doc.slots.find((s) => s.layerId === l.id))
+        .filter((s) => s !== undefined)
+        .map((slot) => {
+          const derived = deriveSlot(doc, slot.name);
+          return { ...derived, selected: slot.layerId === ui.selectedLayerId };
+        });
+      drawRigOverlay(ctx, { bones: doc.bones, selectedBone: ui.selectedBone, slots }, viewport.zoom);
     }
   }
 
@@ -144,6 +144,11 @@
   let spaceHeld = $state(false);
   let panning = false;
 
+  // Hold-X temporary eraser (matches slop-paint's App.svelte): remembers the tool active before
+  // X was pressed so keyup can restore it. Set only from onKeyDown's guarded path, so a keyup
+  // that arrives with this still null (X pressed while a text input had focus) is a no-op.
+  let toolBeforeEraser: Tool | null = null;
+
   function onKeyDown(e: KeyboardEvent) {
     const tag = (document.activeElement as HTMLElement | null)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -158,9 +163,35 @@
       if (e.shiftKey) history.redo();
       else history.undo();
     }
+    // Save/Load, matching slop-paint's Ctrl+S/Ctrl+O. Both buttons live in Toolbar.svelte, so a
+    // window event bridges to them the same way Canvas.svelte's own Fit View listener does.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      window.dispatchEvent(new Event("slop-spine:save"));
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
+      e.preventDefault();
+      window.dispatchEvent(new Event("slop-spine:load"));
+      return;
+    }
+    // Tool keys, matching slop-animator's App.svelte exactly.
+    if (e.key === "b") ui.tool = "brush";
+    else if (e.key === "e") ui.tool = "eraser";
+    else if (e.key === "g") ui.tool = "fill";
+    // Hold X for temporary eraser, matching slop-paint's App.svelte. e.repeat is checked so an
+    // auto-repeated keydown doesn't re-remember "eraser" as the tool to restore on keyup.
+    if (e.key === "x" && !e.repeat && !toolBeforeEraser && ui.tool !== "eraser") {
+      toolBeforeEraser = ui.tool;
+      ui.tool = "eraser";
+    }
   }
   function onKeyUp(e: KeyboardEvent) {
     if (e.key === " ") spaceHeld = false;
+    if (e.key === "x" && toolBeforeEraser) {
+      ui.tool = toolBeforeEraser;
+      toolBeforeEraser = null;
+    }
   }
 
   function onStagePointerDown(e: PointerEvent) {
@@ -376,7 +407,7 @@
   });
 </script>
 
-<div bind:this={stage} class="relative h-full w-full touch-none overflow-hidden bg-neutral-950">
+<div bind:this={stage} class="relative h-full w-full touch-none overflow-hidden bg-canvas-bg">
   <div bind:this={anchor} class="absolute h-0 w-0"></div>
   <canvas bind:this={canvasEl} class="absolute left-0 top-0 h-full w-full"></canvas>
 </div>

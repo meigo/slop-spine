@@ -7,11 +7,6 @@ import { history } from "./history.svelte";
  *  exported binding never needs reassigning — see the mutations below. */
 export let document = $state<RigDocument>(emptyDocument());
 
-// Task 7's milestone found 48 (emptyDocument's own default, used by export fixtures/tests) too
-// coarse for thin limbs; Task 10's slider defaults new documents to 24 instead. Not changed in
-// document.ts itself, which fixture.ts and the spine-json tests pin to 48 independently.
-document.density = 24;
-
 let nextLayerId = 1;
 let nextBoneIndex = 1;
 // Monotonic, not derived from document.slots.length — a slot can be removed (see removeLayer),

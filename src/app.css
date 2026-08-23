@@ -1,1 +1,177 @@
 @import "tailwindcss";
+
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-hover: #f5f5f5;
+  --color-surface-active: #ebebeb;
+  --color-border: #e0e0e0;
+  --color-border-light: #f0f0f0;
+  --color-text: #222222;
+  --color-text-secondary: #666666;
+  --color-text-muted: #6b6b6b; /* 5.3:1 on white — #999 was 2.85:1, unreadable */
+  --color-canvas-bg: #f5f5f5;
+  --color-accent: #222222;
+  --color-accent-text: #ffffff;
+  --color-selection: #6688cc;
+}
+
+/* Native controls (checkbox, number spinners, the color swatch, scrollbars) are drawn by the
+   BROWSER, not by our CSS — without color-scheme they stay in the light palette even in dark mode.
+   accent-color tints checkboxes/radios to the app's selection blue instead of the OS default. */
+:root {
+  color-scheme: light;
+  accent-color: var(--color-selection);
+}
+
+.dark {
+  color-scheme: dark;
+  --color-surface: #1e1e1e;
+  --color-surface-hover: #282828;
+  --color-surface-active: #333333;
+  --color-border: #383838;
+  --color-border-light: #2a2a2a;
+  --color-text: #e0e0e0;
+  --color-text-secondary: #999999;
+  --color-text-muted: #8a8a8a; /* 4.7:1 on #1e1e1e — #666 was 2.8:1, unreadable */
+  --color-canvas-bg: #121212;
+  --color-accent: #e0e0e0;
+  --color-accent-text: #1e1e1e;
+  --color-selection: #6688cc;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+/* `100%` resolves against iOS's LAYOUT viewport, which is taller than the visible area whenever
+   Safari's dynamic toolbars are showing — so the app shell ends up taller than the screen and the
+   spare height reads as blank space below the UI once the page is dragged. `dvh` is the visible
+   area, and it is stable here precisely because the page cannot scroll (see below), so the
+   toolbars never hide/show underneath us. */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #app {
+    height: 100dvh;
+  }
+}
+/* The PAGE never scrolls — only the panes inside it do. Without this, any content that overflows
+   the viewport (the layer panel, or a tall timeline against a short window) makes the DOCUMENT
+   scrollable, and on iPad a drag starting on the layer panel or a toolbar — neither of which sets
+   `touch-action` — pans the whole app: the toolbar scrolls out of view and blank space appears
+   under the UI. `overscroll-behavior` alone does NOT cover this; it governs chaining and
+   rubber-banding, not a document that genuinely has somewhere to scroll to. */
+html,
+body {
+  overflow: hidden;
+}
+/* …and `overflow: hidden` on the document is only a HINT on iOS — WebKit still lets a touch drag
+   pan the app when its content exceeds the viewport, which is how the toolbars scrolled off the top
+   and left blank space under the status bar. Taking the root OUT OF FLOW is the actual lock: a
+   fixed element has no scrollable overflow to give, so there is nothing to drag. Keep both — the
+   document rules stop a scrollbar appearing on desktop, this stops the iPad pan.
+   Trade-off, accepted: iOS can no longer scroll a focused input into view above the keyboard. The
+   app's inputs live in centred dialogs or the layer panel, so none sits at the very bottom. */
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+body {
+  overscroll-behavior: none;
+  font-family: system-ui, sans-serif;
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+/* UI chrome isn't selectable (avoids accidental text selection while dragging, esp. on touch);
+   editable fields opt back in so you can still select/edit their text.
+   touch-action: manipulation disables iOS double-tap-to-zoom + the legacy 300ms tap delay on the
+   whole app (the viewport's user-scalable=no is ignored by modern iOS). The canvas stage uses
+   touch-action: none (more restrictive) so its custom gestures are unaffected. */
+#app {
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Range input — thin track, small round thumb */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--color-border);
+}
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--color-border);
+  border: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  border: 2px solid var(--color-surface);
+  margin-top: -4.5px;
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+/* Pressure curve popup — position:fixed so it escapes the ToolOptions bar's overflow clip;
+   its top/left are set from the trigger by positionPopup() when it opens. */
+.curve-popup {
+  position: fixed;
+  z-index: 30;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  display: none;
+}
+.curve-popup.open {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.curve-popup canvas {
+  border-radius: 4px;
+}
+
+/* Focus rings are a KEYBOARD affordance. A ring painted after a mouse/pen click is noise — it was
+   appearing on the timeline ruler after every scrub (a div[role=slider][tabindex=0], which focuses
+   on click) and on the gizmo handles (tabindex=-1, not even reachable by Tab). :focus-visible is
+   the browser's own keyboard-vs-pointer signal, so tabbing still rings every control. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* One consistent, theme-aware keyboard ring instead of each browser's default. */
+:focus-visible {
+  outline: 2px solid var(--color-selection);
+  outline-offset: 1px;
+}

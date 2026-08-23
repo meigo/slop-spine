@@ -120,6 +120,46 @@ describe("writeSkeleton", () => {
     const s = writeSkeleton(input) as any;
     expect(s.physics ?? []).toEqual([]);
   });
+
+  it("exports null attachment for hidden layers, normal attachment for visible ones", () => {
+    const inputWithLayers = {
+      doc: {
+        canvas: { width: 2048, height: 2048 },
+        layers: [
+          { id: 1, name: "body_layer", visible: true, opacity: 1, canvas: {} as any, revision: 0 },
+          { id: 2, name: "hidden_layer", visible: false, opacity: 1, canvas: {} as any, revision: 0 },
+        ],
+        slots: [
+          { name: "body", layerId: 1, bone: "body", order: 0 },
+          { name: "hidden", layerId: 2, bone: "body", order: 1 },
+        ],
+        bones,
+        binds: [
+          { slot: "body", bones: ["body"] },
+          { slot: "hidden", bones: ["body"] },
+        ],
+        density: 48,
+      },
+      meshes: {
+        body: { vertices: [{ x: 1000, y: 1400 }, { x: 1100, y: 1400 }, { x: 1050, y: 1300 }], triangles: [[0, 1, 2] as [number, number, number]], hull: 3 },
+        hidden: { vertices: [{ x: 1000, y: 1400 }, { x: 1100, y: 1400 }, { x: 1050, y: 1300 }], triangles: [[0, 1, 2] as [number, number, number]], hull: 3 },
+      },
+      weights: {
+        body: [[{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }]],
+        hidden: [[{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }]],
+      },
+      regions: [
+        { name: "body", trim: { x: 1000, y: 1300, width: 101, height: 101 }, pageX: 2, pageY: 2 },
+        { name: "hidden", trim: { x: 1000, y: 1300, width: 101, height: 101 }, pageX: 2, pageY: 2 },
+      ],
+      page: { width: 2048, height: 256 },
+    };
+    const s = writeSkeleton(inputWithLayers) as any;
+    const visibleSlot = s.slots.find((sl: { name: string }) => sl.name === "body");
+    const hiddenSlot = s.slots.find((sl: { name: string }) => sl.name === "hidden");
+    expect(visibleSlot).toEqual({ name: "body", bone: "body", attachment: "body" });
+    expect(hiddenSlot.attachment).toBe(null);
+  });
 });
 
 describe("physics", () => {
