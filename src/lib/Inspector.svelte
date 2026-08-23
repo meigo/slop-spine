@@ -7,6 +7,8 @@
     removeBone,
     setParent,
     descendantsOf,
+    snapshotRig,
+    pushRigCommand,
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
 
@@ -24,8 +26,18 @@
     nameDraft = selectedBone?.name ?? "";
   });
 
+  let wobbleBefore: ReturnType<typeof snapshotRig> | null = null;
+  function onWobblePointerDown() {
+    wobbleBefore = snapshotRig();
+  }
   function onWobbleInput(e: Event) {
     if (selectedBone) setWobble(selectedBone.name, Number((e.target as HTMLInputElement).value));
+  }
+  function onWobblePointerUp() {
+    if (wobbleBefore) {
+      pushRigCommand(wobbleBefore, snapshotRig());
+      wobbleBefore = null;
+    }
   }
   function onDensityInput(e: Event) {
     if (!selectedSlot) return;
@@ -38,17 +50,25 @@
     if (!selectedBone) return;
     const bone = selectedBone;
     const oldName = bone.name;
+    const before = snapshotRig();
     renameBone(oldName, nameDraft);
     if (bone.name !== oldName) ui.selectedBone = bone.name;
     nameDraft = bone.name;
+    pushRigCommand(before, snapshotRig());
   }
   function onDeleteBone() {
     if (!selectedBone) return;
+    const before = snapshotRig();
     removeBone(selectedBone.name);
     ui.selectedBone = null;
+    pushRigCommand(before, snapshotRig());
   }
   function onParentChange(e: Event) {
-    if (selectedBone) setParent(selectedBone.name, (e.target as HTMLSelectElement).value);
+    if (selectedBone) {
+      const before = snapshotRig();
+      setParent(selectedBone.name, (e.target as HTMLSelectElement).value);
+      pushRigCommand(before, snapshotRig());
+    }
   }
 </script>
 
@@ -88,7 +108,7 @@
     <label class="flex flex-col gap-1">
       Wobble
       <div class="flex items-center gap-1">
-        <input type="range" min="0" max="1" step="0.01" value={selectedBone.wobble} oninput={onWobbleInput} />
+        <input type="range" min="0" max="1" step="0.01" value={selectedBone.wobble} onpointerdown={onWobblePointerDown} onpointerup={onWobblePointerUp} oninput={onWobbleInput} />
         <span class="w-8 text-right font-mono text-xs">{selectedBone.wobble.toFixed(2)}</span>
       </div>
     </label>

@@ -1,4 +1,4 @@
-import { emptyDocument, type RigDocument, type Layer, type Slot, type Bone } from "../rig/document";
+import { emptyDocument, type RigDocument, type Layer, type Slot, type Bone, type Bind } from "../rig/document";
 import { invalidate } from "../rig/derive";
 import { ui } from "./ui.svelte";
 import { history } from "./history.svelte";
@@ -295,6 +295,39 @@ const MIN_REACH = 1;
 export function setReach(name: string, reach: number) {
   const bone = document.bones.find((b) => b.name === name);
   if (bone) bone.reach = Math.max(MIN_REACH, reach);
+}
+
+export interface RigSnapshot {
+  bones: Bone[];
+  binds: Bind[];
+  slots: Slot[];
+}
+
+export function snapshotRig(): RigSnapshot {
+  return {
+    bones: document.bones.map((b) => ({ ...b })),
+    binds: document.binds.map((b) => ({ slot: b.slot, bones: [...b.bones] })),
+    slots: document.slots.map((s) => ({ ...s })),
+  };
+}
+
+export function applyRig(snap: RigSnapshot) {
+  document.bones = snap.bones.map((b) => ({ ...b }));
+  document.binds = snap.binds.map((b) => ({ slot: b.slot, bones: [...b.bones] }));
+  document.slots = snap.slots.map((s) => ({ ...s }));
+  invalidate();
+}
+
+export function pushRigCommand(before: RigSnapshot, after: RigSnapshot) {
+  if (JSON.stringify(before) === JSON.stringify(after)) return;
+  history.push({
+    undo() {
+      applyRig(before);
+    },
+    redo() {
+      applyRig(after);
+    },
+  });
 }
 
 /** Replaces the set of bones that influence `slotName`'s weights (see rig/derive.ts). */

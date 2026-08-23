@@ -7,7 +7,11 @@
     setBoneLength,
     setBoneRotation,
     setReach,
+    removeBone,
     descendantsOf,
+    snapshotRig,
+    pushRigCommand,
+    type RigSnapshot,
   } from "../state/doc.svelte";
   import { ui, overlayFlags } from "../state/ui.svelte";
   import type { Tool } from "../state/ui.svelte";
@@ -188,7 +192,7 @@
 
   function onKeyDown(e: KeyboardEvent) {
     const tag = (document.activeElement as HTMLElement | null)?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
     if (e.key === " ") {
       spaceHeld = true;
       e.preventDefault();
@@ -221,6 +225,13 @@
     if (e.key === "x" && !e.repeat && !toolBeforeEraser && ui.tool !== "eraser") {
       toolBeforeEraser = ui.tool;
       ui.tool = "eraser";
+    }
+    if ((e.key === "Backspace" || e.key === "Delete") && ui.selectedBone) {
+      e.preventDefault();
+      const before = snapshotRig();
+      removeBone(ui.selectedBone);
+      ui.selectedBone = null;
+      pushRigCommand(before, snapshotRig());
     }
   }
   function onKeyUp(e: KeyboardEvent) {
@@ -333,6 +344,7 @@
     | { type: "pose"; bone: string }
     | { type: "reach"; bone: string };
   let dragState: DragState | null = null;
+  let rigDragBefore: RigSnapshot | null = null;
   let poseStart: { x: number; y: number } | null = null;
   // Only meaningful during a pose drag: whether it's a tip-grab (rotate) rather than a body-grab
   // (translate), and — for rotate — the bearing from the bone's origin to the pointer at drag
@@ -354,10 +366,13 @@
       // empty canvas with nothing placed yet.
       const parent = nearestBone(pt) ?? doc.bones.find((b) => b.name === "root") ?? null;
       if (!parent) return;
+      rigDragBefore = snapshotRig();
       const name = addBone(parent.name, pt.x, pt.y);
       if (name) {
         ui.selectedBone = name;
         dragState = { type: "length", bone: name, created: true };
+      } else {
+        rigDragBefore = null;
       }
       return;
     }
@@ -389,6 +404,7 @@
       const selected = doc.bones.find((b) => b.name === ui.selectedBone);
       const handle = selected ? reachHandlePosition(selected) : null;
       if (handle && Math.hypot(handle.x - pt.x, handle.y - pt.y) < hitRadius) {
+        rigDragBefore = snapshotRig();
         dragState = { type: "reach", bone: selected!.name };
         return;
       }
@@ -396,12 +412,14 @@
     const tip = tipHit(pt, hitRadius);
     if (tip) {
       ui.selectedBone = tip.name;
+      rigDragBefore = snapshotRig();
       dragState = { type: "length", bone: tip.name };
       return;
     }
     const near = nearestBone(pt);
     if (near && Math.hypot(near.x - pt.x, near.y - pt.y) < hitRadius) {
       ui.selectedBone = near.name;
+      rigDragBefore = snapshotRig();
       dragState = { type: "move", bone: near.name };
     } else {
       ui.selectedBone = null;
@@ -455,6 +473,10 @@
     if (dragState.type === "length" && dragState.created) {
       const bone = doc.bones.find((b) => b.name === dragState!.bone);
       if (bone && bone.length > 0 && bone.reach === undefined) setReach(bone.name, bone.length);
+    }
+    if (rigDragBefore) {
+      pushRigCommand(rigDragBefore, snapshotRig());
+      rigDragBefore = null;
     }
     dragState = null;
     poseStart = null;

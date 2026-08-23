@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { addBone, setBoneLength, document } from "../doc.svelte";
+import { snapshotRig, applyRig, pushRigCommand, addBone, moveBone, setBoneLength, document } from "../doc.svelte";
+import { history } from "../history.svelte";
 
 // Regression for C1: setBoneLength used to seed bone.reach from whatever length it was first
 // called with. Since it runs on every pointermove of the creation drag, that locked reach to the
@@ -13,5 +14,45 @@ describe("setBoneLength", () => {
     const bone = document.bones.find((b) => b.name === name)!;
     expect(bone.length).toBe(300);
     expect(bone.reach).toBeUndefined();
+  });
+});
+
+describe("snapshotRig", () => {
+  it("round-trips bones binds and slots, and undo restores a move", () => {
+    const start = snapshotRig();
+    const name = addBone("root", 10, 20)!;
+    moveBone(name, 50, 60);
+    const mid = snapshotRig();
+    expect(document.bones.find((b) => b.name === name)?.x).toBe(50);
+
+    applyRig(start);
+    expect(document.bones.some((b) => b.name === name)).toBe(false);
+
+    applyRig(mid);
+    expect(document.bones.find((b) => b.name === name)?.x).toBe(50);
+
+    applyRig(start);
+  });
+
+  it("pushRigCommand undoes and redoes, and ignores identical snapshots", () => {
+    history.clear();
+    const before = snapshotRig();
+    const name = addBone("root", 0, 0)!;
+    pushRigCommand(before, snapshotRig());
+    expect(history.canUndo).toBe(true);
+
+    history.undo();
+    expect(document.bones.some((b) => b.name === name)).toBe(false);
+
+    history.redo();
+    expect(document.bones.some((b) => b.name === name)).toBe(true);
+
+    const same = snapshotRig();
+    pushRigCommand(same, snapshotRig());
+    history.undo(); // the add, not a no-op
+    expect(document.bones.some((b) => b.name === name)).toBe(false);
+
+    history.clear();
+    applyRig(before);
   });
 });
