@@ -120,14 +120,16 @@ export function markLayerDirty(id: number) {
 
 // --- Bones -------------------------------------------------------------------------------------
 // Two invariants the Spine writer (Task 6) silently depends on:
-//  1. doc.bones lists parents before children — enforced here by construction: addBone always
-//     appends, removeBone always takes its descendants with it. There is no setParent; if
-//     re-parenting is ever added, the writer needs a topological sort first.
+//  1. doc.bones lists parents before children — enforced by construction for addBone/removeBone
+//     (addBone always appends, removeBone always takes its descendants with it), and by
+//     setParent re-sorting the whole array (see sortBonesByHierarchy) after every parent change.
+//     The writer itself is never touched — the invariant is kept true here, not repaired there.
 //  2. root stays at canvas centre with rotation 0 — moveBone, removeBone and setBoneRotation all
 //     refuse to touch it. The UI (Canvas.svelte) also never offers it as a drag target.
 
-/** All bones transitively parented under `name` (not including `name` itself). */
-function descendantsOf(name: string): Bone[] {
+/** All bones transitively parented under `name` (not including `name` itself). Exported for
+ *  RigPanel.svelte, which needs the same set to exclude invalid parent choices from its dropdown. */
+export function descendantsOf(name: string): Bone[] {
   const result: Bone[] = [];
   const stack = [name];
   while (stack.length > 0) {
@@ -196,6 +198,46 @@ export function removeBone(name: string) {
   for (const slot of document.slots) {
     if (removed.has(slot.bone)) slot.bone = "root";
   }
+}
+
+/** Stable topological sort: repeatedly moves every bone whose parent has already been placed (or
+ *  has no parent) into the result, in passes. Within a pass, bones are appended in their existing
+ *  relative order, so siblings that become placeable together keep their existing relative order —
+ *  the result is "parents before children" with everything else left as it was. Assumes no cycles
+ *  (setParent refuses them before this ever runs); if one somehow slipped through, the affected
+ *  bones would simply never become ready and the loop stops rather than spinning forever. */
+function sortBonesByHierarchy(bones: Bone[]): Bone[] {
+  const result: Bone[] = [];
+  const placed = new Set<string>();
+  let remaining = bones;
+  while (remaining.length > 0) {
+    const ready: Bone[] = [];
+    const rest: Bone[] = [];
+    for (const b of remaining) {
+      (b.parent === null || placed.has(b.parent) ? ready : rest).push(b);
+    }
+    if (ready.length === 0) break;
+    for (const b of ready) placed.add(b.name);
+    result.push(...ready);
+    remaining = rest;
+  }
+  return result;
+}
+
+/** Changes a bone's parent, then re-sorts doc.bones back into parents-before-children order (see
+ *  invariant 1 above) so the Spine writer never has to. Refuses root (it has no parent — the
+ *  writer emits it as a bare `{ name }` with no transform) and refuses a cycle: parenting a bone
+ *  to itself or to any of its own descendants, which would leave that part of the tree impossible
+ *  to order and would make export malformed. Bones store ABSOLUTE position and rotation (see
+ *  Bone's fields), so this is purely a hierarchy edit — no coordinates change here. */
+export function setParent(name: string, newParent: string) {
+  if (name === "root" || newParent === name) return;
+  const bone = document.bones.find((b) => b.name === name);
+  if (!bone) return;
+  if (!document.bones.some((b) => b.name === newParent)) return;
+  if (descendantsOf(name).some((b) => b.name === newParent)) return;
+  bone.parent = newParent;
+  document.bones = sortBonesByHierarchy(document.bones);
 }
 
 /** Renames a bone and every reference to it (children's `parent`, binds, slots). Refuses root
