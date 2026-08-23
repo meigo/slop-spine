@@ -76,7 +76,8 @@ for a stored sculpt to be destroyed.
 The rule constrains *storage*, not control — mesh shape is tunable by parameter, which survives
 regeneration.
 
-**Accepted cost:** when auto-weighting is wrong, the fix is upstream — move a bone, add one, or
+**Accepted cost:** when auto-weighting is wrong, the fix is upstream — scale the bone's influence
+radius (added 2026-08-23), move a bone, add one, or
 redraw so the shapes separate. Sometimes painting three vertices would have been faster. Given
 the ethos, slightly-wrong weights that don't tear are acceptable output, not a bug to chase.
 
@@ -155,6 +156,14 @@ Per mesh vertex: distance to each candidate bone's **segment**, weight = falloff
 distance, normalize, cull below a threshold, cap at 4 influences (Spine convention).
 
 Start with plain **Euclidean** distance. It is maybe 30 lines.
+
+> **Amended 2026-08-23 — see `2026-08-23-influence-regions-design.md`.** Each bone gains an optional
+> `reach` radius with a soft falloff to zero at the edge, which bounds bleed *spatially* and under
+> the artist's control, rather than automatically. That largely supersedes geodesic distance for this
+> project's characters — a hip bone with a modest radius cannot reach an adjacent arm. Geodesic still
+> answers the one case a radius cannot: two parts of the **same** shape folded against each other,
+> where any radius covering the limb also covers what it is folded against. Still deferred until such
+> a character exists.
 
 Euclidean bleeds across gaps that are near in space but far along the shape — an arm hanging
 beside a hip gets hip weights. The fix is geodesic distance (Dijkstra over the mesh edge graph,
