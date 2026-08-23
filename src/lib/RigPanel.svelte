@@ -20,7 +20,7 @@
   let bindBones = $derived(
     selectedSlot ? (doc.binds.find((b) => b.slot === selectedSlot!.name)?.bones ?? []) : [],
   );
-  // root is never a valid weight influence (document.ts's defaultBind excludes it too).
+  // root is never a valid weight influence (derive.ts's allNonRootBoneNames excludes it too).
   let bindableBones = $derived(doc.bones.filter((b) => b.name !== "root"));
   // A bone can't be parented to itself or to its own descendant (setParent refuses that as a
   // cycle) — excluded here too so the dropdown never offers a choice it would then reject.

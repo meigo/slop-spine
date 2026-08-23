@@ -68,12 +68,3 @@ export function emptyDocument(width = 2048, height = 2048): RigDocument {
     density: 24,
   };
 }
-
-/** Bones a slot is influenced by: its own bone, that bone's parent, and its children. */
-export function defaultBind(doc: RigDocument, slot: Slot): string[] {
-  const own = slot.bone;
-  const bone = doc.bones.find((b) => b.name === own);
-  const parent = bone?.parent ? [bone.parent] : [];
-  const kids = doc.bones.filter((b) => b.parent === own).map((b) => b.name);
-  return [own, ...parent, ...kids].filter((n) => n !== "root");
-}

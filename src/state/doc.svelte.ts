@@ -251,7 +251,7 @@ export function setParent(name: string, newParent: string) {
 }
 
 /** Renames a bone and every reference to it (children's `parent`, binds, slots). Refuses root
- *  (its literal name is load-bearing — document.ts's defaultBind filters on the string "root")
+ *  (its literal name is load-bearing — derive.ts's allNonRootBoneNames filters on the string "root")
  *  and refuses a name collision. */
 export function renameBone(oldName: string, newName: string) {
   const trimmed = newName.trim();
