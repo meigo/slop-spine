@@ -59,7 +59,8 @@ distance-to-segment in `computeWeights`. **Adopt it verbatim** — the shape is 
 **`undefined` means unlimited**, so every existing project file loads and produces byte-identical
 weights to before. Persistence is free: `project-file.ts` serialises `bones: Bone[]` wholesale.
 
-New bones are seeded with a reach proportional to their length at creation. That is an initial
+New bones are seeded with a reach proportional to their length at creation — the implementation
+plan pins the constant, and it is one number to change once a real character has been rigged with it. That is an initial
 **value**, visible in the handle and immediately draggable — not a rule that keeps re-deriving from
 geometry. The project has twice rejected inference-at-render (v1's plan: *"do not try to derive
 density per-slot from shape size — one global slider you can see the effect of is the simpler thing
@@ -103,7 +104,9 @@ bone is posed, rotating a parent leaves its children behind, which is a differen
 rather than a fix. Descendants are posed by the same delta and contribute through their own weights.
 
 The pose gesture gains rotation: dragging near a bone's **tip** rotates it, near its **body**
-translates — matching how bone *editing* already distinguishes tip-drag from body-drag.
+translates — matching how bone *editing* already distinguishes tip-drag from body-drag, and reusing
+that same hit test (`tipHit` against `RIG_HIT_RADIUS / zoom`) rather than introducing a second
+threshold that could drift from it.
 
 ### Binds, demoted
 
