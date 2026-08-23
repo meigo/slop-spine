@@ -149,6 +149,21 @@
   // that arrives with this still null (X pressed while a text input had focus) is a no-op.
   let toolBeforeEraser: Tool | null = null;
 
+  // One-finger double-tap eraser toggle (touch-gestures.ts's onToggleEraser), matching
+  // slop-animator's toggleEraser. This is sticky (stays until toggled again), unlike hold-X
+  // above which is momentary, so it needs its own remembered tool — sharing toolBeforeEraser
+  // would let a hold-X release while double-tap-erasing clobber it back to the wrong tool.
+  let toolBeforeDoubleTapEraser: Tool | null = null;
+  function toggleEraserGesture() {
+    if (ui.tool === "eraser") {
+      ui.tool = toolBeforeDoubleTapEraser ?? "brush";
+      toolBeforeDoubleTapEraser = null;
+    } else {
+      toolBeforeDoubleTapEraser = ui.tool;
+      ui.tool = "eraser";
+    }
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     const tag = (document.activeElement as HTMLElement | null)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -217,10 +232,13 @@
       /* already released */
     }
   }
+  // Wheel/trackpad: plain scroll pans; ⌘/Ctrl + scroll (and trackpad pinch, which arrives as
+  // ctrl+wheel) zooms at the cursor.
   function onWheel(e: WheelEvent) {
     if (!viewport) return;
     e.preventDefault();
-    viewport.zoomAt(e.clientX, e.clientY, e.deltaY);
+    if (e.ctrlKey || e.metaKey) viewport.zoomAt(e.clientX, e.clientY, e.deltaY);
+    else viewport.panBy(-e.deltaX, -e.deltaY); // content follows the scroll
   }
 
   // --- Rig mode: bones. Runs alongside setupInput's own listeners on canvasEl (handleStroke
@@ -362,7 +380,7 @@
     const cleanupTouch = setupTouchGestures(stage, viewport, {
       onUndo: () => history.undo(),
       onRedo: () => history.redo(),
-      onToggleEraser: () => {},
+      onToggleEraser: () => toggleEraserGesture(),
       onViewportChange: redraw,
     });
 
