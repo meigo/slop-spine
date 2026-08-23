@@ -12,6 +12,7 @@
   import { setupInput } from "../core/input";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
+  import { history } from "../state/history.svelte";
   import { deriveSlot } from "../rig/derive";
   import { drawRigOverlay, poseDeform, drawWarpedLayer } from "./RigOverlay";
   import type { Bone } from "../rig/document";
@@ -35,6 +36,31 @@
   // directly, which are already reactive. ---
   let poseDrag = $state<{ bone: string; dx: number; dy: number } | null>(null);
 
+  // Screen-only page ground: a checkerboard so a white stroke (now paintable, Task 14) reads
+  // against the page instead of vanishing into a flat white fill. Never touches a layer.canvas —
+  // export trims each layer to its own alpha, so a checkerboard baked into a layer would trim to
+  // the full 2048x2048 page and destroy the atlas. Built once from a small offscreen tile and
+  // tiled via createPattern rather than looping fillRect at low zoom.
+  const CHECKER_SQUARE = 32; // document units per square
+  const CHECKER_LIGHT = "#f2f2f2";
+  const CHECKER_DARK = "#dcdcdc";
+  let checkerPattern: CanvasPattern | null = null;
+
+  function getCheckerPattern(context: CanvasRenderingContext2D): CanvasPattern {
+    if (checkerPattern) return checkerPattern;
+    const tile = document.createElement("canvas");
+    tile.width = CHECKER_SQUARE * 2;
+    tile.height = CHECKER_SQUARE * 2;
+    const tctx = tile.getContext("2d")!;
+    tctx.fillStyle = CHECKER_LIGHT;
+    tctx.fillRect(0, 0, tile.width, tile.height);
+    tctx.fillStyle = CHECKER_DARK;
+    tctx.fillRect(0, 0, CHECKER_SQUARE, CHECKER_SQUARE);
+    tctx.fillRect(CHECKER_SQUARE, CHECKER_SQUARE, CHECKER_SQUARE, CHECKER_SQUARE);
+    checkerPattern = context.createPattern(tile, "repeat")!;
+    return checkerPattern;
+  }
+
   function redraw() {
     if (!ctx || !viewport || !canvasEl) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -43,10 +69,11 @@
     ctx.rotate(viewport.rotation);
     ctx.scale(viewport.zoom, viewport.zoom);
     // Page bounds, screen-draw only (never fills a layer.canvas — export trims each layer to its
-    // own alpha, so an opaque layer would trim to the full page). White is the expected ground:
-    // this project's art is grayscale line work on white over transparent layers. The border
-    // keeps the edge visible once the fill is too small on screen to read as a page.
-    ctx.fillStyle = "#fff";
+    // own alpha, so an opaque layer would trim to the full page). Checkerboard, not flat white:
+    // this project's art is grayscale line work with a paintable white value, and a white stroke
+    // on a flat white page would be invisible. The border keeps the edge visible once the fill is
+    // too small on screen to read as a page.
+    ctx.fillStyle = getCheckerPattern(ctx);
     ctx.fillRect(0, 0, doc.canvas.width, doc.canvas.height);
     ctx.lineWidth = 2 / viewport.zoom;
     ctx.strokeStyle = "#000";
@@ -123,6 +150,13 @@
     if (e.key === " ") {
       spaceHeld = true;
       e.preventDefault();
+    }
+    // Cmd on Mac, Ctrl elsewhere. Redo is Shift+Z, not the Ctrl+Y some apps also bind — this
+    // project only wires the one shortcut.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) history.redo();
+      else history.undo();
     }
   }
   function onKeyUp(e: KeyboardEvent) {
@@ -295,8 +329,8 @@
     resizeObserver.observe(stage);
 
     const cleanupTouch = setupTouchGestures(stage, viewport, {
-      onUndo: () => {},
-      onRedo: () => {},
+      onUndo: () => history.undo(),
+      onRedo: () => history.redo(),
       onToggleEraser: () => {},
       onViewportChange: redraw,
     });
@@ -316,6 +350,11 @@
     canvasEl.addEventListener("pointercancel", onRigPointerUp);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    // Bridge for Toolbar.svelte's "Fit View" button — the viewport instance is local to this
+    // component (needs its own anchor element), so a window event is the smallest cross-component
+    // link back to it. See Toolbar.svelte's dispatch.
+    const onFitViewRequest = () => viewport?.fitView(doc.canvas.width, doc.canvas.height);
+    window.addEventListener("slop-spine:fit-view", onFitViewRequest);
 
     return () => {
       cleanupTouch();
@@ -332,6 +371,7 @@
       canvasEl.removeEventListener("pointercancel", onRigPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("slop-spine:fit-view", onFitViewRequest);
     };
   });
 </script>

@@ -61,6 +61,53 @@ async function loadDoc(): Promise<RigDocument> {
   return buildFixture();
 }
 
+/** Decodes the exported atlas PNG and counts alpha values. Informational only (see
+ *  `findFullCanvasRegions` for the actual transparency guard) — corner alpha and a 100%-opaque
+ *  atlas are both unreachable as failure signals once padding gutters exist between packed
+ *  regions (packAtlas always starts placement at PAD,PAD), so these counts are reported for
+ *  visibility but never used as the alarm. */
+function analyzeAlpha(img: HTMLImageElement) {
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth;
+  c.height = img.naturalHeight;
+  const actx = c.getContext("2d")!;
+  actx.drawImage(img, 0, 0);
+  const { data } = actx.getImageData(0, 0, c.width, c.height);
+  const alpha = { transparent: 0, opaque: 0, partial: 0, cornerAlpha: data[3] };
+  for (let i = 3; i < data.length; i += 4) {
+    const a = data[i];
+    if (a === 0) alpha.transparent++;
+    else if (a === 255) alpha.opaque++;
+    else alpha.partial++;
+  }
+  return alpha;
+}
+
+/** The real transparency guard. A layer with a baked-in background is opaque everywhere, so
+ *  `trimLayer` (export/trim.ts) returns the *entire* canvas as that layer's trim rect — packed
+ *  into the atlas verbatim by `packAtlas` (export/atlas.ts) as that region's `bounds:` width and
+ *  height. Ordinary art can't produce this: a trim only reaches the full canvas when every one of
+ *  its four edges has an opaque pixel, which is exactly the broken case the spec warns about
+ *  ("would trim to the full 2048x2048 page and destroy the atlas").
+ *
+ *  Reads `bounds:x,y,w,h` out of the already-fetched `skeleton.atlas` text (rather than changing
+ *  `exportBundle`'s return shape) and compares each region's w,h against `doc.canvas` — not
+ *  against the atlas's own `offsets:` line, whose trailing two fields are the same canvas
+ *  dimensions duplicated on every region. `doc` is already in scope in `main`, so reading it
+ *  directly is one fewer per-region parse than pulling the identical numbers back out of the
+ *  atlas text a second time. */
+function findFullCanvasRegions(atlasText: string, canvasW: number, canvasH: number): string[] {
+  const lines = atlasText.split("\n");
+  const names: string[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const m = lines[i].match(/^bounds:\d+,\d+,(\d+),(\d+)$/);
+    if (m && Number(m[1]) === canvasW && Number(m[2]) === canvasH) {
+      names.push(lines[i - 1]); // packAtlas always writes the region name on the line before bounds:
+    }
+  }
+  return names;
+}
+
 async function main() {
   const doc = await loadDoc();
   const bundle = await exportBundle(doc);
@@ -73,6 +120,8 @@ async function main() {
   const img = new Image();
   img.src = pngUrl;
   await img.decode();
+
+  const alpha = analyzeAlpha(img);
 
   const app = new PIXI.Application();
   await app.init({ background: 0xffffff, resizeTo: window });
@@ -94,13 +143,19 @@ async function main() {
   fig.update(0);
 
   const b = fig.getBounds();
+  const fullCanvasRegions = findFullCanvasRegions(atlasText, doc.canvas.width, doc.canvas.height);
   const report = {
     bones: data.bones.length,
     slots: data.slots.length,
     bounds: { x: b.x, y: b.y, w: b.width, h: b.height },
+    alpha,
+    fullCanvasRegions,
   };
   console.log("[verify]", JSON.stringify(report));
   (window as unknown as { __verify: unknown }).__verify = report;
+  if (fullCanvasRegions.length > 0) {
+    console.log("[verify] ALPHA FAIL", JSON.stringify(fullCanvasRegions));
+  }
 }
 
 main().catch((err) => {

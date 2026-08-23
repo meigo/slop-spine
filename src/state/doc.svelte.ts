@@ -1,6 +1,7 @@
 import { emptyDocument, defaultBind, type RigDocument, type Layer, type Slot, type Bone } from "../rig/document";
 import { invalidate } from "../rig/derive";
 import { ui } from "./ui.svelte";
+import { history } from "./history.svelte";
 
 /** The single open document. Mutated in place (push/splice/property writes) so the
  *  exported binding never needs reassigning — see the mutations below. */
@@ -52,15 +53,33 @@ export function addLayer(name: string): number {
   return layer.id;
 }
 
+/** Undoable: pushes a command that re-inserts the layer, its slot (at its original `order` —
+ *  see Slot.order's comment) and its bind at their original array indices. The layer's `canvas`
+ *  is retained by the closure, so undo brings the pixels back for free. */
 export function removeLayer(id: number) {
   const index = document.layers.findIndex((l) => l.id === id);
   if (index === -1) return;
-  document.layers.splice(index, 1);
   const slotIndex = document.slots.findIndex((s) => s.layerId === id);
   if (slotIndex === -1) return;
+  const [layer] = document.layers.splice(index, 1);
   const [slot] = document.slots.splice(slotIndex, 1);
-  document.binds = document.binds.filter((b) => b.slot !== slot.name);
+  const bindIndex = document.binds.findIndex((b) => b.slot === slot.name);
+  const [bind] = bindIndex === -1 ? [undefined] : document.binds.splice(bindIndex, 1);
   invalidate(slot.name);
+  history.push({
+    undo() {
+      document.layers.splice(index, 0, layer);
+      document.slots.splice(slotIndex, 0, slot);
+      if (bind !== undefined) document.binds.splice(bindIndex, 0, bind);
+      markLayerDirty(id);
+    },
+    redo() {
+      document.layers.splice(document.layers.findIndex((l) => l.id === id), 1);
+      document.slots.splice(document.slots.findIndex((s) => s.name === slot.name), 1);
+      document.binds = document.binds.filter((b) => b.slot !== slot.name);
+      invalidate(slot.name);
+    },
+  });
 }
 
 /** Moves the layer to array index `index` (0 = bottom of the stack). */
@@ -80,6 +99,13 @@ export function renameLayer(id: number, name: string) {
 export function toggleVisible(id: number) {
   const layer = document.layers.find((l) => l.id === id);
   if (layer) layer.visible = !layer.visible;
+}
+
+/** Sets a layer's opacity (0-1, clamped). Honoured by Canvas.svelte's redraw (`ctx.globalAlpha`)
+ *  and, below 1, by the Spine writer (emits slot `color` alpha — see spine-json.ts). */
+export function setLayerOpacity(id: number, opacity: number) {
+  const layer = document.layers.find((l) => l.id === id);
+  if (layer) layer.opacity = Math.max(0, Math.min(1, opacity));
 }
 
 /** Bumps a layer's revision. Call after any operation that changes its pixels — Task 10's
@@ -221,6 +247,10 @@ export function loadDocument(doc: RigDocument) {
   // land on a layer that's hidden behind an opaque one.
   ui.selectedLayerId = null;
   ui.selectedBone = null;
+  // Otherwise every retained command still holds a ctx for the previous document's detached
+  // canvases — undoing after a load is a silent no-op that dirties whatever layer in the new
+  // document happens to share the old command's layer id.
+  history.clear();
 
   nextLayerId = doc.layers.reduce((m, l) => Math.max(m, l.id), 0) + 1;
   nextSlotOrder = doc.slots.reduce((m, s) => Math.max(m, s.order), -1) + 1;

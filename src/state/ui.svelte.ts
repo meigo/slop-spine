@@ -10,4 +10,5 @@ export const ui = $state({
   brushType: "smooth" as BrushType,
   brushSize: 12,
   brushOpacity: 100,
+  brushValue: "#000000",
 });

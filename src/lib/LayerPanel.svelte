@@ -1,7 +1,18 @@
 <script lang="ts">
-  import { document as doc, addLayer, removeLayer, reorderLayer, renameLayer, toggleVisible } from "../state/doc.svelte";
+  import {
+    document as doc,
+    addLayer,
+    removeLayer,
+    reorderLayer,
+    renameLayer,
+    toggleVisible,
+    setLayerOpacity,
+    markLayerDirty,
+  } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
   import type { Layer } from "../rig/document";
+  import { pixelCommand } from "../core/history";
+  import { history } from "../state/history.svelte";
 
   // Panel shows the topmost layer first; the document array is bottom-to-top (index 0 = bottom).
   let topFirst = $derived([...doc.layers].reverse());
@@ -49,6 +60,43 @@
     if (toIndex !== -1) reorderLayer(draggedId, toIndex);
     draggedId = null;
   }
+
+  function onOpacityInput(id: number, e: Event) {
+    const percent = Number((e.currentTarget as HTMLInputElement).value);
+    setLayerOpacity(id, percent / 100);
+  }
+
+  /** Clears the layer to fully transparent (`clearRect`, never a white fill — export trims a
+   *  layer to its opaque bounding box, so an opaque "clear" would trim to the full page and
+   *  destroy the atlas). Pushes an undo command via the same `pixelCommand` primitive
+   *  draw-dispatch.ts's pushPixelCommand wraps, since that helper itself is private to
+   *  draw-dispatch.ts's closure and out of this task's file scope. */
+  function onClear(id: number) {
+    const layer = doc.layers.find((l) => l.id === id);
+    if (!layer) return;
+    const ctx = layer.canvas.getContext("2d");
+    if (!ctx) return;
+    const w = layer.canvas.width;
+    const h = layer.canvas.height;
+    const before = ctx.getImageData(0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
+    markLayerDirty(id);
+    const after = ctx.getImageData(0, 0, w, h);
+    history.push(
+      pixelCommand(
+        () => {
+          ctx.putImageData(before, 0, 0);
+          markLayerDirty(id);
+        },
+        () => {
+          ctx.putImageData(after, 0, 0);
+          markLayerDirty(id);
+        },
+        before,
+        after,
+      ),
+    );
+  }
 </script>
 
 <div class="flex w-56 flex-col border-l border-neutral-800 bg-neutral-900 text-sm text-neutral-200">
@@ -63,40 +111,62 @@
         ondragstart={() => onDragStart(layer.id)}
         ondragover={onDragOver}
         ondrop={() => onDrop(layer.id)}
-        class="flex items-center gap-2 border-b border-neutral-800 px-2 py-1 {ui.selectedLayerId === layer.id
+        class="flex flex-col gap-1 border-b border-neutral-800 px-2 py-1 {ui.selectedLayerId === layer.id
           ? 'bg-neutral-700'
           : 'hover:bg-neutral-800'}"
       >
-        <button
-          class="w-5 shrink-0 text-center"
-          onclick={() => toggleVisible(layer.id)}
-          title="Toggle visibility"
-        >
-          {layer.visible ? "●" : "○"}
-        </button>
-        {#if editingId === layer.id}
-          <input
-            class="min-w-0 flex-1 bg-neutral-950 px-1 text-neutral-200"
-            bind:value={draftName}
-            onblur={commitRename}
-            onkeydown={onRenameKey}
-          />
-        {:else}
+        <div class="flex items-center gap-2">
           <button
-            class="min-w-0 flex-1 truncate text-left"
-            onclick={() => onSelect(layer)}
-            ondblclick={() => startRename(layer)}
+            class="w-5 shrink-0 text-center"
+            onclick={() => toggleVisible(layer.id)}
+            title="Toggle visibility"
           >
-            {layer.name}
+            {layer.visible ? "●" : "○"}
           </button>
-        {/if}
-        <button
-          class="shrink-0 text-neutral-500 hover:text-neutral-200"
-          onclick={() => onRemove(layer.id)}
-          title="Remove layer"
-        >
-          ✕
-        </button>
+          {#if editingId === layer.id}
+            <input
+              class="min-w-0 flex-1 bg-neutral-950 px-1 text-neutral-200"
+              bind:value={draftName}
+              onblur={commitRename}
+              onkeydown={onRenameKey}
+            />
+          {:else}
+            <button
+              class="min-w-0 flex-1 truncate text-left"
+              onclick={() => onSelect(layer)}
+              ondblclick={() => startRename(layer)}
+            >
+              {layer.name}
+            </button>
+          {/if}
+          <button
+            class="shrink-0 text-neutral-500 hover:text-neutral-200"
+            onclick={() => onRemove(layer.id)}
+            title="Remove layer"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="flex items-center gap-1 pl-7 text-xs text-neutral-400">
+          <span>Opacity</span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={Math.round(layer.opacity * 100)}
+            oninput={(e) => onOpacityInput(layer.id, e)}
+            class="min-w-0 flex-1"
+          />
+          <span class="w-8 text-right font-mono">{Math.round(layer.opacity * 100)}</span>
+          <button
+            class="shrink-0 text-neutral-500 hover:text-neutral-200"
+            onclick={() => onClear(layer.id)}
+            title="Clear layer to transparent"
+          >
+            Clear
+          </button>
+        </div>
       </li>
     {/each}
   </ul>

@@ -3,8 +3,11 @@
   import { document as doc, loadDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
   import { exportBundle } from "../export/bundle";
+  import { history, historyState } from "../state/history.svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
+
+  const BRUSH_VALUES = ["#000000", "#404040", "#808080", "#b0b0b0", "#e0e0e0", "#ffffff"];
 
   function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
@@ -42,15 +45,41 @@
       console.error("load failed", err);
     }
   }
+
+  // Canvas.svelte owns the Viewport instance (created against its own anchor element in
+  // onMount) and isn't in this task's file scope, so a plain window event is the smallest
+  // bridge from this button to `viewport.fitView()` — see Canvas.svelte's matching listener.
+  function onFitView() {
+    window.dispatchEvent(new Event("slop-spine:fit-view"));
+  }
 </script>
 
 <input type="file" accept=".zip" class="hidden" bind:this={fileInput} onchange={onFileChosen} />
 
-<div class="flex items-center gap-2 border-b border-neutral-800 bg-neutral-900 p-2 text-sm text-neutral-200">
+<div class="flex flex-wrap items-center gap-2 border-b border-neutral-800 bg-neutral-900 p-2 text-sm text-neutral-200">
   <div class="flex overflow-hidden rounded border border-neutral-700">
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={onSave}>Save</button>
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={() => fileInput?.click()}>Load</button>
     <button class="px-3 py-1 hover:bg-neutral-800" onclick={onExport}>Export</button>
+  </div>
+  <div class="flex overflow-hidden rounded border border-neutral-700">
+    <button
+      class="px-3 py-1 hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent"
+      disabled={!historyState.canUndo}
+      onclick={() => history.undo()}
+    >
+      Undo
+    </button>
+    <button
+      class="px-3 py-1 hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent"
+      disabled={!historyState.canRedo}
+      onclick={() => history.redo()}
+    >
+      Redo
+    </button>
+  </div>
+  <div class="flex overflow-hidden rounded border border-neutral-700">
+    <button class="px-3 py-1 hover:bg-neutral-800" onclick={onFitView}>Fit View</button>
   </div>
   <div class="flex overflow-hidden rounded border border-neutral-700">
     <button
@@ -107,6 +136,17 @@
       >
         Pencil
       </button>
+    </div>
+
+    <div class="flex overflow-hidden rounded border border-neutral-700">
+      {#each BRUSH_VALUES as value (value)}
+        <button
+          class="h-6 w-6 {ui.brushValue === value ? 'ring-2 ring-inset ring-blue-400' : ''}"
+          style="background-color: {value};"
+          aria-label="Value {value}"
+          onclick={() => (ui.brushValue = value)}
+        ></button>
+      {/each}
     </div>
 
     <label class="flex items-center gap-1">
