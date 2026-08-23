@@ -19,9 +19,12 @@ import { history } from "../state/history.svelte";
 // constant nominal width (see widthRange in brush.ts).
 const PRESSURE_SIZE_RANGE = 1.8;
 
-export function createDrawDispatch() {
-  const pressureCurve = new PressureCurve();
+// Module-level (not inside createDrawDispatch) so Toolbar.svelte's pressure curve editor can
+// mutate the same instance handleStroke reads below — createDrawDispatch() runs once, from
+// Canvas.svelte's onMount, so a closure-local instance would be unreachable from the toolbar.
+export const pressureCurve = new PressureCurve();
 
+export function createDrawDispatch() {
   function resolveSelectedLayer(): Layer | null {
     return doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null;
   }

@@ -5,6 +5,8 @@
   import { saveProject, loadProject } from "../persist/project-file";
   import { exportBundle } from "../export/bundle";
   import { history, historyState } from "../state/history.svelte";
+  import { pressureCurve } from "./draw-dispatch";
+  import { createCurveEditor } from "../core/pressure-curve";
   import {
     Paintbrush,
     Eraser,
@@ -15,9 +17,70 @@
     FolderOpen,
     Download,
     Maximize,
+    Spline,
   } from "@lucide/svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
+
+  // Svelte action: close the pressure-curve popup on a pointerdown outside `node`. Inlined here
+  // rather than a shared module — Toolbar.svelte is the only place in this tree with a popup that
+  // needs it, and this task's file scope is this component. Capture phase so it still fires if an
+  // inner handler (e.g. the curve canvas's own pointerdown) stops propagation.
+  function clickOutside(node: HTMLElement, onOutside: () => void) {
+    let cb = onOutside;
+    function handler(e: PointerEvent) {
+      if (!node.contains(e.target as Node)) cb();
+    }
+    document.addEventListener("pointerdown", handler, true);
+    return {
+      update(next: () => void) {
+        cb = next;
+      },
+      destroy() {
+        document.removeEventListener("pointerdown", handler, true);
+      },
+    };
+  }
+
+  let curveOpen = $state(false);
+  let curvePopupEl: HTMLDivElement | undefined = $state();
+  let curveEditor: (HTMLElement & { redraw: () => void }) | null = null;
+
+  onMount(() => {
+    // No persisted-preference bump on change: this app doesn't persist the curve across reloads
+    // (constraint), and the instance is mutated directly by createCurveEditor — draw-dispatch.ts
+    // reads it live, so nothing else needs to react to the change.
+    curveEditor = createCurveEditor(pressureCurve, () => {});
+  });
+
+  $effect(() => {
+    if (curvePopupEl && curveEditor) curvePopupEl.appendChild(curveEditor);
+  });
+
+  // Keep the popup within the viewport: it's left-anchored to its trigger, but the toolbar wraps,
+  // so the trigger can sit near the right (or left) edge. Shift it back into view. The popup is
+  // position:fixed (see .curve-popup in app.css), anchored just below its trigger wrapper in
+  // viewport coords, then clamped horizontally into view. Adapted from slop-animator's
+  // ToolOptions.svelte.
+  function positionPopup() {
+    if (!curvePopupEl) return;
+    const margin = 8;
+    const anchor = curvePopupEl.parentElement?.getBoundingClientRect();
+    if (!anchor) return;
+    curvePopupEl.style.top = `${anchor.bottom + 4}px`;
+    curvePopupEl.style.left = `${anchor.left}px`;
+    const rect = curvePopupEl.getBoundingClientRect();
+    const overflowRight = rect.right - (window.innerWidth - margin);
+    if (overflowRight > 0) curvePopupEl.style.left = `${anchor.left - overflowRight}px`;
+    else if (anchor.left < margin) curvePopupEl.style.left = `${margin}px`;
+  }
+
+  $effect(() => {
+    if (curveOpen) {
+      curveEditor?.redraw();
+      requestAnimationFrame(positionPopup);
+    }
+  });
 
   const BRUSH_VALUES = ["#000000", "#404040", "#808080", "#b0b0b0", "#e0e0e0", "#ffffff"];
 
@@ -194,5 +257,19 @@
       <input type="range" min="1" max="100" bind:value={ui.brushOpacity} />
       <span class="w-8 text-right font-mono text-xs">{ui.brushOpacity}</span>
     </label>
+
+    {#if ui.tool !== "fill"}
+      <div class="relative" use:clickOutside={() => (curveOpen = false)}>
+        <button
+          class={toolBtn}
+          class:bg-surface-active={curveOpen}
+          title="Pressure curve"
+          onclick={() => (curveOpen = !curveOpen)}
+        >
+          <Spline size={18} />
+        </button>
+        <div class="curve-popup" class:open={curveOpen} bind:this={curvePopupEl}></div>
+      </div>
+    {/if}
   {/if}
 </div>
