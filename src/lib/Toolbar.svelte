@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { ui } from "../state/ui.svelte";
   import { document as doc, loadDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
@@ -68,6 +69,19 @@
   function onFitView() {
     window.dispatchEvent(new Event("slop-spine:fit-view"));
   }
+
+  // Bridge for Canvas.svelte's Cmd/Ctrl+S and Cmd/Ctrl+O keybindings — same window-event pattern
+  // as Fit View above, since Save/Load's implementations (and the hidden file input) live here.
+  onMount(() => {
+    const onSaveRequest = () => onSave();
+    const onLoadRequest = () => fileInput?.click();
+    window.addEventListener("slop-spine:save", onSaveRequest);
+    window.addEventListener("slop-spine:load", onLoadRequest);
+    return () => {
+      window.removeEventListener("slop-spine:save", onSaveRequest);
+      window.removeEventListener("slop-spine:load", onLoadRequest);
+    };
+  });
 </script>
 
 <input type="file" accept=".zip" class="hidden" bind:this={fileInput} onchange={onFileChosen} />
