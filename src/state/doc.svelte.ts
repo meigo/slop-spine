@@ -231,6 +231,13 @@ export function setBind(slotName: string, bones: string[]) {
   else document.binds.push({ slot: slotName, bones });
 }
 
+/** Sets a slot's mesh density override, or clears it (`undefined`) to fall back to inheriting
+ *  doc.density — see rig/derive.ts's effective-density lookup. */
+export function setSlotDensity(slotName: string, density: number | undefined) {
+  const slot = document.slots.find((s) => s.name === slotName);
+  if (slot) slot.density = density;
+}
+
 // --- Persistence (Task 11) ----------------------------------------------------------------------
 
 /** Replaces the live document's contents in place — keeps the same $state object so existing

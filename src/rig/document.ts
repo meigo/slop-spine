@@ -19,6 +19,9 @@ export interface Slot {
    *  doc.layers instead, since that's the one array a layer reorder actually mutates. Kept on
    *  the type rather than removed (a later cleanup); don't trust it for draw order. */
   order: number;
+  /** Boundary point spacing in pixels, overriding doc.density for this slot only. Absent means
+   *  "inherit the document default" — see rig/derive.ts's effective-density lookup. */
+  density?: number;
 }
 
 export interface Bone {

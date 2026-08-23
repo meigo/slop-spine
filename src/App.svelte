@@ -47,6 +47,7 @@
       s.layerId;
       s.bone;
       s.order;
+      s.density;
     }
     for (const b of doc.bones) {
       b.name;

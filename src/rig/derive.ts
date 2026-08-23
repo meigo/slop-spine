@@ -36,9 +36,11 @@ function allNonRootBoneNames(doc: RigDocument): string[] {
   return doc.bones.filter((b) => b.name !== "root").map((b) => b.name);
 }
 
-/** Mesh + weights for one slot, memoised on (layer.revision, doc.density, bound-bone signature).
- *  The mesh depends only on the layer's pixels and density, not on bones — moving a bone reuses
- *  the same mesh object and only recomputes weights, which is what keeps bone-dragging responsive. */
+/** Mesh + weights for one slot, memoised on (layer.revision, effective density, bound-bone
+ *  signature). Effective density is slot.density ?? doc.density — a slot's override, or the
+ *  document default when it has none. The mesh depends only on the layer's pixels and density,
+ *  not on bones — moving a bone reuses the same mesh object and only recomputes weights, which is
+ *  what keeps bone-dragging responsive. */
 export function deriveSlot(doc: RigDocument, slotName: string): { mesh: RigMesh; weights: Influence[][] } {
   const slot = doc.slots.find((s) => s.name === slotName);
   if (!slot) return EMPTY;
@@ -53,14 +55,15 @@ export function deriveSlot(doc: RigDocument, slotName: string): { mesh: RigMesh;
   const bindNames = stored?.length ? stored : allNonRootBoneNames(doc);
   const bones = doc.bones.filter((b) => bindNames.includes(b.name));
 
-  const meshKey = `${layer.revision}|${doc.density}`;
+  const density = slot.density ?? doc.density;
+  const meshKey = `${layer.revision}|${density}`;
   const key = `${meshKey}|${boneSignature(bones)}`;
 
   const cached = cache.get(slotName);
   if (cached && cached.key === key) return { mesh: cached.mesh, weights: cached.weights };
 
   const mesh =
-    cached && cached.meshKey === meshKey ? cached.mesh : meshFromMask(maskFromCanvas(layer.canvas), doc.density);
+    cached && cached.meshKey === meshKey ? cached.mesh : meshFromMask(maskFromCanvas(layer.canvas), density);
   const weights = computeWeights(mesh, bones);
 
   cache.set(slotName, { key, meshKey, mesh, weights });
