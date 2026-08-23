@@ -229,3 +229,62 @@ proves nothing, and that is exactly how the two earlier instances got through re
 - `ui.selectedLayerId` does not survive reload (pre-existing, UI-only).
 - Dynamics / rig test view — needs `pixi.js` + `spine-pixi-v8` as real dependencies.
 - Geodesic weighting — still deferred; only answers same-shape self-adjacency today.
+
+---
+
+## Whole-branch review, and the blocker it found after merge
+
+The review ran on the strongest model after the branch was already merged, and found a blocker in
+merged code.
+
+**C1 — every bone created through the UI got a reach ~100x too small.** `setBoneLength` is called on
+every `pointermove` of the creation drag, not once at the end, so the seed landed on the first few
+pixels of hand motion: `length: 495, reach: 197` measured, and worse for a slower hand. Nearly every
+vertex then fell past every bone's reach onto the nearest-bone fallback, producing a rigid per-bone
+segmentation that tears at the joints — and exports, loads and renders with no error anywhere.
+
+The cause was my own pre-flight ruling. CONFLICT 2 correctly spotted that seeding inside `addBone`
+would seed zero, so I moved the seed into `setBoneLength` — and landed on seeding *near* zero, which
+is the same failure in a different costume. Task 3 then verified it with a single direct
+`setBoneLength(bone, 300)` call, which is the one input shape that produces the right answer.
+
+**The lesson, which is the reusable part.** Verifying a per-frame handler with one synthetic call is
+not verification. Drive the input path the user actually takes, and reproduce the failure *before*
+fixing it — a check that passes both before and after proves nothing. Both bugs this increment
+(C1 and the `reach` autosave miss) were found only once someone insisted on that order.
+
+Fixed in `1421b30`: the seed moved to `onRigPointerUp` behind a `created` flag, so `undefined` keeps
+meaning exactly one thing. Verified through real pointer drags in both directions — a created bone
+now seeds `reach = length`, resizing an existing bone's tip leaves its reach alone, and a
+shift-click with no drag leaves `reach` undefined rather than giving a degenerate bone a 1px region.
+If the pointer is lost entirely the bone keeps `reach: undefined`, i.e. unlimited — the failure
+degrades to pre-increment behaviour rather than to the bug.
+
+### What the review confirmed rather than found
+
+- `reach` is a per-bone scalar, so `weights = f(mesh, bone positions)` is still pure and the
+  redraw-after-rigging claim still holds. No per-vertex state was smuggled in.
+- A stale mesh can never be paired with fresh weights, in either direction.
+- The `JSON.stringify(doc)` autosave fix is correct for a field that is absent and later added —
+  checked against `svelte/internal/client/proxy.js`, where the `ownKeys` trap's version source
+  covers exactly that case.
+- `Canvas.svelte`'s hand-listed bone read was a *fifth* instance of the dependency-list pattern; it
+  had been silently missing `wobble` and `parent`. Replacing it with `JSON.stringify(doc.bones)` is
+  a strict superset.
+
+### Carried forward from the review
+
+- **I1 (pre-existing, open).** `computeWeights` returns empty influences for every vertex when
+  `bones.length === 0`, reachable by drawing a layer and exporting before adding any bone — there is
+  no export guard. Every vertex exports `boneCount: 0` and spine-ts collapses the character to the
+  skeleton origin: the v1.1 invisible-character bug, still live. Needs a design call (refuse the
+  export, or emit an unweighted mesh), so it is its own task rather than a fix-pass addition.
+- **A caveat on the autosave fix.** It is correct only while `RigDocument` holds plain objects and
+  arrays. Add a `Map`, `Set`, `Date` or class instance and `proxy()` returns it unwrapped,
+  `JSON.stringify` yields `{}`, and mutations to it silently stop arming autosave — the same
+  work-loss failure, with no list left to forget to update.
+- **The reach fallback is covered purely** (`weights.test.ts:77`) but never through a real Spine
+  runtime. An attempt to make the verify fixture reach it was abandoned deliberately: the fallback
+  only fires at a `body.reach` low enough that the bone fails to cover its own layer, and a fixture
+  bent to hit a branch is worse than one that does not. Accepted as-is — the branch emits
+  `boneCount: 1`, structurally identical to any other weighted vertex.
