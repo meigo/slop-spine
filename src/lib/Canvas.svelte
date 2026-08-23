@@ -288,8 +288,8 @@
     const rad = (b.rotation * Math.PI) / 180;
     return { x: b.x + Math.cos(rad) * b.length, y: b.y + Math.sin(rad) * b.length };
   }
-  /** Always returns the closest bone, with no distance cutoff — "drag from empty space" is
-   *  defined by the brief as grabbing whichever bone origin is nearest, however far that is. */
+  /** Closest non-root origin, no distance cutoff. Move applies hitRadius at the call site;
+   *  only shift-create and alt-pose still grab from empty space. */
   function nearestBone(pt: { x: number; y: number }): Bone | null {
     let best: Bone | null = null;
     let bestD = Infinity;

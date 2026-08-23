@@ -55,9 +55,9 @@ export function addLayer(name: string): number {
  *  is retained by the closure, so undo brings the pixels back for free.
  *
  *  `document.layers`' position is re-anchored to the id of the preceding layer rather than
- *  trusting `index`: `reorderLayer` mutates that array without going through history, so by undo
- *  time `index` may no longer describe where the layer was. Slots/binds keep their original
- *  indices since nothing reorders those arrays. */
+ *  trusting `index`: a later `reorderLayer` (itself undoable) can still move that array before
+ *  this command undoes, so `index` may no longer describe where the layer was. Slots/binds keep
+ *  their original indices since nothing reorders those arrays. */
 export function removeLayer(id: number) {
   const index = document.layers.findIndex((l) => l.id === id);
   if (index === -1) return;
@@ -87,9 +87,17 @@ export function removeLayer(id: number) {
   });
 }
 
+/** Restores `ids` order, then appends layers that are not in the snapshot so a later-added
+ *  layer is not discarded by undoing a reorder. Missing snapshot ids are skipped. */
 function applyLayerOrder(ids: number[]) {
   const byId = new Map(document.layers.map((l) => [l.id, l]));
-  document.layers = ids.map((id) => byId.get(id)!);
+  const known = new Set(ids);
+  const restored: Layer[] = [];
+  for (const id of ids) {
+    const layer = byId.get(id);
+    if (layer) restored.push(layer);
+  }
+  document.layers = [...restored, ...document.layers.filter((l) => !known.has(l.id))];
 }
 
 /** Moves the layer to array index `index` (0 = bottom of the stack). One undo step. */
@@ -311,10 +319,24 @@ export function snapshotRig(): RigSnapshot {
   };
 }
 
+/** Bones are replaced wholesale (add/remove undo must drop/restore them). Slots and binds are
+ *  merged by name: snapshot entries are restored, then current entries created after the
+ *  snapshot are kept. A selected bone that no longer exists is cleared. */
 export function applyRig(snap: RigSnapshot) {
   document.bones = snap.bones.map((b) => ({ ...b }));
-  document.binds = snap.binds.map((b) => ({ slot: b.slot, bones: [...b.bones] }));
-  document.slots = snap.slots.map((s) => ({ ...s }));
+  const snapSlotNames = new Set(snap.slots.map((s) => s.name));
+  document.slots = [
+    ...snap.slots.map((s) => ({ ...s })),
+    ...document.slots.filter((s) => !snapSlotNames.has(s.name)),
+  ];
+  const snapBindSlots = new Set(snap.binds.map((b) => b.slot));
+  document.binds = [
+    ...snap.binds.map((b) => ({ slot: b.slot, bones: [...b.bones] })),
+    ...document.binds.filter((b) => !snapBindSlots.has(b.slot)),
+  ];
+  if (ui.selectedBone !== null && !document.bones.some((b) => b.name === ui.selectedBone)) {
+    ui.selectedBone = null;
+  }
   invalidate();
 }
 
