@@ -51,6 +51,69 @@ export function drawRigOverlay(ctx: CanvasRenderingContext2D, data: RigOverlayDa
     if (bone.name === "root") continue;
     drawBone(ctx, bone, bone.name === selectedBone, screenPx);
   }
+
+  // Selected bone only, on top of everything else — drawing every bone's region at once makes
+  // the canvas unreadable (Task 3 brief). A bone with reach === undefined draws nothing.
+  const selected = bones.find((b) => b.name === selectedBone);
+  if (selected && selected.reach !== undefined) {
+    drawCapsule(ctx, selected, selected.reach, screenPx);
+    drawReachHandle(ctx, selected, screenPx);
+  }
+}
+
+/** Capsule = the bone's segment offset by ±R, with semicircular caps at both ends. Standard
+ *  two-arc capsule outline: walk one offset side out, cap around the far end, walk the other
+ *  offset side back, cap around the near end. */
+function drawCapsule(ctx: CanvasRenderingContext2D, bone: Bone, R: number, screenPx: (px: number) => number) {
+  const rad = (bone.rotation * Math.PI) / 180;
+  const x0 = bone.x;
+  const y0 = bone.y;
+  const x1 = bone.x + Math.cos(rad) * bone.length;
+  const y1 = bone.y + Math.sin(rad) * bone.length;
+  const perp = rad + Math.PI / 2;
+  const ox = Math.cos(perp) * R;
+  const oy = Math.sin(perp) * R;
+
+  ctx.save();
+  ctx.strokeStyle = "#38bdf8"; // same sky-blue as drawMeshTriangles' stroke, at full alpha
+  ctx.lineWidth = screenPx(1.5);
+  ctx.setLineDash([screenPx(5), screenPx(4)]);
+  ctx.beginPath();
+  ctx.moveTo(x0 + ox, y0 + oy);
+  ctx.lineTo(x1 + ox, y1 + oy);
+  ctx.arc(x1, y1, R, perp, perp - Math.PI, true);
+  ctx.lineTo(x0 - ox, y0 - oy);
+  ctx.arc(x0, y0, R, perp - Math.PI, perp, true);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Where the drag handle sits: on the capsule edge, perpendicular to the bone at its midpoint.
+ *  Exported so Canvas.svelte's hit-test uses the exact same point the handle is drawn at, rather
+ *  than a second copy of this geometry that could drift from it. `undefined` reach (nothing to
+ *  grab) and root (no length, and never selectable — see document.ts) both return null. */
+export function reachHandlePosition(bone: Bone): Pt | null {
+  if (bone.reach === undefined) return null;
+  const rad = (bone.rotation * Math.PI) / 180;
+  const midX = bone.x + Math.cos(rad) * (bone.length / 2);
+  const midY = bone.y + Math.sin(rad) * (bone.length / 2);
+  const perp = rad + Math.PI / 2;
+  return { x: midX + Math.cos(perp) * bone.reach, y: midY + Math.sin(perp) * bone.reach };
+}
+
+function drawReachHandle(ctx: CanvasRenderingContext2D, bone: Bone, screenPx: (px: number) => number) {
+  const pos = reachHandlePosition(bone);
+  if (!pos) return;
+  ctx.save();
+  ctx.fillStyle = "#38bdf8";
+  ctx.strokeStyle = "#0c4a6e";
+  ctx.lineWidth = screenPx(1.5);
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, screenPx(7), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawMeshTriangles(
@@ -141,13 +204,45 @@ export interface Pt {
   y: number;
 }
 
-/** Rest-pose vertices offset by (dx, dy) scaled by each vertex's weight for `bone` — a
- *  translate-only linear-blend-skinning approximation. Good enough to preview whether a pose
- *  tears; never written back anywhere, so it costs nothing to get slightly wrong. */
-export function poseDeform(mesh: RigMesh, weights: Influence[][], bone: string, dx: number, dy: number): Pt[] {
+/** A single rigid pose gesture: rotate by `dtheta` about `pivot`, then translate by (dx, dy).
+ *  `dtheta = 0` is a pure translation. */
+export interface PoseDelta {
+  pivot: Pt;
+  dtheta: number;
+  dx: number;
+  dy: number;
+}
+
+/** Rest-pose vertices linear-blend-skinned by a single rigid pose gesture applied to `bones` (the
+ *  dragged bone plus every descendant, which share one pivot/rotation/translation because
+ *  rotating a bone carries its whole subtree rigidly — see moveBone's own dx/dy-to-descendants
+ *  logic in doc.svelte.ts for the same idea applied to a plain move). Each vertex moves by its
+ *  *combined* weight across `bones` toward the rigidly-posed position:
+ *
+ *    posed(v) = pivot + R(dtheta)*(v - pivot) + (dx, dy)
+ *    v'       = v + w * (posed(v) - v),   w = sum of this vertex's weights for bones in `bones`
+ *
+ *  since every bone in `bones` shares the same posed(), this is exactly the general
+ *  linear-blend-skinning sum "v + Σ wᵢ·(posedᵢ(v) − v)" collapsed by that equality. `dtheta = 0`
+ *  reduces to the old translate-only preview exactly (rx, ry rotate to themselves, so posed(v) -
+ *  v = (dx, dy) regardless of pivot). Never written back anywhere, so it costs nothing to get
+ *  slightly wrong. */
+export function poseDeform(mesh: RigMesh, weights: Influence[][], bones: string[], delta: PoseDelta): Pt[] {
+  const { pivot, dtheta, dx, dy } = delta;
+  const cos = Math.cos(dtheta);
+  const sin = Math.sin(dtheta);
+  const boneSet = new Set(bones);
   return mesh.vertices.map((v, i) => {
-    const t = weights[i]?.find((inf) => inf.bone === bone)?.weight ?? 0;
-    return { x: v.x + dx * t, y: v.y + dy * t };
+    let w = 0;
+    for (const inf of weights[i] ?? []) {
+      if (boneSet.has(inf.bone)) w += inf.weight;
+    }
+    if (w <= 0) return v;
+    const rx = v.x - pivot.x;
+    const ry = v.y - pivot.y;
+    const posedX = pivot.x + rx * cos - ry * sin + dx;
+    const posedY = pivot.y + rx * sin + ry * cos + dy;
+    return { x: v.x + w * (posedX - v.x), y: v.y + w * (posedY - v.y) };
   });
 }
 

@@ -50,4 +50,51 @@ describe("computeWeights", () => {
     expect(a.weight).toBeGreaterThan(0.95);
     expect(b.weight).toBeLessThan(0.05);
   });
+
+  it("gives exactly zero from a bone once a vertex is beyond its reach", () => {
+    const near = { ...bone("near", 0, 0, 10), reach: 20 };
+    const far = bone("far", 1000, 1000, 10);
+    const w = computeWeights(mesh([[100, 0]]), [near, far]);
+    expect(w[0].find((i) => i.bone === "near")).toBeUndefined();
+  });
+
+  it("windows a bone's weight strictly below its unwindowed value at the same distance", () => {
+    // "Nearer is heavier" alone can't distinguish a window from no window: 1/d^2 is already
+    // monotonic in distance with or without the (1-t^2)^2 multiplier. So instead compare the
+    // SAME bone at the SAME distance across two calls that differ only in whether reach is set.
+    // "ref" sits far enough away that its own weight is unaffected by either call and serves as
+    // a fixed denominator term, so any reduction in t's raw weight must show up in its normalised
+    // weight too (x/(x+c) is strictly increasing in x for fixed c > 0).
+    const vertex: [number, number] = [30, 0];
+    const ref = bone("ref", 1000, 1000, 0);
+    const withWindow = computeWeights(mesh([vertex]), [{ ...bone("t", 0, 0, 0), reach: 100 }, ref]);
+    const withoutWindow = computeWeights(mesh([vertex]), [bone("t", 0, 0, 0), ref]);
+    const windowed = withWindow[0].find((i) => i.bone === "t")!.weight;
+    const unwindowed = withoutWindow[0].find((i) => i.bone === "t")!.weight;
+    expect(windowed).toBeLessThan(unwindowed);
+  });
+
+  it("falls back to the nearest bone at weight 1 when a vertex is outside every reach", () => {
+    const a = { ...bone("a", 0, 0, 10), reach: 5 };
+    const b = { ...bone("b", 1000, 1000, 10), reach: 5 };
+    const w = computeWeights(mesh([[100, 0]]), [a, b]);
+    expect(w[0]).toEqual([{ bone: "a", weight: 1 }]);
+  });
+
+  it("undefined reach behaves exactly as today: pins the current influence values", () => {
+    // Hand-derived, not run-and-pasted. Vertex (10,0): bone a is the segment (0,0)-(100,0), and
+    // (10,0) lies exactly on it, so d_a = 0. Bone b is the segment (0,400)-(100,400); its closest
+    // point to (10,0) is (10,400), so d_b = 400. Neither bone sets reach, so no window applies —
+    // this exercises exactly the pre-reach formula: 1 / max(d, 1) ** 2, then normalised.
+    const dA = 0;
+    const dB = 400;
+    const wA = 1 / Math.max(dA, 1) ** 2; // = 1
+    const wB = 1 / Math.max(dB, 1) ** 2; // = 1/160000
+    const total = wA + wB;
+    const w = computeWeights(mesh([[10, 0]]), [bone("a", 0, 0, 100), bone("b", 0, 400, 100)]);
+    expect(w[0]).toEqual([
+      { bone: "a", weight: wA / total },
+      { bone: "b", weight: wB / total },
+    ]);
+  });
 });

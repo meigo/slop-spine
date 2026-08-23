@@ -35,6 +35,12 @@ export interface Bone {
   length: number;
   /** 0 = rigid, 1 = full physics wobble. */
   wobble: number;
+  /** Canvas px; hard cutoff on this bone's influence in computeWeights. `undefined` means
+   *  unlimited, so existing project files (saved before this field existed) load unchanged.
+   *  `0` also means unlimited — it falls through the `reach > 0` guard, matching poseWeights'
+   *  own semantics — so a UI control (Task 3) must clamp above zero, not allow it, or a slider
+   *  bottomed out at 0 would silently mean "no cutoff" instead of "no influence." */
+  reach?: number;
 }
 
 export interface Bind {
@@ -61,13 +67,4 @@ export function emptyDocument(width = 2048, height = 2048): RigDocument {
     binds: [],
     density: 24,
   };
-}
-
-/** Bones a slot is influenced by: its own bone, that bone's parent, and its children. */
-export function defaultBind(doc: RigDocument, slot: Slot): string[] {
-  const own = slot.bone;
-  const bone = doc.bones.find((b) => b.name === own);
-  const parent = bone?.parent ? [bone.parent] : [];
-  const kids = doc.bones.filter((b) => b.parent === own).map((b) => b.name);
-  return [own, ...parent, ...kids].filter((n) => n !== "root");
 }
