@@ -13,6 +13,7 @@
   import type { Layer } from "../rig/document";
   import { pixelCommand } from "../core/history";
   import { history } from "../state/history.svelte";
+  import { Plus, Trash2, Eye, EyeOff } from "@lucide/svelte";
 
   // Panel shows the topmost layer first; the document array is bottom-to-top (index 0 = bottom).
   let topFirst = $derived([...doc.layers].reverse());
@@ -102,7 +103,11 @@
 <div class="flex w-56 flex-col border-l border-border bg-surface text-sm text-text">
   <div class="flex items-center justify-between border-b border-border p-2">
     <span class="font-mono text-xs uppercase text-text-secondary">Layers</span>
-    <button class="rounded bg-surface-active px-2 py-0.5 hover:bg-surface-hover" onclick={onAdd}>+ Add</button>
+    <button
+      class="size-7 rounded flex items-center justify-center text-text-secondary hover:bg-surface-hover"
+      title="Add layer"
+      onclick={onAdd}><Plus size={16} /></button
+    >
   </div>
   <ul class="flex-1 overflow-y-auto">
     {#each topFirst as layer (layer.id)}
@@ -117,11 +122,11 @@
       >
         <div class="flex items-center gap-2">
           <button
-            class="w-5 shrink-0 text-center"
+            class="w-5 shrink-0 flex items-center justify-center text-text-secondary hover:text-text"
             onclick={() => toggleVisible(layer.id)}
-            title="Toggle visibility"
+            title={layer.visible ? "Visible — click to hide" : "Hidden — click to show"}
           >
-            {layer.visible ? "●" : "○"}
+            {#if layer.visible}<Eye size={15} />{:else}<EyeOff size={15} />{/if}
           </button>
           {#if editingId === layer.id}
             <input
@@ -140,11 +145,11 @@
             </button>
           {/if}
           <button
-            class="shrink-0 text-text-muted hover:text-text"
+            class="shrink-0 flex items-center justify-center text-text-muted hover:text-text"
             onclick={() => onRemove(layer.id)}
-            title="Remove layer"
+            title="Delete layer"
           >
-            ✕
+            <Trash2 size={14} />
           </button>
         </div>
         <div class="flex items-center gap-1 pl-7 text-xs text-text-secondary">
