@@ -24,32 +24,38 @@ describe("isPaintTool", () => {
 import { overlayFlags } from "../ui.svelte";
 
 describe("overlayFlags", () => {
-  it("shows only faint bones under a paint tool", () => {
-    expect(overlayFlags("brush", true)).toEqual({
+  it("shows faint bones and no mesh under a paint tool when meshes are off", () => {
+    expect(overlayFlags("brush", true, false)).toEqual({
       bones: true, faint: true, mesh: false, tint: false, capsule: false,
     });
   });
 
-  it("shows everything at full opacity under the bone tool", () => {
-    expect(overlayFlags("bone", true)).toEqual({
-      bones: true, faint: false, mesh: true, tint: true, capsule: true,
+  it("shows mesh wireframes under a paint tool when meshes are on, but not tint or capsule", () => {
+    expect(overlayFlags("brush", true, true)).toEqual({
+      bones: true, faint: true, mesh: true, tint: false, capsule: false,
     });
   });
 
-  it("hides bones when the toggle is off, but the bone tool still shows its own working overlay", () => {
-    // Turning bones off while holding the bone tool would leave nothing to aim at, so the tool
-    // wins over the toggle. The toggle governs the other tools.
-    expect(overlayFlags("brush", false).bones).toBe(false);
-    expect(overlayFlags("bone", false).bones).toBe(true);
+  it("bone tool shows bones even when the bones toggle is off", () => {
+    expect(overlayFlags("bone", false, false).bones).toBe(true);
+    expect(overlayFlags("brush", false, false).bones).toBe(false);
   });
 
-  it("draws no mesh or tint under any paint tool, whatever the toggle says", () => {
-    for (const showBones of [true, false]) {
-      for (const tool of ["brush", "eraser", "fill"] as const) {
-        const f = overlayFlags(tool, showBones);
-        expect(f.mesh).toBe(false);
-        expect(f.tint).toBe(false);
-      }
+  it("bone tool does not imply mesh — that is the meshes toggle", () => {
+    expect(overlayFlags("bone", true, false)).toEqual({
+      bones: true, faint: false, mesh: false, tint: true, capsule: true,
+    });
+    expect(overlayFlags("bone", true, true).mesh).toBe(true);
+  });
+
+  it("tint and capsule are bone-tool chrome, independent of the meshes toggle", () => {
+    for (const meshes of [true, false]) {
+      const paint = overlayFlags("fill", true, meshes);
+      expect(paint.tint).toBe(false);
+      expect(paint.capsule).toBe(false);
+      const bone = overlayFlags("bone", true, meshes);
+      expect(bone.tint).toBe(true);
+      expect(bone.capsule).toBe(true);
     }
   });
 });
