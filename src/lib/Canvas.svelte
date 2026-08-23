@@ -168,10 +168,12 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
       e.preventDefault();
       window.dispatchEvent(new Event("slop-spine:save"));
+      return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
       e.preventDefault();
       window.dispatchEvent(new Event("slop-spine:load"));
+      return;
     }
     // Tool keys, matching slop-animator's App.svelte exactly.
     if (e.key === "b") ui.tool = "brush";
