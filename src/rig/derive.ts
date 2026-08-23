@@ -15,10 +15,11 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 function boneSignature(bones: Bone[]): string {
-  // reach is included: it's a weights-only input (see computeWeights), but the cache's single
-  // key covers both mesh and weights, so leaving it out would let a reach-only change (Task 3's
-  // drag handle) return stale weights from cache instead of re-deriving them.
-  return bones.map((b) => `${b.name}:${b.x}:${b.y}:${b.rotation}:${b.length}:${b.reach}`).join(",");
+  // Serialise the bones whole rather than listing fields: a field left out here returns stale
+  // weights from cache, which is invisible until someone notices the rig stopped responding.
+  // Key order does not need to be stable — a spurious mismatch only recomputes (safe); it can
+  // never return stale (unsafe).
+  return JSON.stringify(bones);
 }
 
 /** Drop cached derivation for one slot, or every slot. Not required for correctness — the cache
@@ -65,6 +66,10 @@ export function deriveSlot(doc: RigDocument, slotName: string): { mesh: RigMesh;
   const bones = doc.bones.filter((b) => bindNames.includes(b.name));
 
   const density = slot.density ?? doc.density;
+  // Not a third hand-maintained field list: mesh generation takes exactly (canvas pixels,
+  // density) — meshFromMask(maskFromCanvas(canvas), density) below receives nothing else, and
+  // alphaThreshold is a default that's never passed. Bone fields belong in boneSignature, not
+  // here — folding them into meshKey would force a full mesh rebuild on every handle drag.
   const meshKey = `${layer.revision}|${density}`;
   const key = `${meshKey}|${boneSignature(bones)}`;
 

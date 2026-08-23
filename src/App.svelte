@@ -29,39 +29,13 @@
   });
 
   $effect(() => {
-    // Read every field autosave cares about so this effect reruns on any document mutation —
-    // strokes only bump `layer.revision` (canvas pixels themselves aren't reactive), so that field
-    // matters as much as the structural ones.
-    doc.canvas.width;
-    doc.canvas.height;
-    doc.density;
-    for (const l of doc.layers) {
-      l.id;
-      l.name;
-      l.visible;
-      l.opacity;
-      l.revision;
-    }
-    for (const s of doc.slots) {
-      s.name;
-      s.layerId;
-      s.bone;
-      s.order;
-      s.density;
-    }
-    for (const b of doc.bones) {
-      b.name;
-      b.parent;
-      b.x;
-      b.y;
-      b.rotation;
-      b.length;
-      b.wobble;
-    }
-    for (const bd of doc.binds) {
-      bd.slot;
-      for (const n of bd.bones) n;
-    }
+    // Deep-read the document so this effect reruns on ANY mutation. JSON.stringify walks every own
+    // enumerable property through the $state proxy's get/ownKeys traps, which registers a dependency
+    // on each field and on added/removed keys and array length — so a new field on Bone/Slot/Layer is
+    // tracked the day it is added, with nothing to remember. The returned string is discarded; the
+    // walk is the point. layer.canvas is an HTMLCanvasElement with no own enumerable properties, so it
+    // contributes {} rather than throwing — canvas pixels stay tracked by layer.revision as before.
+    JSON.stringify(doc);
 
     if (!ready || restoreFailed) return;
     armAutosave(() => doc);
