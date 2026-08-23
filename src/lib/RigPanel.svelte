@@ -1,8 +1,12 @@
 <script lang="ts">
-  import { document as doc, setWobble, setBind, renameBone, removeBone } from "../state/doc.svelte";
+  import { document as doc, setWobble, setBind, setSlotDensity, renameBone, removeBone } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
 
   let selectedSlot = $derived(doc.slots.find((s) => s.layerId === ui.selectedLayerId) ?? null);
+  // Shows the selected slot's effective density (its override, or the document default when it
+  // has none); with no slot selected there's nothing to override, so this is just the default.
+  let effectiveDensity = $derived(selectedSlot ? (selectedSlot.density ?? doc.density) : doc.density);
+  let hasDensityOverride = $derived(selectedSlot?.density !== undefined);
   let selectedBone = $derived(doc.bones.find((b) => b.name === ui.selectedBone) ?? null);
   let bindBones = $derived(
     selectedSlot ? (doc.binds.find((b) => b.slot === selectedSlot!.name)?.bones ?? []) : [],
@@ -17,6 +21,16 @@
 
   function onWobbleInput(e: Event) {
     if (selectedBone) setWobble(selectedBone.name, Number((e.target as HTMLInputElement).value));
+  }
+  // With a slot selected, the slider edits that slot's override. With none selected, there's no
+  // slot to override, so it edits the document default instead — which is what new slots inherit.
+  function onDensityInput(e: Event) {
+    const v = Number((e.target as HTMLInputElement).value);
+    if (selectedSlot) setSlotDensity(selectedSlot.name, v);
+    else doc.density = v;
+  }
+  function resetDensity() {
+    if (selectedSlot) setSlotDensity(selectedSlot.name, undefined);
   }
   function toggleBind(boneName: string, checked: boolean) {
     if (!selectedSlot) return;
@@ -43,10 +57,15 @@
   <span class="font-mono text-xs uppercase text-text-secondary">Rig</span>
 
   <label class="flex flex-col gap-1">
-    Density
+    Density {#if selectedSlot}— {selectedSlot.name}{:else}(document default){/if}
     <div class="flex items-center gap-1">
-      <input type="range" min="8" max="96" bind:value={doc.density} />
-      <span class="w-6 text-right font-mono text-xs">{doc.density}</span>
+      <input type="range" min="8" max="96" value={effectiveDensity} oninput={onDensityInput} />
+      <span class="w-6 text-right font-mono text-xs">{effectiveDensity}</span>
+      {#if hasDensityOverride}
+        <button class="shrink-0 text-text-muted hover:text-text" onclick={resetDensity} title="Reset to document default">
+          ↺
+        </button>
+      {/if}
     </div>
   </label>
 
