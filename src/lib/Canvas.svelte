@@ -94,18 +94,17 @@
     ctx.globalAlpha = 1;
 
     if (ui.mode === "rig") {
-      const slot = doc.slots.find((s) => s.layerId === ui.selectedLayerId);
-      const derived = slot ? deriveSlot(doc, slot.name) : null;
-      drawRigOverlay(
-        ctx,
-        {
-          bones: doc.bones,
-          selectedBone: ui.selectedBone,
-          mesh: derived?.mesh ?? null,
-          weights: derived?.weights ?? null,
-        },
-        viewport.zoom,
-      );
+      // Every visible layer's slot, not just the selected one — bleed (Task 21) is a relationship
+      // between two parts' meshes, invisible if only one is ever drawn.
+      const slots = doc.layers
+        .filter((l) => l.visible)
+        .map((l) => doc.slots.find((s) => s.layerId === l.id))
+        .filter((s) => s !== undefined)
+        .map((slot) => {
+          const derived = deriveSlot(doc, slot.name);
+          return { ...derived, selected: slot.layerId === ui.selectedLayerId };
+        });
+      drawRigOverlay(ctx, { bones: doc.bones, selectedBone: ui.selectedBone, slots }, viewport.zoom);
     }
   }
 
