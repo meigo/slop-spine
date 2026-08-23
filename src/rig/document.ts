@@ -35,6 +35,9 @@ export interface Bone {
   length: number;
   /** 0 = rigid, 1 = full physics wobble. */
   wobble: number;
+  /** Canvas px; hard cutoff on this bone's influence in computeWeights. `undefined` means
+   *  unlimited, so existing project files (saved before this field existed) load unchanged. */
+  reach?: number;
 }
 
 export interface Bind {

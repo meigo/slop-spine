@@ -50,4 +50,35 @@ describe("computeWeights", () => {
     expect(a.weight).toBeGreaterThan(0.95);
     expect(b.weight).toBeLessThan(0.05);
   });
+
+  it("gives exactly zero from a bone once a vertex is beyond its reach", () => {
+    const near = { ...bone("near", 0, 0, 10), reach: 20 };
+    const far = bone("far", 1000, 1000, 10);
+    const w = computeWeights(mesh([[100, 0]]), [near, far]);
+    expect(w[0].find((i) => i.bone === "near")).toBeUndefined();
+  });
+
+  it("still weights a vertex inside reach, falling off monotonically with distance", () => {
+    const near = { ...bone("near", 0, 0, 10), reach: 100 };
+    const other = bone("other", 0, 500, 10);
+    const w = computeWeights(mesh([[20, 0], [60, 0]]), [near, other]);
+    const closer = w[0].find((i) => i.bone === "near")!;
+    const further = w[1].find((i) => i.bone === "near")!;
+    expect(closer).toBeDefined();
+    expect(further).toBeDefined();
+    expect(closer.weight).toBeGreaterThan(further.weight);
+  });
+
+  it("falls back to the nearest bone at weight 1 when a vertex is outside every reach", () => {
+    const a = { ...bone("a", 0, 0, 10), reach: 5 };
+    const b = { ...bone("b", 1000, 1000, 10), reach: 5 };
+    const w = computeWeights(mesh([[100, 0]]), [a, b]);
+    expect(w[0]).toEqual([{ bone: "a", weight: 1 }]);
+  });
+
+  it("treats undefined reach as unlimited, matching pre-reach behaviour", () => {
+    const w = computeWeights(mesh([[10, 0]]), [bone("a", 0, 0, 100), bone("b", 0, 400, 100)]);
+    const a = w[0].find((i) => i.bone === "a")!;
+    expect(a.weight).toBeGreaterThan(0.95);
+  });
 });
