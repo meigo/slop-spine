@@ -63,8 +63,9 @@ needs.
 | `Canvas.svelte:113` | `ui.mode === "rig"` | see overlay, below |
 | `Canvas.svelte:146` | `void ui.mode` | `void ui.tool; void ui.showBones` |
 
-`isPaintTool(tool)` is a pure exported predicate — `brush | eraser | fill` — so the two halves can
-never both claim a gesture, and adding a future tool cannot silently fall into the paint branch.
+`isPaintTool(tool)` is a pure predicate exported from `src/state/ui.svelte.ts` beside the `Tool`
+type — `brush | eraser | fill` — so the two halves can never both claim a gesture, and adding a
+future tool cannot silently fall into the paint branch.
 
 The bone tool keeps every gesture it has today, unchanged: shift-drag creates, alt-drag poses, plain
 drag moves, the reach handle hit-tests before the bone body, bone-end snapping as-is.
@@ -75,7 +76,8 @@ drag moves, the reach handle hit-tests before the bone body, bone-end snapping a
 (`RigOverlay.ts` — mesh wireframes 34-41, weight tint 43-47, bones 49-53, reach capsule 55-58). It
 gains a flags argument:
 
-- **bones** draw whenever `ui.showBones`, at reduced alpha when the active tool is not `bone`
+- **bones** draw whenever `ui.showBones`, at `globalAlpha = 0.35` when the active tool is not
+  `bone`, and at full opacity under it
 - **mesh wireframe, weight tint, reach capsule** draw only under the bone tool
 
 Bones are drawn live, not snapshotted. A snapshot needs invalidating every time a bone moves, and a
