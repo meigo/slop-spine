@@ -283,6 +283,27 @@
     return best;
   }
 
+  /** Nearest point among every OTHER bone's origin and tip, if within `radius` — lets a dragged
+   *  origin or tip snap exactly onto another bone's end so chains connect instead of landing by
+   *  eye. `exclude` is the bone being dragged, so it can't snap to its own origin/tip. root is a
+   *  legitimate target (origin and tip coincide there, at canvas centre). Returns `pt` unchanged
+   *  when nothing is close enough. */
+  function snapToBoneEnd(pt: { x: number; y: number }, exclude: string, radius: number): { x: number; y: number } {
+    let best: { x: number; y: number } | null = null;
+    let bestD = Infinity;
+    for (const b of doc.bones) {
+      if (b.name === exclude) continue;
+      for (const c of [{ x: b.x, y: b.y }, boneTip(b)]) {
+        const d = Math.hypot(c.x - pt.x, c.y - pt.y);
+        if (d < radius && d < bestD) {
+          bestD = d;
+          best = c;
+        }
+      }
+    }
+    return best ?? pt;
+  }
+
   type DragState = { type: "move" | "length"; bone: string } | { type: "pose"; bone: string };
   let dragState: DragState | null = null;
   let poseStart: { x: number; y: number } | null = null;
@@ -332,13 +353,18 @@
   function onRigPointerMove(e: PointerEvent) {
     if (!dragState || !viewport) return;
     const pt = viewport.screenToCanvas(e.clientX, e.clientY);
+    const hitRadius = RIG_HIT_RADIUS / viewport.zoom;
     if (dragState.type === "move") {
-      moveBone(dragState.bone, pt.x, pt.y);
+      // moveBone re-derives the delta it drags descendants by from (snapped x/y) - (bone's
+      // current x/y), so snapping here is enough to keep the subtree attached to the snap too.
+      const snapped = snapToBoneEnd(pt, dragState.bone, hitRadius);
+      moveBone(dragState.bone, snapped.x, snapped.y);
     } else if (dragState.type === "length") {
       const bone = doc.bones.find((b) => b.name === dragState!.bone);
       if (bone) {
-        const dx = pt.x - bone.x;
-        const dy = pt.y - bone.y;
+        const snapped = snapToBoneEnd(pt, dragState.bone, hitRadius);
+        const dx = snapped.x - bone.x;
+        const dy = snapped.y - bone.y;
         setBoneLength(dragState.bone, Math.hypot(dx, dy));
         setBoneRotation(dragState.bone, (Math.atan2(dy, dx) * 180) / Math.PI);
       }

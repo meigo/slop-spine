@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { document as doc, setWobble, setBind, setSlotDensity, renameBone, removeBone } from "../state/doc.svelte";
+  import {
+    document as doc,
+    setWobble,
+    setBind,
+    setSlotDensity,
+    renameBone,
+    removeBone,
+    setParent,
+    descendantsOf,
+  } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
 
   let selectedSlot = $derived(doc.slots.find((s) => s.layerId === ui.selectedLayerId) ?? null);
@@ -13,6 +22,12 @@
   );
   // root is never a valid weight influence (document.ts's defaultBind excludes it too).
   let bindableBones = $derived(doc.bones.filter((b) => b.name !== "root"));
+  // A bone can't be parented to itself or to its own descendant (setParent refuses that as a
+  // cycle) — excluded here too so the dropdown never offers a choice it would then reject.
+  let invalidParents = $derived(
+    selectedBone ? new Set([selectedBone.name, ...descendantsOf(selectedBone.name).map((b) => b.name)]) : new Set<string>(),
+  );
+  let parentOptions = $derived(doc.bones.filter((b) => !invalidParents.has(b.name)));
 
   let nameDraft = $state("");
   $effect(() => {
@@ -51,6 +66,9 @@
     removeBone(selectedBone.name);
     ui.selectedBone = null;
   }
+  function onParentChange(e: Event) {
+    if (selectedBone) setParent(selectedBone.name, (e.target as HTMLSelectElement).value);
+  }
 </script>
 
 <div class="flex w-56 flex-col gap-3 overflow-y-auto border-l border-border bg-surface p-2 text-sm text-text">
@@ -83,6 +101,15 @@
           ✕
         </button>
       </div>
+    </label>
+
+    <label class="flex flex-col gap-1">
+      Parent
+      <select class="bg-canvas-bg px-1 text-text" value={selectedBone.parent} onchange={onParentChange}>
+        {#each parentOptions as bone (bone.name)}
+          <option value={bone.name}>{bone.name}</option>
+        {/each}
+      </select>
     </label>
 
     <label class="flex flex-col gap-1">
