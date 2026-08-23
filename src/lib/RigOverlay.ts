@@ -141,13 +141,45 @@ export interface Pt {
   y: number;
 }
 
-/** Rest-pose vertices offset by (dx, dy) scaled by each vertex's weight for `bone` — a
- *  translate-only linear-blend-skinning approximation. Good enough to preview whether a pose
- *  tears; never written back anywhere, so it costs nothing to get slightly wrong. */
-export function poseDeform(mesh: RigMesh, weights: Influence[][], bone: string, dx: number, dy: number): Pt[] {
+/** A single rigid pose gesture: rotate by `dtheta` about `pivot`, then translate by (dx, dy).
+ *  `dtheta = 0` is a pure translation. */
+export interface PoseDelta {
+  pivot: Pt;
+  dtheta: number;
+  dx: number;
+  dy: number;
+}
+
+/** Rest-pose vertices linear-blend-skinned by a single rigid pose gesture applied to `bones` (the
+ *  dragged bone plus every descendant, which share one pivot/rotation/translation because
+ *  rotating a bone carries its whole subtree rigidly — see moveBone's own dx/dy-to-descendants
+ *  logic in doc.svelte.ts for the same idea applied to a plain move). Each vertex moves by its
+ *  *combined* weight across `bones` toward the rigidly-posed position:
+ *
+ *    posed(v) = pivot + R(dtheta)*(v - pivot) + (dx, dy)
+ *    v'       = v + w * (posed(v) - v),   w = sum of this vertex's weights for bones in `bones`
+ *
+ *  since every bone in `bones` shares the same posed(), this is exactly the general
+ *  linear-blend-skinning sum "v + Σ wᵢ·(posedᵢ(v) − v)" collapsed by that equality. `dtheta = 0`
+ *  reduces to the old translate-only preview exactly (rx, ry rotate to themselves, so posed(v) -
+ *  v = (dx, dy) regardless of pivot). Never written back anywhere, so it costs nothing to get
+ *  slightly wrong. */
+export function poseDeform(mesh: RigMesh, weights: Influence[][], bones: string[], delta: PoseDelta): Pt[] {
+  const { pivot, dtheta, dx, dy } = delta;
+  const cos = Math.cos(dtheta);
+  const sin = Math.sin(dtheta);
+  const boneSet = new Set(bones);
   return mesh.vertices.map((v, i) => {
-    const t = weights[i]?.find((inf) => inf.bone === bone)?.weight ?? 0;
-    return { x: v.x + dx * t, y: v.y + dy * t };
+    let w = 0;
+    for (const inf of weights[i] ?? []) {
+      if (boneSet.has(inf.bone)) w += inf.weight;
+    }
+    if (w <= 0) return v;
+    const rx = v.x - pivot.x;
+    const ry = v.y - pivot.y;
+    const posedX = pivot.x + rx * cos - ry * sin + dx;
+    const posedY = pivot.y + rx * sin + ry * cos + dy;
+    return { x: v.x + w * (posedX - v.x), y: v.y + w * (posedY - v.y) };
   });
 }
 

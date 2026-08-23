@@ -6,6 +6,7 @@
     moveBone,
     setBoneLength,
     setBoneRotation,
+    descendantsOf,
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
   import type { Tool } from "../state/ui.svelte";
@@ -15,7 +16,7 @@
   import { createDrawDispatch } from "./draw-dispatch";
   import { history } from "../state/history.svelte";
   import { deriveSlot } from "../rig/derive";
-  import { drawRigOverlay, poseDeform, drawWarpedLayer } from "./RigOverlay";
+  import { drawRigOverlay, poseDeform, drawWarpedLayer, type PoseDelta } from "./RigOverlay";
   import type { Bone } from "../rig/document";
 
   let stage: HTMLDivElement;
@@ -34,8 +35,11 @@
   // --- Rig mode: transient pose-drag offset. This is the ONE piece of rig state that must be
   // $state — it never touches doc.bones (pose is never stored), so it needs its own reactive
   // trigger for the redraw below. Everything else rig-related reads doc.bones/doc.density/ui
-  // directly, which are already reactive. ---
-  let poseDrag = $state<{ bone: string; dx: number; dy: number } | null>(null);
+  // directly, which are already reactive. `pivot` is the dragged bone's rest origin; `dtheta` is
+  // 0 for a body-drag (translate) and the bearing change from a tip-drag (rotate). ---
+  let poseDrag = $state<{ bone: string; pivot: { x: number; y: number }; dtheta: number; dx: number; dy: number } | null>(
+    null,
+  );
 
   // Screen-only page ground: a checkerboard so a white stroke (now paintable, Task 14) reads
   // against the page instead of vanishing into a flat white fill. Never touches a layer.canvas —
@@ -80,12 +84,18 @@
     ctx.strokeStyle = "#000";
     ctx.strokeRect(0, 0, doc.canvas.width, doc.canvas.height);
 
+    // The dragged bone and every descendant pose together, rigidly, about the dragged bone's
+    // pivot — rotating a shoulder must carry the forearm (see poseDeform's doc comment).
+    const poseBones = poseDrag ? [poseDrag.bone, ...descendantsOf(poseDrag.bone).map((b) => b.name)] : null;
+    const poseDelta: PoseDelta | null = poseDrag
+      ? { pivot: poseDrag.pivot, dtheta: poseDrag.dtheta, dx: poseDrag.dx, dy: poseDrag.dy }
+      : null;
     for (const layer of doc.layers) {
       if (!layer.visible) continue;
       ctx.globalAlpha = layer.opacity;
-      const warped = poseDrag && warpFor(layer.id, poseDrag.bone);
+      const warped = poseBones && poseDelta && warpFor(layer.id);
       if (warped) {
-        const deformed = poseDeform(warped.mesh, warped.weights, poseDrag!.bone, poseDrag!.dx, poseDrag!.dy);
+        const deformed = poseDeform(warped.mesh, warped.weights, poseBones!, poseDelta!);
         drawWarpedLayer(ctx, layer.canvas, warped.mesh, deformed);
       } else {
         ctx.drawImage(layer.canvas, 0, 0);
@@ -108,13 +118,14 @@
     }
   }
 
-  /** The slot bound to `layer`, if `bone` is among its influencing bones — that's the mesh/weights
-   *  a live pose-drag on `bone` needs to warp that layer's drawing. */
-  function warpFor(layerId: number, bone: string) {
+  /** The mesh/weights a live pose-drag needs to warp `layer`'s drawing, if it has a slot at all.
+   *  No bind check here: a bone with no weight on any of this slot's vertices already deforms
+   *  nothing (poseDeform sums weights per vertex), so filtering by bind would be redundant even
+   *  where binds are still meaningful — and once reach fully replaces binds (Task 4 makes every
+   *  new slot's bind `[]`), a bind check here would make the pose preview stop working entirely. */
+  function warpFor(layerId: number) {
     const slot = doc.slots.find((s) => s.layerId === layerId);
     if (!slot) return null;
-    const bindBones = doc.binds.find((b) => b.slot === slot.name)?.bones ?? [];
-    if (!bindBones.includes(bone)) return null;
     return deriveSlot(doc, slot.name);
   }
 
@@ -307,6 +318,11 @@
   type DragState = { type: "move" | "length"; bone: string } | { type: "pose"; bone: string };
   let dragState: DragState | null = null;
   let poseStart: { x: number; y: number } | null = null;
+  // Only meaningful during a pose drag: whether it's a tip-grab (rotate) rather than a body-grab
+  // (translate), and — for rotate — the bearing from the bone's origin to the pointer at drag
+  // start, so onRigPointerMove can turn "bearing now" into a Δθ.
+  let poseIsRotate = false;
+  let poseStartBearing = 0;
 
   function onRigPointerDown(e: PointerEvent) {
     if (ui.mode !== "rig" || e.button !== 0) return;
@@ -330,11 +346,24 @@
       return;
     }
     if (e.altKey) {
+      // Same tip-vs-body distinction bone editing uses just below: grabbing a tip rotates,
+      // grabbing anywhere else on/near a bone translates. Reusing tipHit/hitRadius rather than a
+      // second threshold keeps the two gestures' hit-testing from drifting apart.
+      const tip = tipHit(pt, hitRadius);
+      if (tip) {
+        dragState = { type: "pose", bone: tip.name };
+        poseStart = pt;
+        poseIsRotate = true;
+        poseStartBearing = Math.atan2(pt.y - tip.y, pt.x - tip.x);
+        poseDrag = { bone: tip.name, pivot: { x: tip.x, y: tip.y }, dtheta: 0, dx: 0, dy: 0 };
+        return;
+      }
       const b = nearestBone(pt);
       if (!b) return;
       dragState = { type: "pose", bone: b.name };
       poseStart = pt;
-      poseDrag = { bone: b.name, dx: 0, dy: 0 };
+      poseIsRotate = false;
+      poseDrag = { bone: b.name, pivot: { x: b.x, y: b.y }, dtheta: 0, dx: 0, dy: 0 };
       return;
     }
     const tip = tipHit(pt, hitRadius);
@@ -369,8 +398,14 @@
         setBoneRotation(dragState.bone, (Math.atan2(dy, dx) * 180) / Math.PI);
       }
     } else if (dragState.type === "pose" && poseStart && poseDrag) {
-      poseDrag.dx = pt.x - poseStart.x;
-      poseDrag.dy = pt.y - poseStart.y;
+      if (poseIsRotate) {
+        // Δθ is the change in bearing from the bone's origin to the pointer.
+        const bearing = Math.atan2(pt.y - poseDrag.pivot.y, pt.x - poseDrag.pivot.x);
+        poseDrag.dtheta = bearing - poseStartBearing;
+      } else {
+        poseDrag.dx = pt.x - poseStart.x;
+        poseDrag.dy = pt.y - poseStart.y;
+      }
     }
   }
 
