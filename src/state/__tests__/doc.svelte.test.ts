@@ -6,7 +6,11 @@ import {
   addBone,
   moveBone,
   setBoneLength,
+  setBoneRotation,
+  insertJoint,
+  setSlotBone,
   reorderLayer,
+  duplicateLayer,
   document,
 } from "../doc.svelte";
 import { history } from "../history.svelte";
@@ -105,6 +109,56 @@ function dummyLayer(id: number): Layer {
     revision: 0,
   };
 }
+
+describe("insertJoint", () => {
+  it("shortens the parent, adds a child covering the rest, and rehangs former children", () => {
+    const saved = snapshotRig();
+    const upper = addBone("root", 0, 0)!;
+    setBoneLength(upper, 100);
+    setBoneRotation(upper, 0);
+    const hand = addBone(upper, 100, 0)!;
+    setBoneLength(hand, 40);
+    const mid = insertJoint(upper, 40, 0);
+    expect(mid).toBeTruthy();
+    const u = document.bones.find((b) => b.name === upper)!;
+    const m = document.bones.find((b) => b.name === mid)!;
+    const h = document.bones.find((b) => b.name === hand)!;
+    expect(u.length).toBeCloseTo(40, 5);
+    expect(m.x).toBeCloseTo(40, 5);
+    expect(m.length).toBeCloseTo(60, 5);
+    expect(m.parent).toBe(upper);
+    expect(h.parent).toBe(mid);
+    applyRig(saved);
+  });
+
+  it("returns null near an end so we do not invent a stub", () => {
+    const saved = snapshotRig();
+    const upper = addBone("root", 0, 0)!;
+    setBoneLength(upper, 100);
+    expect(insertJoint(upper, 2, 0)).toBeNull();
+    applyRig(saved);
+  });
+});
+
+describe("setSlotBone", () => {
+  it("points the slot at a real bone and ignores a missing name", () => {
+    const saved = snapshotRig();
+    const arm = addBone("root", 0, 0)!;
+    document.slots.push({ name: "hang", layerId: 1, bone: "root", order: 0 });
+    setSlotBone("hang", arm);
+    expect(document.slots.find((s) => s.name === "hang")?.bone).toBe(arm);
+    setSlotBone("hang", "nope");
+    expect(document.slots.find((s) => s.name === "hang")?.bone).toBe(arm);
+    document.slots = document.slots.filter((s) => s.name !== "hang");
+    applyRig(saved);
+  });
+});
+
+describe("duplicateLayer", () => {
+  it("returns null for a missing layer", () => {
+    expect(duplicateLayer(-1)).toBeNull();
+  });
+});
 
 describe("reorderLayer", () => {
   it("undo keeps a layer added after the reorder", () => {

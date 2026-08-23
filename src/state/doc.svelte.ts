@@ -1,5 +1,6 @@
 import { emptyDocument, type RigDocument, type Layer, type Slot, type Bone, type Bind } from "../rig/document";
 import { invalidate } from "../rig/derive";
+import { splitBoneAt } from "../rig/chain";
 import { ui } from "./ui.svelte";
 import { history } from "./history.svelte";
 
@@ -130,11 +131,55 @@ export function toggleVisible(id: number) {
   if (layer) layer.visible = !layer.visible;
 }
 
-/** Sets a layer's opacity (0-1, clamped). Honoured by Canvas.svelte's redraw (`ctx.globalAlpha`)
- *  and, below 1, by the Spine writer (emits slot `color` alpha — see spine-json.ts). */
+/** Sets a layer's opacity (0-1, clamped). Editor preview only (`ctx.globalAlpha`); export
+ *  ignores it so a fade in the editor cannot change the Spine slot. */
 export function setLayerOpacity(id: number, opacity: number) {
   const layer = document.layers.find((l) => l.id === id);
   if (layer) layer.opacity = Math.max(0, Math.min(1, opacity));
+}
+
+/** Clones `id` (pixels, visibility, slot bone/density/bind) and inserts the copy above it
+ *  in the stack. Returns the new layer id, or null if `id` is missing. Undoable. */
+export function duplicateLayer(id: number): number | null {
+  const index = document.layers.findIndex((l) => l.id === id);
+  if (index === -1) return null;
+  const src = document.layers[index];
+  const srcSlot = document.slots.find((s) => s.layerId === id);
+  const srcBind = srcSlot ? document.binds.find((b) => b.slot === srcSlot.name) : undefined;
+  const layer = createLayer(`${src.name} copy`);
+  layer.visible = src.visible;
+  layer.opacity = src.opacity;
+  const ctx = layer.canvas.getContext("2d");
+  if (ctx) ctx.drawImage(src.canvas, 0, 0);
+  document.layers.splice(index + 1, 0, layer);
+  const slot: Slot = {
+    name: uniqueSlotName(layer.name),
+    layerId: layer.id,
+    bone: srcSlot?.bone ?? "root",
+    order: nextSlotOrder++,
+    density: srcSlot?.density,
+  };
+  document.slots.push(slot);
+  document.binds.push({ slot: slot.name, bones: srcBind ? [...srcBind.bones] : [] });
+  markLayerDirty(layer.id);
+  const newId = layer.id;
+  const slotName = slot.name;
+  history.push({
+    undo() {
+      document.layers = document.layers.filter((l) => l.id !== newId);
+      document.slots = document.slots.filter((s) => s.layerId !== newId);
+      document.binds = document.binds.filter((b) => b.slot !== slotName);
+      invalidate(slotName);
+    },
+    redo() {
+      const at = document.layers.findIndex((l) => l.id === id);
+      document.layers.splice(at === -1 ? document.layers.length : at + 1, 0, layer);
+      document.slots.push(slot);
+      document.binds.push({ slot: slot.name, bones: srcBind ? [...srcBind.bones] : [] });
+      markLayerDirty(newId);
+    },
+  });
+  return newId;
 }
 
 /** Bumps a layer's revision. Call after any operation that changes its pixels — Task 10's
@@ -267,6 +312,25 @@ export function setParent(name: string, newParent: string) {
   document.bones = sortBonesByHierarchy(document.bones);
 }
 
+/** Insert a joint on `name`'s shaft at `(x, y)`: shorten that bone to the hit, add a child
+ *  covering the rest, and hang the original's other children off the new bone so the chain
+ *  stays connected. Returns the new bone's name, or null if the hit is too close to an end. */
+export function insertJoint(name: string, x: number, y: number): string | null {
+  const bone = document.bones.find((b) => b.name === name);
+  if (!bone || name === "root") return null;
+  const split = splitBoneAt(bone, { x, y });
+  if (!split) return null;
+  const added = addBone(bone.name, split.child.x, split.child.y);
+  if (!added) return null;
+  setBoneLength(name, split.parentLength);
+  setBoneLength(added, split.child.length);
+  setBoneRotation(added, split.child.rotation);
+  setReach(added, split.child.length);
+  const former = document.bones.filter((b) => b.parent === name && b.name !== added).map((b) => b.name);
+  for (const child of former) setParent(child, added);
+  return added;
+}
+
 /** Renames a bone and every reference to it (children's `parent`, binds, slots). Refuses root
  *  (its literal name is load-bearing — derive.ts's allNonRootBoneNames filters on the string "root")
  *  and refuses a name collision. */
@@ -291,6 +355,11 @@ export function renameBone(oldName: string, newName: string) {
 export function setWobble(name: string, v: number) {
   const bone = document.bones.find((b) => b.name === name);
   if (bone) bone.wobble = Math.max(0, Math.min(1, v));
+}
+
+export function setWobbleMove(name: string, on: boolean) {
+  const bone = document.bones.find((b) => b.name === name);
+  if (bone) bone.wobbleMove = on || undefined;
 }
 
 // Canvas px. Bone.reach's own doc comment (rig/document.ts) and computeWeights' guard (`R > 0`,
@@ -364,6 +433,14 @@ export function setBind(slotName: string, bones: string[]) {
 export function setSlotDensity(slotName: string, density: number | undefined) {
   const slot = document.slots.find((s) => s.name === slotName);
   if (slot) slot.density = density;
+}
+
+/** Spine slot parent — which bone this layer hangs from. Weights still come from reach/binds. */
+export function setSlotBone(slotName: string, boneName: string) {
+  const slot = document.slots.find((s) => s.name === slotName);
+  if (!slot) return;
+  if (!document.bones.some((b) => b.name === boneName)) return;
+  slot.bone = boneName;
 }
 
 // --- Persistence (Task 11) ----------------------------------------------------------------------

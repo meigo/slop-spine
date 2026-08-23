@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPaintTool, type Tool } from "../ui.svelte";
+import { isPaintTool, toolFromKey, type Tool } from "../ui.svelte";
 
 describe("isPaintTool", () => {
   it("is true for every tool that paints", () => {
@@ -12,12 +12,29 @@ describe("isPaintTool", () => {
     expect(isPaintTool("bone")).toBe(false);
   });
 
+  it("is false for select and lasso", () => {
+    expect(isPaintTool("select")).toBe(false);
+    expect(isPaintTool("lasso")).toBe(false);
+  });
+
   it("classifies every member of Tool, so a new tool cannot default into painting", () => {
     // If a tool is added to the union without a decision here, this fails to compile rather than
     // silently falling into the paint branch and letting a brush stroke fire on a rig gesture.
-    const all: Tool[] = ["brush", "eraser", "fill", "bone"];
+    const all: Tool[] = ["brush", "eraser", "fill", "select", "lasso", "bone"];
     const painting = all.filter(isPaintTool);
     expect(painting).toEqual(["brush", "eraser", "fill"]);
+  });
+});
+
+describe("toolFromKey", () => {
+  it("maps animator keys plus r for bone", () => {
+    expect(toolFromKey("b")).toBe("brush");
+    expect(toolFromKey("e")).toBe("eraser");
+    expect(toolFromKey("g")).toBe("fill");
+    expect(toolFromKey("s")).toBe("select");
+    expect(toolFromKey("l")).toBe("lasso");
+    expect(toolFromKey("r")).toBe("bone");
+    expect(toolFromKey("n")).toBeNull();
   });
 });
 

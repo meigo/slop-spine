@@ -7,11 +7,27 @@ import { trimLayer } from "./trim";
 import { packAtlas } from "./atlas";
 import { writeSkeleton } from "./spine-json";
 
+export class ExportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ExportError";
+  }
+}
+
+/** spine-ts collapses every `boneCount: 0` vertex to the skeleton origin. A drawing-only
+ *  document (root, no real bones) would export a valid zip of an invisible character. */
+export function assertExportable(doc: RigDocument): void {
+  if (!doc.bones.some((b) => b.name !== "root")) {
+    throw new ExportError("Add a bone before exporting. Spine collapses meshes with no bone weights.");
+  }
+}
+
 async function blobBytes(b: Blob): Promise<Uint8Array> {
   return new Uint8Array(await b.arrayBuffer());
 }
 
 export async function exportBundle(doc: RigDocument): Promise<Blob> {
+  assertExportable(doc);
   const meshes: Record<string, RigMesh> = {};
   const weights: Record<string, Influence[][]> = {};
   const items: { name: string; trim: ReturnType<typeof trimLayer> }[] = [];

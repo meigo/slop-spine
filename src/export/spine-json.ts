@@ -68,9 +68,7 @@ export function writeSkeleton(input: SkeletonInput) {
     .sort((a, b) => layerIndex(a) - layerIndex(b))
     .map((s) => {
       const layer = doc.layers.find((l) => l.id === s.layerId);
-      const alpha = layer ? Math.round(Math.max(0, Math.min(1, layer.opacity)) * 255) : 255;
-      const color = alpha < 255 ? { color: `ffffff${alpha.toString(16).padStart(2, "0")}` } : {};
-      return { name: s.name, bone: s.bone, attachment: layer?.visible === false ? null : s.name, ...color };
+      return { name: s.name, bone: s.bone, attachment: layer?.visible === false ? null : s.name };
     });
 
   const attachments: Record<string, Record<string, unknown>> = {};
@@ -116,6 +114,7 @@ export function writeSkeleton(input: SkeletonInput) {
       order: i,
       bone: b.name,
       rotate: 1,
+      ...(b.wobbleMove ? { x: 1, y: 1 } : {}),
       inertia: 0.5 * b.wobble,
       damping: 0.85,
     }));

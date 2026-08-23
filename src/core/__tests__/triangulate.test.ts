@@ -26,6 +26,29 @@ describe("boundaryPoints", () => {
   it("empty mask → no points", () => {
     expect(boundaryPoints(() => false, 40, 40, 6)).toEqual([]);
   });
+
+  it("keeps a rectangle's corners, not a dense sampling of each side", () => {
+    // 20×20 square; uniform spacing-6 used to keep ~a dozen edge pixels.
+    const pts = boundaryPoints(sq, 40, 40, 6);
+    expect(pts.length).toBeGreaterThanOrEqual(4);
+    expect(pts.length).toBeLessThanOrEqual(8);
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    expect(Math.min(...xs)).toBe(10);
+    expect(Math.max(...xs)).toBe(29);
+    expect(Math.min(...ys)).toBe(10);
+    expect(Math.max(...ys)).toBe(29);
+  });
+
+  it("keeps a thin spike that uniform spacing would skip", () => {
+    // Fat block, then a 3px-wide spike hanging off the bottom. Scan-order greedy sampling
+    // already has the block's bottom edge, so every spike pixel sits within `spacing` of a
+    // kept point and is dropped. An ordered outline must still round the spike.
+    const spiked = (x: number, y: number) =>
+      (x >= 20 && x < 80 && y >= 20 && y < 60) || (x >= 48 && x < 51 && y >= 60 && y < 80);
+    const pts = boundaryPoints(spiked, 100, 100, 24);
+    expect(pts.some((p) => p.y >= 60)).toBe(true);
+  });
 });
 
 describe("interiorPoints", () => {

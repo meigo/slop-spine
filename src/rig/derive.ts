@@ -51,6 +51,24 @@ export function bindNamesFor(doc: RigDocument, slotName: string): string[] {
   return stored?.length ? stored : allNonRootBoneNames(doc);
 }
 
+/** Next stored bind list after checking/unchecking `bone`. Empty stored = every bone
+ *  included. Writing `[]` again once every bone is included. Unchecking the last
+ *  remaining bone is refused — `[]` means all, not none. */
+export function bindListAfterToggle(
+  stored: string[] | undefined,
+  all: string[],
+  bone: string,
+  included: boolean,
+): string[] {
+  const current = stored?.length ? stored : all;
+  const set = new Set(current);
+  if (included) set.add(bone);
+  else set.delete(bone);
+  if (set.size === 0) return [...current];
+  if (all.every((n) => set.has(n))) return [];
+  return all.filter((n) => set.has(n));
+}
+
 /** Mesh + weights for one slot, memoised on (layer.revision, effective density, bound-bone
  *  signature). Effective density is slot.density ?? doc.density — a slot's override, or the
  *  document default when it has none. The mesh depends only on the layer's pixels and density,

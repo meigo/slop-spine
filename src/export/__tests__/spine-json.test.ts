@@ -160,6 +160,24 @@ describe("writeSkeleton", () => {
     expect(visibleSlot).toEqual({ name: "body", bone: "body", attachment: "body" });
     expect(hiddenSlot.attachment).toBe(null);
   });
+
+  it("does not emit slot color from layer opacity — opacity is editor-only", () => {
+    const s = writeSkeleton({
+      doc: {
+        canvas: { width: 2048, height: 2048 },
+        layers: [{ id: 1, name: "body_layer", visible: true, opacity: 0.4, canvas: {} as any, revision: 0 }],
+        slots: [{ name: "body", layerId: 1, bone: "body", order: 0 }],
+        bones,
+        binds: [{ slot: "body", bones: ["body"] }],
+        density: 48,
+      },
+      meshes: input.meshes,
+      weights: input.weights,
+      regions: input.regions,
+      page: input.page,
+    }) as any;
+    expect(s.slots[0]).toEqual({ name: "body", bone: "body", attachment: "body" });
+  });
 });
 
 describe("physics", () => {
@@ -191,6 +209,17 @@ describe("physics", () => {
     expect(s.physics).toEqual([
       { name: "upper", order: 0, bone: "upper", rotate: 1, inertia: 0.2, damping: 0.85 },
       { name: "lower", order: 1, bone: "lower", rotate: 1, inertia: 0.4, damping: 0.85 },
+    ]);
+  });
+
+  it("emits x/y mix when wobbleMove is on", () => {
+    const bones: Bone[] = [
+      { name: "root", parent: null, x: 1024, y: 1024, rotation: 0, length: 0, wobble: 0 },
+      { name: "hair", parent: "root", x: 1024, y: 900, rotation: -90, length: 80, wobble: 1, wobbleMove: true },
+    ];
+    const s = writeSkeleton({ ...input, doc: { ...input.doc, bones } }) as any;
+    expect(s.physics).toEqual([
+      { name: "hair", order: 0, bone: "hair", rotate: 1, x: 1, y: 1, inertia: 0.5, damping: 0.85 },
     ]);
   });
 });

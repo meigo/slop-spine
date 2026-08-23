@@ -23,6 +23,8 @@ export function meshFromMask(mask: Mask, density: number): RigMesh {
   const inside = (x: number, y: number) =>
     x >= 0 && y >= 0 && x < mask.width && y < mask.height && mask.at(x, y);
 
+  // density still spaces the interior grid; the hull is a simplified contour (corners and
+  // spikes kept, long edges collapsed) so a coarse slider does not facet the silhouette.
   const hullPts = boundaryPoints(inside, mask.width, mask.height, density);
   const innerPts = interiorPoints(inside, mask.width, mask.height, density, hullPts);
   const vertices: Pt[] = [...hullPts, ...innerPts];

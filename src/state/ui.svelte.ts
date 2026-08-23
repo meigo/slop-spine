@@ -1,5 +1,28 @@
-export type Tool = "brush" | "eraser" | "fill" | "bone";
+import { DEFAULT_DOCK_WIDTH, DEFAULT_INSPECTOR_HEIGHT } from "../core/panel-layout";
+
+export type Tool = "brush" | "eraser" | "fill" | "select" | "lasso" | "bone";
 export type BrushType = "smooth" | "ink" | "pencil";
+export type BoneMode = "edit" | "create" | "pose";
+
+/** Keyboard → tool. `b` is brush (same as animator); bone is `r` because `b` is taken. */
+export function toolFromKey(key: string): Tool | null {
+  switch (key) {
+    case "b":
+      return "brush";
+    case "e":
+      return "eraser";
+    case "g":
+      return "fill";
+    case "s":
+      return "select";
+    case "l":
+      return "lasso";
+    case "r":
+      return "bone";
+    default:
+      return null;
+  }
+}
 
 /** Tools that lay down pixels. The rig gestures are the complement, so a gesture can never be
  *  claimed by both halves of the canvas dispatch. Written as an explicit switch rather than an
@@ -11,6 +34,21 @@ export function isPaintTool(tool: Tool): boolean {
     case "eraser":
     case "fill":
       return true;
+    case "select":
+    case "lasso":
+    case "bone":
+      return false;
+  }
+}
+
+export function isSelectTool(tool: Tool): boolean {
+  switch (tool) {
+    case "select":
+    case "lasso":
+      return true;
+    case "brush":
+    case "eraser":
+    case "fill":
     case "bone":
       return false;
   }
@@ -32,6 +70,12 @@ export const ui = $state({
   showDrawings: true,
   /** Draw mesh wireframes. Independent of the tool. Default off. */
   showMeshes: false,
+  /** Bone-tool sub-gesture. Shift still creates, Alt still poses; this is the iPad / no-key path. */
+  boneMode: "edit" as BoneMode,
+  /** Right dock width (px). Clamped on drag; default is the old `w-56`. */
+  dockWidth: DEFAULT_DOCK_WIDTH,
+  /** Inspector pane height (px) inside the dock. Layer list takes the rest. */
+  inspectorHeight: DEFAULT_INSPECTOR_HEIGHT,
 });
 
 export interface OverlayFlags {

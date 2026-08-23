@@ -5,7 +5,9 @@
   import LayerPanel from "./lib/LayerPanel.svelte";
   import Inspector from "./lib/Inspector.svelte";
   import { document as doc, loadDocument } from "./state/doc.svelte";
+  import { ui } from "./state/ui.svelte";
   import { armAutosave, restore } from "./persist/autosave";
+  import { clampDockWidth, clampInspectorHeight } from "./core/panel-layout";
 
   // Gate autosave until the startup restore has settled — `doc` is a blank document until then,
   // and arming on that blank state (see the $effect below) would overwrite a real autosave with
@@ -16,6 +18,83 @@
   // autosave with the blank document. Only a null restore (genuinely no autosave yet) arms.
   let restoreFailed = false;
 
+  const PANEL_PREFS = "slop-spine:panels";
+  let dockEl: HTMLDivElement | undefined = $state();
+
+  function columnH() {
+    return dockEl?.clientHeight ?? window.innerHeight;
+  }
+
+  function applyPanelPrefs() {
+    ui.dockWidth = clampDockWidth(ui.dockWidth, window.innerWidth);
+    ui.inspectorHeight = clampInspectorHeight(ui.inspectorHeight, columnH());
+  }
+
+  function savePanelPrefs() {
+    try {
+      localStorage.setItem(
+        PANEL_PREFS,
+        JSON.stringify({ dockWidth: ui.dockWidth, inspectorHeight: ui.inspectorHeight }),
+      );
+    } catch {
+      /* private mode */
+    }
+  }
+
+  function loadPanelPrefs() {
+    try {
+      const raw = localStorage.getItem(PANEL_PREFS);
+      if (!raw) return;
+      const p = JSON.parse(raw) as { dockWidth?: number; inspectorHeight?: number };
+      if (typeof p.dockWidth === "number") ui.dockWidth = p.dockWidth;
+      if (typeof p.inspectorHeight === "number") ui.inspectorHeight = p.inspectorHeight;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  let widthStartX = 0;
+  let widthStartW = 0;
+  function widthDown(e: PointerEvent) {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    widthStartX = e.clientX;
+    widthStartW = ui.dockWidth;
+  }
+  function widthMove(e: PointerEvent) {
+    if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    ui.dockWidth = clampDockWidth(widthStartW + (widthStartX - e.clientX), window.innerWidth);
+  }
+  function widthUp(e: PointerEvent) {
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    savePanelPrefs();
+  }
+
+  let heightStartY = 0;
+  let heightStartH = 0;
+  function heightDown(e: PointerEvent) {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    heightStartY = e.clientY;
+    heightStartH = ui.inspectorHeight;
+  }
+  function heightMove(e: PointerEvent) {
+    if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    ui.inspectorHeight = clampInspectorHeight(heightStartH + (heightStartY - e.clientY), columnH());
+  }
+  function heightUp(e: PointerEvent) {
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    savePanelPrefs();
+  }
+
   onMount(async () => {
     try {
       const restored = await restore();
@@ -24,6 +103,8 @@
       console.error("autosave restore failed", e);
       restoreFailed = true;
     }
+    loadPanelPrefs();
+    applyPanelPrefs();
     ready = true;
   });
 
@@ -41,18 +122,54 @@
   });
 </script>
 
+<svelte:window onresize={applyPanelPrefs} />
+
 <main class="flex h-dvh w-dvw flex-col bg-surface text-text">
   <Toolbar />
   <div class="flex min-h-0 flex-1">
     <div class="min-w-0 flex-1">
       <Canvas />
     </div>
-    <div class="flex w-56 flex-col border-l border-border bg-surface">
+    <div
+      bind:this={dockEl}
+      class="relative flex shrink-0 flex-col border-l border-border bg-surface"
+      style="width: {ui.dockWidth}px"
+    >
+      <div
+        class="group absolute inset-y-0 left-0 z-30 w-2 cursor-col-resize"
+        style="touch-action: none"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize layer panel"
+        title="Drag to resize the layer panel"
+        onpointerdown={widthDown}
+        onpointermove={widthMove}
+        onpointerup={widthUp}
+        onpointercancel={widthUp}
+      >
+        <div class="absolute inset-y-0 left-0 w-1 group-hover:bg-text/10"></div>
+      </div>
       <div class="min-h-0 flex-1 overflow-hidden">
         <LayerPanel />
       </div>
-      <div class="max-h-[50%] shrink-0 overflow-y-auto border-t border-border">
-        <Inspector />
+      <div class="relative flex shrink-0 flex-col border-t border-border" style="height: {ui.inspectorHeight}px">
+        <div
+          class="group absolute inset-x-0 top-0 z-30 h-2 cursor-row-resize"
+          style="touch-action: none"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize inspector"
+          title="Drag to resize the inspector"
+          onpointerdown={heightDown}
+          onpointermove={heightMove}
+          onpointerup={heightUp}
+          onpointercancel={heightUp}
+        >
+          <div class="absolute inset-x-0 top-0 h-1 group-hover:bg-text/10"></div>
+        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto">
+          <Inspector />
+        </div>
       </div>
     </div>
   </div>

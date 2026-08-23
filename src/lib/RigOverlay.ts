@@ -128,7 +128,7 @@ function drawReachHandle(ctx: CanvasRenderingContext2D, bone: Bone, screenPx: (p
   ctx.strokeStyle = "#0c4a6e";
   ctx.lineWidth = screenPx(1.5);
   ctx.beginPath();
-  ctx.arc(pos.x, pos.y, screenPx(7), 0, Math.PI * 2);
+  ctx.arc(pos.x, pos.y, screenPx(10), 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.restore();
@@ -216,6 +216,11 @@ function drawBone(ctx: CanvasRenderingContext2D, bone: Bone, selected: boolean, 
   ctx.arc(bone.x, bone.y, screenPx(6), 0, Math.PI * 2);
   ctx.globalAlpha = base;
   ctx.fill();
+  if (bone.length > 0) {
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, screenPx(selected ? 8 : 6), 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -233,36 +238,128 @@ export interface PoseDelta {
   dy: number;
 }
 
-/** Rest-pose vertices linear-blend-skinned by a single rigid pose gesture applied to `bones` (the
- *  dragged bone plus every descendant, which share one pivot/rotation/translation because
- *  rotating a bone carries its whole subtree rigidly — see moveBone's own dx/dy-to-descendants
- *  logic in doc.svelte.ts for the same idea applied to a plain move). Each vertex moves by its
- *  *combined* weight across `bones` toward the rigidly-posed position:
+export function applyDelta(v: Pt, delta: PoseDelta): Pt {
+  const cos = Math.cos(delta.dtheta);
+  const sin = Math.sin(delta.dtheta);
+  const rx = v.x - delta.pivot.x;
+  const ry = v.y - delta.pivot.y;
+  return {
+    x: delta.pivot.x + rx * cos - ry * sin + delta.dx,
+    y: delta.pivot.y + rx * sin + ry * cos + delta.dy,
+  };
+}
+
+export function rotateAround(p: Pt, origin: Pt, theta: number): Pt {
+  if (theta === 0) return p;
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const rx = p.x - origin.x;
+  const ry = p.y - origin.y;
+  return { x: origin.x + c * rx - s * ry, y: origin.y + s * rx + c * ry };
+}
+
+/** `delta`, then each extra in parent-before-child order around that bone's posed origin. */
+export function posedPoint(v: Pt, delta: PoseDelta, extras: { origin: Pt; extraTheta: number }[]): Pt {
+  let p = applyDelta(v, delta);
+  for (const e of extras) p = rotateAround(p, e.origin, e.extraTheta);
+  return p;
+}
+
+export interface BonePose {
+  bone: string;
+  delta: PoseDelta;
+  /** Rest-pose origin. `extraTheta` rotates around this origin after `delta` is applied. */
+  origin?: Pt;
+  /** Local rotation lag (radians). 0 = fully caught up with `delta`. */
+  extraTheta?: number;
+  /** Posed ancestor extras, parent-before-child, not including this bone. Child origins
+   *  rotate around these so a forearm stays attached to an upper-arm tip. */
+  ancestors?: { origin: Pt; extraTheta: number }[];
+}
+
+export function ancestorExtras(
+  name: string,
+  parentOf: (name: string) => string | null,
+  posed: Map<string, { origin: Pt; extraTheta: number }>,
+): { origin: Pt; extraTheta: number }[] {
+  const chain: string[] = [];
+  let p = parentOf(name);
+  while (p && posed.has(p)) {
+    chain.push(p);
+    p = parentOf(p);
+  }
+  chain.reverse();
+  return chain.map((n) => posed.get(n)!);
+}
+
+/** `names` must be parent-before-child (poseNamesFor order). */
+export function makeBonePoses(
+  names: string[],
+  boneOf: (name: string) => { parent: string | null; x: number; y: number } | undefined,
+  deltaFor: (name: string) => PoseDelta,
+  extraThetaFor: (name: string) => number,
+): BonePose[] {
+  const posed = new Map<string, { origin: Pt; extraTheta: number }>();
+  const out: BonePose[] = [];
+  for (const name of names) {
+    const b = boneOf(name);
+    const delta = deltaFor(name);
+    const ancestors = ancestorExtras(name, (n) => boneOf(n)?.parent ?? null, posed);
+    const extraTheta = extraThetaFor(name);
+    const restO = b ? { x: b.x, y: b.y } : { x: 0, y: 0 };
+    posed.set(name, { origin: posedPoint(restO, delta, ancestors), extraTheta });
+    out.push({ bone: name, delta, origin: restO, extraTheta, ancestors });
+  }
+  return out;
+}
+
+function poseExtras(pose: BonePose): { origin: Pt; extraTheta: number }[] {
+  const extras = [...(pose.ancestors ?? [])];
+  if ((pose.extraTheta ?? 0) !== 0 && pose.origin) {
+    extras.push({
+      origin: posedPoint(pose.origin, pose.delta, pose.ancestors ?? []),
+      extraTheta: pose.extraTheta!,
+    });
+  }
+  return extras;
+}
+
+function poseVertex(v: Pt, pose: BonePose): Pt {
+  return posedPoint(v, pose.delta, poseExtras(pose));
+}
+
+export function posedOverlayBone(b: Bone, pose: BonePose): Bone {
+  const p = poseVertex({ x: b.x, y: b.y }, pose);
+  let extra = pose.extraTheta ?? 0;
+  for (const a of pose.ancestors ?? []) extra += a.extraTheta;
+  return {
+    ...b,
+    x: p.x,
+    y: p.y,
+    rotation: b.rotation + ((pose.delta.dtheta + extra) * 180) / Math.PI,
+  };
+}
+
+/** Rest-pose vertices linear-blend-skinned by per-bone pose deltas. Each vertex:
  *
- *    posed(v) = pivot + R(dtheta)*(v - pivot) + (dx, dy)
- *    v'       = v + w * (posed(v) - v),   w = sum of this vertex's weights for bones in `bones`
+ *    v' = v + Σ wᵢ · (posedᵢ(v) − v)
  *
- *  since every bone in `bones` shares the same posed(), this is exactly the general
- *  linear-blend-skinning sum "v + Σ wᵢ·(posedᵢ(v) − v)" collapsed by that equality. `dtheta = 0`
- *  reduces to the old translate-only preview exactly (rx, ry rotate to themselves, so posed(v) -
- *  v = (dx, dy) regardless of pivot). Never written back anywhere, so it costs nothing to get
- *  slightly wrong. */
-export function poseDeform(mesh: RigMesh, weights: Influence[][], bones: string[], delta: PoseDelta): Pt[] {
-  const { pivot, dtheta, dx, dy } = delta;
-  const cos = Math.cos(dtheta);
-  const sin = Math.sin(dtheta);
-  const boneSet = new Set(bones);
+ *  `posedᵢ` applies that bone's delta, then ancestor extras, then this bone's extraTheta
+ *  so a child stays attached to a parent that is itself wobbling. */
+export function poseDeform(mesh: RigMesh, weights: Influence[][], poses: BonePose[]): Pt[] {
+  if (poses.length === 0) return mesh.vertices.map((v) => v);
+  const byBone = new Map(poses.map((p) => [p.bone, p]));
   return mesh.vertices.map((v, i) => {
-    let w = 0;
+    let x = v.x;
+    let y = v.y;
     for (const inf of weights[i] ?? []) {
-      if (boneSet.has(inf.bone)) w += inf.weight;
+      const pose = byBone.get(inf.bone);
+      if (!pose || inf.weight <= 0) continue;
+      const posed = poseVertex(v, pose);
+      x += inf.weight * (posed.x - v.x);
+      y += inf.weight * (posed.y - v.y);
     }
-    if (w <= 0) return v;
-    const rx = v.x - pivot.x;
-    const ry = v.y - pivot.y;
-    const posedX = pivot.x + rx * cos - ry * sin + dx;
-    const posedY = pivot.y + rx * sin + ry * cos + dy;
-    return { x: v.x + w * (posedX - v.x), y: v.y + w * (posedY - v.y) };
+    return { x, y };
   });
 }
 

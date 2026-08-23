@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ui, isPaintTool } from "../state/ui.svelte";
+  import { ui, isPaintTool, type BoneMode } from "../state/ui.svelte";
   import { document as doc, loadDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
-  import { exportBundle } from "../export/bundle";
+  import { exportBundle, ExportError } from "../export/bundle";
   import { history, historyState } from "../state/history.svelte";
   import { pressureCurve } from "./draw-dispatch";
   import { createCurveEditor } from "../core/pressure-curve";
@@ -11,7 +11,11 @@
     Paintbrush,
     Eraser,
     PaintBucket,
+    SquareDashed,
+    Lasso,
     Bone,
+    Plus,
+    RotateCcw,
     Image,
     Grid3x3,
     Undo2,
@@ -114,7 +118,12 @@
       downloadBlob(await exportBundle(doc), "character.zip");
     } catch (e) {
       console.error("export failed", e);
+      alert(e instanceof ExportError ? e.message : "Export failed.");
     }
+  }
+
+  function setBoneMode(mode: BoneMode) {
+    ui.boneMode = ui.boneMode === mode ? "edit" : mode;
   }
 
   async function onFileChosen(e: Event) {
@@ -185,28 +194,56 @@
     <button
       class={toolBtn}
       class:bg-surface-active={ui.tool === "brush"}
-      title="Brush"
+      title="Brush (B)"
       onclick={() => (ui.tool = "brush")}><Paintbrush size={18} /></button
     >
     <button
       class={toolBtn}
       class:bg-surface-active={ui.tool === "eraser"}
-      title="Eraser"
+      title="Eraser (E)"
       onclick={() => (ui.tool = "eraser")}><Eraser size={18} /></button
     >
     <button
       class={toolBtn}
       class:bg-surface-active={ui.tool === "fill"}
-      title="Fill"
+      title="Fill (G)"
       onclick={() => (ui.tool = "fill")}><PaintBucket size={18} /></button
     >
     <button
       class={toolBtn}
+      class:bg-surface-active={ui.tool === "select"}
+      title="Select (S)"
+      onclick={() => (ui.tool = "select")}><SquareDashed size={18} /></button
+    >
+    <button
+      class={toolBtn}
+      class:bg-surface-active={ui.tool === "lasso"}
+      title="Lasso (L)"
+      onclick={() => (ui.tool = "lasso")}><Lasso size={18} /></button
+    >
+    <button
+      class={toolBtn}
       class:bg-surface-active={ui.tool === "bone"}
-      title="Bone"
+      title="Bone (R)"
       onclick={() => (ui.tool = "bone")}><Bone size={18} /></button
     >
   </div>
+  {#if ui.tool === "bone"}
+    <div class="flex overflow-hidden rounded border border-border">
+      <button
+        class={toolBtn}
+        class:bg-surface-active={ui.boneMode === "create"}
+        title="Create bone (Shift-drag). Shift-click a shaft to insert a joint."
+        onclick={() => setBoneMode("create")}><Plus size={18} /></button
+      >
+      <button
+        class={toolBtn}
+        class:bg-surface-active={ui.boneMode === "pose"}
+        title="Pose (Alt-drag). Tip rotates, shaft translates."
+        onclick={() => setBoneMode("pose")}><RotateCcw size={18} /></button
+      >
+    </div>
+  {/if}
   <div class="flex overflow-hidden rounded border border-border">
     <button
       class={toolBtn}

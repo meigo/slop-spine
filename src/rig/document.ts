@@ -35,6 +35,9 @@ export interface Bone {
   length: number;
   /** 0 = rigid, 1 = full physics wobble. */
   wobble: number;
+  /** When true, wobble also springs translation (Spine `x`/`y` mix). Default / omitted is
+   *  rotation only (`rotate: 1`), which existing project files already match. */
+  wobbleMove?: boolean;
   /** Canvas px; hard cutoff on this bone's influence in computeWeights. `undefined` means
    *  unlimited, so existing project files (saved before this field existed) load unchanged.
    *  `0` also means unlimited — it falls through the `reach > 0` guard, matching poseWeights'

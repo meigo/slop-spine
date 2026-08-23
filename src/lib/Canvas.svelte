@@ -8,21 +8,38 @@
     setBoneRotation,
     setReach,
     removeBone,
+    markLayerDirty,
     descendantsOf,
     snapshotRig,
     pushRigCommand,
+    insertJoint,
+    setParent,
     type RigSnapshot,
   } from "../state/doc.svelte";
-  import { ui, overlayFlags } from "../state/ui.svelte";
+  import { ui, overlayFlags, isSelectTool, toolFromKey } from "../state/ui.svelte";
+  import { boneTip, reparentDropTarget } from "../rig/chain";
   import type { Tool } from "../state/ui.svelte";
   import { Viewport } from "../core/viewport";
   import { setupInput } from "../core/input";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
   import { history } from "../state/history.svelte";
+  import { pixelCommand } from "../core/history";
+  import { Selection } from "../core/selection";
+  import SelectionActions from "./SelectionActions.svelte";
   import { deriveSlot } from "../rig/derive";
   import { distanceToBone } from "../rig/weights";
-  import { drawRigOverlay, poseDeform, drawWarpedLayer, reachHandlePosition, type PoseDelta } from "./RigOverlay";
+  import {
+    drawRigOverlay,
+    poseDeform,
+    drawWarpedLayer,
+    reachHandlePosition,
+    posedPoint,
+    ancestorExtras,
+    makeBonePoses,
+    posedOverlayBone,
+  } from "./RigOverlay";
+  import { stepWobble, stepTip, wobbleSettled, boneRestTip, type WobbleAxis } from "./pose-wobble";
   import type { Bone } from "../rig/document";
 
   let stage: HTMLDivElement;
@@ -31,6 +48,7 @@
   // transform below instead, since the canvas is sized to the viewport, not to the document.
   let anchor: HTMLDivElement;
   let canvasEl: HTMLCanvasElement;
+  let overlayEl: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D | null = null;
   let viewport: Viewport | null = null;
   let didInitialFit = false;
@@ -46,6 +64,140 @@
   let poseDrag = $state<{ bone: string; pivot: { x: number; y: number }; dtheta: number; dx: number; dy: number } | null>(
     null,
   );
+
+  type PoseSimBone = {
+    tipX: WobbleAxis;
+    tipY: WobbleAxis;
+    dx: WobbleAxis;
+    dy: WobbleAxis;
+    extraTheta: number;
+  };
+  let poseSim = $state<{
+    names: string[];
+    dragged: string;
+    settling: boolean;
+    bones: Record<string, PoseSimBone>;
+  } | null>(null);
+  let poseRaf = 0;
+  let poseLastT = 0;
+
+  function zeroAxis(): WobbleAxis {
+    return { pos: 0, vel: 0 };
+  }
+
+  function poseNamesFor(dragged: string): string[] {
+    return [dragged, ...descendantsOf(dragged).map((b) => b.name)];
+  }
+
+  function anyWobble(names: string[]): boolean {
+    return names.some((n) => (doc.bones.find((b) => b.name === n)?.wobble ?? 0) > 0);
+  }
+
+  function initPoseSim(dragged: string) {
+    const names = poseNamesFor(dragged);
+    if (!anyWobble(names)) {
+      poseSim = null;
+      return;
+    }
+    const bones: Record<string, PoseSimBone> = {};
+    for (const n of names) {
+      const b = doc.bones.find((x) => x.name === n);
+      const tip = b ? boneRestTip(b) : { x: 0, y: 0 };
+      bones[n] = {
+        tipX: { pos: tip.x, vel: 0 },
+        tipY: { pos: tip.y, vel: 0 },
+        dx: zeroAxis(),
+        dy: zeroAxis(),
+        extraTheta: 0,
+      };
+    }
+    poseSim = { names, dragged, settling: false, bones };
+    startPoseLoop();
+  }
+
+  function startPoseLoop() {
+    if (poseRaf) return;
+    poseLastT = 0;
+    const tick = (t: number) => {
+      poseRaf = 0;
+      const dt = poseLastT === 0 ? 1 / 60 : Math.min(0.05, (t - poseLastT) / 1000);
+      poseLastT = t;
+      if (!advancePoseSim(dt)) return;
+      poseRaf = requestAnimationFrame(tick);
+    };
+    poseRaf = requestAnimationFrame(tick);
+  }
+
+  function stopPoseLoop() {
+    if (poseRaf) cancelAnimationFrame(poseRaf);
+    poseRaf = 0;
+    poseLastT = 0;
+  }
+
+  function clearPose() {
+    stopPoseLoop();
+    poseSim = null;
+    poseDrag = null;
+  }
+
+  function advancePoseSim(dt: number): boolean {
+    if (!poseSim || !poseDrag) return false;
+    const target = poseSim.settling
+      ? { dtheta: 0, dx: 0, dy: 0 }
+      : { dtheta: poseDrag.dtheta, dx: poseDrag.dx, dy: poseDrag.dy };
+    const bones: Record<string, PoseSimBone> = {};
+    const posed = new Map<string, { origin: { x: number; y: number }; extraTheta: number }>();
+    let allSettled = poseSim.settling;
+    const parentOf = (n: string) => doc.bones.find((b) => b.name === n)?.parent ?? null;
+    for (const name of poseSim.names) {
+      const bone = doc.bones.find((b) => b.name === name);
+      const wobble = bone?.wobble ?? 0;
+      const move = !!bone?.wobbleMove;
+      const follow = !poseSim.settling && name === poseSim.dragged;
+      const prev = poseSim.bones[name] ?? {
+        tipX: zeroAxis(),
+        tipY: zeroAxis(),
+        dx: zeroAxis(),
+        dy: zeroAxis(),
+        extraTheta: 0,
+      };
+      // Translation: the dragged bone follows the pointer; others snap unless wobbleMove.
+      const dx = follow || !move || wobble <= 0 ? { pos: target.dx, vel: 0 } : stepWobble(prev.dx, target.dx, wobble, dt);
+      const dy = follow || !move || wobble <= 0 ? { pos: target.dy, vel: 0 } : stepWobble(prev.dy, target.dy, wobble, dt);
+      const delta = { pivot: poseDrag.pivot, dtheta: target.dtheta, dx: dx.pos, dy: dy.pos };
+      const restO = bone ? { x: bone.x, y: bone.y } : { x: 0, y: 0 };
+      const restT = bone ? boneRestTip(bone) : { x: 0, y: 0 };
+      const ancestors = ancestorExtras(name, parentOf, posed);
+      const origin = posedPoint(restO, delta, ancestors);
+      const rigidTip = posedPoint(restT, delta, ancestors);
+      const tip = stepTip(
+        { x: prev.tipX, y: prev.tipY },
+        rigidTip,
+        origin,
+        bone?.length ?? 0,
+        wobble,
+        dt,
+      );
+      const next = { tipX: tip.x, tipY: tip.y, dx, dy, extraTheta: tip.extraTheta };
+      posed.set(name, { origin, extraTheta: next.extraTheta });
+      bones[name] = next;
+      if (
+        poseSim.settling &&
+        (Math.abs(next.extraTheta) > 0.04 ||
+          Math.abs(next.tipX.vel) > 8 ||
+          Math.abs(next.tipY.vel) > 8 ||
+          (move && (!wobbleSettled(next.dx, 0) || !wobbleSettled(next.dy, 0))))
+      ) {
+        allSettled = false;
+      }
+    }
+    poseSim = { ...poseSim, bones };
+    if (poseSim.settling && allSettled) {
+      clearPose();
+      return false;
+    }
+    return true;
+  }
 
   // Screen-only page ground: a checkerboard so a white stroke (now paintable, Task 14) reads
   // against the page instead of vanishing into a flat white fill. Never touches a layer.canvas —
@@ -90,24 +242,43 @@
     ctx.strokeStyle = "#000";
     ctx.strokeRect(0, 0, doc.canvas.width, doc.canvas.height);
 
-    // The dragged bone and every descendant pose together, rigidly, about the dragged bone's
-    // pivot — rotating a shoulder must carry the forearm (see poseDeform's doc comment).
-    const poseBones = poseDrag ? [poseDrag.bone, ...descendantsOf(poseDrag.bone).map((b) => b.name)] : null;
+    // The dragged bone and every descendant pose about the dragged bone's pivot. Bones with
+    // wobble lag that target (poseSim); the rest follow it rigidly.
+    const poseBones = poseSim?.names ?? (poseDrag ? poseNamesFor(poseDrag.bone) : null);
     const poseBoneSet = poseBones ? new Set(poseBones) : null;
-    const poseDelta: PoseDelta | null = poseDrag
-      ? { pivot: poseDrag.pivot, dtheta: poseDrag.dtheta, dx: poseDrag.dx, dy: poseDrag.dy }
-      : null;
+    const poses =
+      poseDrag && poseBones
+        ? makeBonePoses(
+            poseBones,
+            (name) => doc.bones.find((x) => x.name === name),
+            (name) => {
+              const sim = poseSim?.bones[name];
+              const b = doc.bones.find((x) => x.name === name);
+              const move = !!b?.wobbleMove;
+              const settling = !!poseSim?.settling;
+              const targetDx = settling ? 0 : poseDrag!.dx;
+              const targetDy = settling ? 0 : poseDrag!.dy;
+              return {
+                pivot: poseDrag!.pivot,
+                dtheta: settling ? 0 : poseDrag!.dtheta,
+                dx: move ? (sim?.dx.pos ?? targetDx) : targetDx,
+                dy: move ? (sim?.dy.pos ?? targetDy) : targetDy,
+              };
+            },
+            (name) => poseSim?.bones[name]?.extraTheta ?? 0,
+          )
+        : null;
     if (ui.showDrawings) {
       for (const layer of doc.layers) {
         if (!layer.visible) continue;
         ctx.globalAlpha = layer.opacity;
-        const warped = poseBones && poseDelta && warpFor(layer.id);
+        const warped = poseBones && poses && warpFor(layer.id);
         // Reach does the scoping now, so most layers have zero weight for the posed bones — skip
         // the warp for those and draw normally, rather than clipping them to their mesh hull (which
         // loses soft brush fringe outside the hull) for no visual difference.
         const hasInfluence = warped && warped.weights.some((infs) => infs.some((i) => poseBoneSet!.has(i.bone)));
         if (warped && hasInfluence) {
-          const deformed = poseDeform(warped.mesh, warped.weights, poseBones!, poseDelta!);
+          const deformed = poseDeform(warped.mesh, warped.weights, poses!);
           drawWarpedLayer(ctx, layer.canvas, warped.mesh, deformed);
         } else {
           ctx.drawImage(layer.canvas, 0, 0);
@@ -131,7 +302,13 @@
                 return { ...derived, selected: slot.layerId === ui.selectedLayerId };
               })
           : [];
-      drawRigOverlay(ctx, { bones: doc.bones, selectedBone: ui.selectedBone, slots }, viewport.zoom, flags);
+      const overlayBones = poses
+        ? doc.bones.map((b) => {
+            const pose = poses.find((p) => p.bone === b.name);
+            return pose ? posedOverlayBone(b, pose) : b;
+          })
+        : doc.bones;
+      drawRigOverlay(ctx, { bones: overlayBones, selectedBone: ui.selectedBone, slots }, viewport.zoom, flags);
     }
   }
 
@@ -149,15 +326,27 @@
   $effect(() => {
     JSON.stringify(doc);
     void ui.tool;
+    if (ui.tool !== "bone") setRigCursor(null);
     void ui.showBones;
     void ui.showDrawings;
     void ui.showMeshes;
     void ui.selectedBone;
     void ui.selectedLayerId;
     void poseDrag;
+    void poseSim;
     void size.width;
     void size.height;
     redraw();
+  });
+
+  $effect(() => {
+    void ui.tool;
+    if (!selection) return;
+    selection.mode = ui.tool === "lasso" ? "lasso" : "rect";
+    if (!isSelectTool(ui.tool) && selection.active) {
+      if (selection.hasFloating) selection.commit();
+      else selection.cancel();
+    }
   });
 
   const drawDispatch = createDrawDispatch();
@@ -217,9 +406,20 @@
       return;
     }
     // Tool keys, matching slop-animator's App.svelte exactly.
-    if (e.key === "b") ui.tool = "brush";
-    else if (e.key === "e") ui.tool = "eraser";
-    else if (e.key === "g") ui.tool = "fill";
+    if (e.key === "Enter" && selection?.hasFloating) {
+      e.preventDefault();
+      selection.commit();
+      return;
+    }
+    if (e.key === "Escape" && selection?.active) {
+      e.preventDefault();
+      selection.cancel();
+      return;
+    }
+    if (!(e.metaKey || e.ctrlKey)) {
+      const tool = toolFromKey(e.key);
+      if (tool) ui.tool = tool;
+    }
     // Hold X for temporary eraser, matching slop-paint's App.svelte. e.repeat is checked so an
     // auto-repeated keydown doesn't re-remember "eraser" as the tool to restore on keyup.
     if (e.key === "x" && !e.repeat && !toolBeforeEraser && ui.tool !== "eraser") {
@@ -279,23 +479,42 @@
   // Raw PointerEvents rather than
   // input.ts's InputPoint pipeline, because bone dragging wants exact deltas and shift/alt, neither
   // of which the stroke pipeline carries. ---
-  const RIG_HIT_RADIUS = 14; // screen px, converted to canvas px by dividing by zoom below
+  const RIG_HIT_RADIUS = 16; // screen px, shaft / body
+  const HANDLE_HIT_RADIUS = 22; // screen px, tip (rotate/length) and reach handle
+  // Rotate cursor: CSS has no built-in 'rotate'. White halo + black stroke, hotspot at centre.
+  const ROTATE_CURSOR_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" stroke="white" stroke-width="4"/>' +
+    '<path d="M21 3v5h-5" stroke="white" stroke-width="4"/>' +
+    '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" stroke="black" stroke-width="2"/>' +
+    '<path d="M21 3v5h-5" stroke="black" stroke-width="2"/>' +
+    "</svg>";
+  const ROTATE_CURSOR = `url("data:image/svg+xml;utf8,${encodeURIComponent(ROTATE_CURSOR_SVG)}") 12 12, crosshair`;
 
   function nonRootBones(): Bone[] {
     return doc.bones.filter((b) => b.name !== "root");
   }
-  function boneTip(b: Bone) {
-    const rad = (b.rotation * Math.PI) / 180;
-    return { x: b.x + Math.cos(rad) * b.length, y: b.y + Math.sin(rad) * b.length };
-  }
-  /** Closest non-root origin, no distance cutoff. Move applies hitRadius at the call site;
-   *  only shift-create and alt-pose still grab from empty space. */
+  /** Closest non-root origin, no distance cutoff. Shift-create and alt-pose still use this
+   *  as a parent/target pick from empty space. Move uses shaftHit instead. */
   function nearestBone(pt: { x: number; y: number }): Bone | null {
     let best: Bone | null = null;
     let bestD = Infinity;
     for (const b of nonRootBones()) {
       const d = Math.hypot(b.x - pt.x, b.y - pt.y);
       if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+  /** Closest non-root bone whose segment is within `radius` (the kite, not just the origin). */
+  function shaftHit(pt: { x: number; y: number }, radius: number): Bone | null {
+    let best: Bone | null = null;
+    let bestD = Infinity;
+    for (const b of nonRootBones()) {
+      const d = distanceToBone(pt.x, pt.y, b);
+      if (d < radius && d < bestD) {
         bestD = d;
         best = b;
       }
@@ -315,6 +534,35 @@
       }
     }
     return best;
+  }
+
+  type RigHover = { kind: "reach" | "rotate" | "move"; bone: Bone };
+
+  function rigHover(pt: { x: number; y: number }): RigHover | null {
+    if (!viewport) return null;
+    const bodyR = RIG_HIT_RADIUS / viewport.zoom;
+    const handleR = HANDLE_HIT_RADIUS / viewport.zoom;
+    if (ui.selectedBone) {
+      const selected = doc.bones.find((b) => b.name === ui.selectedBone);
+      const handle = selected ? reachHandlePosition(selected) : null;
+      if (selected && handle && Math.hypot(handle.x - pt.x, handle.y - pt.y) < handleR) {
+        return { kind: "reach", bone: selected };
+      }
+    }
+    const tip = tipHit(pt, handleR);
+    if (tip) return { kind: "rotate", bone: tip };
+    const shaft = shaftHit(pt, bodyR);
+    if (shaft) return { kind: "move", bone: shaft };
+    return null;
+  }
+
+  function setRigCursor(kind: RigHover["kind"] | "grabbing" | null) {
+    if (!canvasEl) return;
+    if (kind === "rotate") canvasEl.style.cursor = ROTATE_CURSOR;
+    else if (kind === "reach") canvasEl.style.cursor = "ew-resize";
+    else if (kind === "move") canvasEl.style.cursor = "grab";
+    else if (kind === "grabbing") canvasEl.style.cursor = "grabbing";
+    else canvasEl.style.cursor = "";
   }
 
   /** Nearest point among every OTHER bone's origin and tip, if within `radius` — lets a dragged
@@ -352,6 +600,150 @@
   let poseIsRotate = false;
   let poseStartBearing = 0;
 
+  // --- Select / lasso. Overlay is display-only (pointer-events: none); these handlers share
+  // canvasEl with the bone tool and stand down unless isSelectTool. Lift bakes into the layer
+  // on Enter/commit; Escape restores the pre-lift snapshot. dpr is 1: layer canvases are 1:1
+  // with document pixels. ---
+  let selection: Selection | null = null;
+  let selectionMode: "create" | "drag" | null = null;
+  let selCtx: CanvasRenderingContext2D | null = null;
+  let selBefore: ImageData | null = null;
+  let selLayerId: number | null = null;
+
+  function applySelectionView(c: CanvasRenderingContext2D) {
+    if (!viewport) return;
+    c.translate(viewport.panX, viewport.panY);
+    c.rotate(viewport.rotation);
+    c.scale(viewport.zoom, viewport.zoom);
+  }
+
+  function syncSelectionOverlay() {
+    if (!selection || !viewport || !overlayEl) return;
+    selection.screenScale = viewport.zoom;
+    selection.drawOverlay();
+  }
+
+  function liftSelection(): boolean {
+    const layer = doc.layers.find((l) => l.id === ui.selectedLayerId);
+    if (!layer || !selection) return false;
+    const lctx = layer.canvas.getContext("2d");
+    if (!lctx) return false;
+    selBefore = lctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height);
+    const pixels = selection.liftPixels(lctx, 1);
+    if (!pixels) {
+      selBefore = null;
+      return false;
+    }
+    selCtx = lctx;
+    selLayerId = layer.id;
+    markLayerDirty(layer.id);
+    selection.beginTransform(pixels);
+    redraw();
+    return true;
+  }
+
+  function enterTransform() {
+    if (!selection || selection.state !== "selected") return;
+    liftSelection();
+  }
+
+  function enterWarp(rows: number, cols: number) {
+    if (!selection) return;
+    if (selection.state === "selected") liftSelection();
+    if (selection.state === "transforming") selection.beginWarp(rows, cols);
+    else if (selection.state === "warping") selection.densifyWarp(rows, cols);
+  }
+
+  function setupSelection() {
+    selection = new Selection(overlayEl);
+    selection.applyView = applySelectionView;
+    selection.onChange = () => {
+      redraw();
+      syncSelectionOverlay();
+    };
+    selection.onStateChange = () => syncSelectionOverlay();
+    selection.onCommit = () => {
+      if (!selCtx || !selBefore || selLayerId === null || !selection) return;
+      selection.renderFloatingTo(selCtx);
+      const layerId = selLayerId;
+      const ctx2 = selCtx;
+      const before = selBefore;
+      const after = ctx2.getImageData(0, 0, ctx2.canvas.width, ctx2.canvas.height);
+      markLayerDirty(layerId);
+      history.push(
+        pixelCommand(
+          () => {
+            ctx2.putImageData(before, 0, 0);
+            markLayerDirty(layerId);
+          },
+          () => {
+            ctx2.putImageData(after, 0, 0);
+            markLayerDirty(layerId);
+          },
+          before,
+          after,
+        ),
+      );
+      selCtx = null;
+      selBefore = null;
+      selLayerId = null;
+      redraw();
+    };
+    selection.onCancel = () => {
+      if (selCtx && selBefore && selLayerId !== null) {
+        selCtx.putImageData(selBefore, 0, 0);
+        markLayerDirty(selLayerId);
+      }
+      selCtx = null;
+      selBefore = null;
+      selLayerId = null;
+      redraw();
+    };
+  }
+
+  function onSelPointerDown(e: PointerEvent) {
+    if (!isSelectTool(ui.tool) || e.button !== 0) return;
+    if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
+    if (!viewport || !selection) return;
+    e.preventDefault();
+    canvasEl.setPointerCapture(e.pointerId);
+    selection.mode = ui.tool === "lasso" ? "lasso" : "rect";
+    const pt = viewport.screenToCanvas(e.clientX, e.clientY);
+    const handle = selection.hitTest(pt.x, pt.y);
+    if (selection.state === "selected" && handle === "move") {
+      if (!liftSelection()) return;
+      selectionMode = "drag";
+      selection.startDrag("move", pt.x, pt.y);
+    } else if ((selection.state === "transforming" || selection.state === "warping") && handle) {
+      selectionMode = "drag";
+      selection.startDrag(handle, pt.x, pt.y);
+    } else {
+      if (selection.hasFloating) selection.commit();
+      else if (selection.active) selection.cancel();
+      selectionMode = "create";
+      selection.startCreate(pt.x, pt.y);
+    }
+  }
+
+  function onSelPointerMove(e: PointerEvent) {
+    if (!selectionMode || !viewport || !selection) return;
+    const pt = viewport.screenToCanvas(e.clientX, e.clientY);
+    if (selectionMode === "create") selection.updateCreate(pt.x, pt.y);
+    else if (selectionMode === "drag") selection.updateDrag(pt.x, pt.y);
+  }
+
+  function onSelPointerUp(e: PointerEvent) {
+    if (!selection) return;
+    if (selectionMode === "create") selection.endCreate();
+    selection.endDrag();
+    selectionMode = null;
+    try {
+      canvasEl.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  }
+
   function onRigPointerDown(e: PointerEvent) {
     if (ui.tool !== "bone" || e.button !== 0) return;
     if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
@@ -361,7 +753,26 @@
     const pt = viewport.screenToCanvas(e.clientX, e.clientY);
     const hitRadius = RIG_HIT_RADIUS / viewport.zoom;
 
-    if (e.shiftKey) {
+    const creating = e.shiftKey || (!e.altKey && ui.boneMode === "create");
+    const posing = e.altKey || (!e.shiftKey && ui.boneMode === "pose");
+    if (!posing) clearPose();
+
+    if (creating) {
+      const handleR = HANDLE_HIT_RADIUS / viewport.zoom;
+      const onShaft = shaftHit(pt, hitRadius);
+      const onTip = tipHit(pt, handleR);
+      const onOrigin = onShaft && Math.hypot(pt.x - onShaft.x, pt.y - onShaft.y) < handleR;
+      if (onShaft && !onTip && !onOrigin) {
+        rigDragBefore = snapshotRig();
+        const name = insertJoint(onShaft.name, pt.x, pt.y);
+        if (name) {
+          ui.selectedBone = name;
+          pushRigCommand(rigDragBefore, snapshotRig());
+          rigDragBefore = null;
+          return;
+        }
+        rigDragBefore = null;
+      }
       // Root counts as an existing parent, so the very first bone can be shift-dragged from
       // empty canvas with nothing placed yet.
       const parent = nearestBone(pt) ?? doc.bones.find((b) => b.name === "root") ?? null;
@@ -376,60 +787,62 @@
       }
       return;
     }
-    if (e.altKey) {
-      // Same tip-vs-body distinction bone editing uses just below: grabbing a tip rotates,
-      // grabbing anywhere else on/near a bone translates. Reusing tipHit/hitRadius rather than a
-      // second threshold keeps the two gestures' hit-testing from drifting apart.
-      const tip = tipHit(pt, hitRadius);
+    if (posing) {
+      // Same tip-vs-body distinction bone editing uses: grabbing a tip rotates, grabbing the
+      // shaft translates. Handle-sized tip hit, segment-sized body hit.
+      const handleR = HANDLE_HIT_RADIUS / viewport.zoom;
+      const tip = tipHit(pt, handleR);
       if (tip) {
         dragState = { type: "pose", bone: tip.name };
         poseStart = pt;
         poseIsRotate = true;
         poseStartBearing = Math.atan2(pt.y - tip.y, pt.x - tip.x);
         poseDrag = { bone: tip.name, pivot: { x: tip.x, y: tip.y }, dtheta: 0, dx: 0, dy: 0 };
+        initPoseSim(tip.name);
+        setRigCursor("rotate");
         return;
       }
-      const b = nearestBone(pt);
+      const b = shaftHit(pt, hitRadius);
       if (!b) return;
       dragState = { type: "pose", bone: b.name };
       poseStart = pt;
       poseIsRotate = false;
       poseDrag = { bone: b.name, pivot: { x: b.x, y: b.y }, dtheta: 0, dx: 0, dy: 0 };
+      initPoseSim(b.name);
+      setRigCursor("grabbing");
       return;
     }
-    // The influence-radius handle, checked ahead of tip/move hit-testing so grabbing it (drawn
-    // only for the selected bone — see RigOverlay's drawRigOverlay) always wins over re-selecting
-    // or moving that same bone.
-    if (ui.selectedBone) {
-      const selected = doc.bones.find((b) => b.name === ui.selectedBone);
-      const handle = selected ? reachHandlePosition(selected) : null;
-      if (handle && Math.hypot(handle.x - pt.x, handle.y - pt.y) < hitRadius) {
-        rigDragBefore = snapshotRig();
-        dragState = { type: "reach", bone: selected!.name };
-        return;
-      }
-    }
-    const tip = tipHit(pt, hitRadius);
-    if (tip) {
-      ui.selectedBone = tip.name;
-      rigDragBefore = snapshotRig();
-      dragState = { type: "length", bone: tip.name };
-      return;
-    }
-    const near = nearestBone(pt);
-    if (near && Math.hypot(near.x - pt.x, near.y - pt.y) < hitRadius) {
-      ui.selectedBone = near.name;
-      rigDragBefore = snapshotRig();
-      dragState = { type: "move", bone: near.name };
-    } else {
+    const hover = rigHover(pt);
+    if (!hover) {
       ui.selectedBone = null;
+      setRigCursor(null);
       return;
+    }
+    ui.selectedBone = hover.bone.name;
+    rigDragBefore = snapshotRig();
+    if (hover.kind === "reach") {
+      dragState = { type: "reach", bone: hover.bone.name };
+      setRigCursor("reach");
+    } else if (hover.kind === "rotate") {
+      dragState = { type: "length", bone: hover.bone.name };
+      setRigCursor("rotate");
+    } else {
+      dragState = { type: "move", bone: hover.bone.name };
+      setRigCursor("grabbing");
     }
   }
 
   function onRigPointerMove(e: PointerEvent) {
-    if (!dragState || !viewport) return;
+    if (!viewport) return;
+    if (ui.tool !== "bone") {
+      setRigCursor(null);
+      return;
+    }
     const pt = viewport.screenToCanvas(e.clientX, e.clientY);
+    if (!dragState) {
+      setRigCursor(rigHover(pt)?.kind ?? null);
+      return;
+    }
     const hitRadius = RIG_HIT_RADIUS / viewport.zoom;
     if (dragState.type === "move") {
       // moveBone re-derives the delta it drags descendants by from (snapped x/y) - (bone's
@@ -474,13 +887,37 @@
       const bone = doc.bones.find((b) => b.name === dragState!.bone);
       if (bone && bone.length > 0 && bone.reach === undefined) setReach(bone.name, bone.length);
     }
+    if (dragState.type === "move" && viewport) {
+      const bone = doc.bones.find((b) => b.name === dragState!.bone);
+      if (bone) {
+        const forbidden = new Set([bone.name, ...descendantsOf(bone.name).map((d) => d.name)]);
+        const target = reparentDropTarget(
+          { x: bone.x, y: bone.y },
+          doc.bones,
+          RIG_HIT_RADIUS / viewport.zoom,
+          forbidden,
+        );
+        if (target && bone.parent !== target) setParent(bone.name, target);
+      }
+    }
     if (rigDragBefore) {
       pushRigCommand(rigDragBefore, snapshotRig());
       rigDragBefore = null;
     }
+    const wasPose = dragState.type === "pose";
     dragState = null;
     poseStart = null;
-    poseDrag = null;
+    if (wasPose && poseSim && anyWobble(poseSim.names)) {
+      poseSim = { ...poseSim, settling: true };
+      startPoseLoop();
+    } else if (wasPose) {
+      clearPose();
+    }
+    if (viewport && ui.tool === "bone") {
+      setRigCursor(rigHover(viewport.screenToCanvas(e.clientX, e.clientY))?.kind ?? null);
+    } else {
+      setRigCursor(null);
+    }
     try {
       canvasEl.releasePointerCapture(e.pointerId);
     } catch {
@@ -491,12 +928,19 @@
   onMount(() => {
     ctx = canvasEl.getContext("2d");
     viewport = new Viewport(anchor);
-    viewport.onChange = redraw;
+    viewport.onChange = () => {
+      redraw();
+      syncSelectionOverlay();
+    };
+    setupSelection();
 
     const resizeObserver = new ResizeObserver(() => {
       const rect = stage.getBoundingClientRect();
       canvasEl.width = Math.max(1, Math.round(rect.width));
       canvasEl.height = Math.max(1, Math.round(rect.height));
+      overlayEl.width = canvasEl.width;
+      overlayEl.height = canvasEl.height;
+      syncSelectionOverlay();
       if (!didInitialFit && rect.width > 0 && rect.height > 0 && viewport) {
         viewport.fitView(doc.canvas.width, doc.canvas.height);
         didInitialFit = true;
@@ -521,6 +965,10 @@
     stage.addEventListener("pointerup", onStagePointerUp, { capture: true });
     stage.addEventListener("pointercancel", onStagePointerUp, { capture: true });
     stage.addEventListener("wheel", onWheel, { passive: false });
+    canvasEl.addEventListener("pointerdown", onSelPointerDown);
+    canvasEl.addEventListener("pointermove", onSelPointerMove);
+    canvasEl.addEventListener("pointerup", onSelPointerUp);
+    canvasEl.addEventListener("pointercancel", onSelPointerUp);
     canvasEl.addEventListener("pointerdown", onRigPointerDown);
     canvasEl.addEventListener("pointermove", onRigPointerMove);
     canvasEl.addEventListener("pointerup", onRigPointerUp);
@@ -534,6 +982,7 @@
     window.addEventListener("slop-spine:fit-view", onFitViewRequest);
 
     return () => {
+      stopPoseLoop();
       cleanupTouch();
       cleanupInput();
       resizeObserver.disconnect();
@@ -542,6 +991,10 @@
       stage.removeEventListener("pointerup", onStagePointerUp, { capture: true });
       stage.removeEventListener("pointercancel", onStagePointerUp, { capture: true });
       stage.removeEventListener("wheel", onWheel);
+      canvasEl.removeEventListener("pointerdown", onSelPointerDown);
+      canvasEl.removeEventListener("pointermove", onSelPointerMove);
+      canvasEl.removeEventListener("pointerup", onSelPointerUp);
+      canvasEl.removeEventListener("pointercancel", onSelPointerUp);
       canvasEl.removeEventListener("pointerdown", onRigPointerDown);
       canvasEl.removeEventListener("pointermove", onRigPointerMove);
       canvasEl.removeEventListener("pointerup", onRigPointerUp);
@@ -556,4 +1009,22 @@
 <div bind:this={stage} class="relative h-full w-full touch-none overflow-hidden bg-canvas-bg">
   <div bind:this={anchor} class="absolute h-0 w-0"></div>
   <canvas bind:this={canvasEl} class="absolute left-0 top-0 h-full w-full"></canvas>
+  <canvas bind:this={overlayEl} class="pointer-events-none absolute left-0 top-0 z-10 h-full w-full"></canvas>
+  <SelectionActions
+    getSelection={() => selection}
+    getViewport={() => viewport}
+    getContainer={() => stage}
+    onTransform={enterTransform}
+    onDistort={() => enterWarp(2, 2)}
+    onMesh={() => enterWarp(3, 3)}
+    onCommit={() => selection?.commit()}
+    onCancel={() => selection?.cancel()}
+    onDensify={(d) => {
+      if (!selection || selection.state !== "warping") return;
+      const n = Math.max(2, selection.warpRows + d);
+      selection.densifyWarp(n, n);
+    }}
+    onSetDeformMode={(m) => selection?.setDeformMode(m)}
+    onResetPins={() => selection?.resetPins()}
+  />
 </div>
