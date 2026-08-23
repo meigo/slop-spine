@@ -36,7 +36,10 @@ export interface Bone {
   /** 0 = rigid, 1 = full physics wobble. */
   wobble: number;
   /** Canvas px; hard cutoff on this bone's influence in computeWeights. `undefined` means
-   *  unlimited, so existing project files (saved before this field existed) load unchanged. */
+   *  unlimited, so existing project files (saved before this field existed) load unchanged.
+   *  `0` also means unlimited — it falls through the `reach > 0` guard, matching poseWeights'
+   *  own semantics — so a UI control (Task 3) must clamp above zero, not allow it, or a slider
+   *  bottomed out at 0 would silently mean "no cutoff" instead of "no influence." */
   reach?: number;
 }
 
