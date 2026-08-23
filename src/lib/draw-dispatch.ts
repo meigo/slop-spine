@@ -4,7 +4,7 @@
 // own canvas, resolved by id (layer array order is a display concern, not identity). Mild
 // pressure-response curve, applied uniformly regardless of brush engine.
 import { document as doc, markLayerDirty } from "../state/doc.svelte";
-import { ui, isPaintTool } from "../state/ui.svelte";
+import { ui, isPaintTool, type Tool } from "../state/ui.svelte";
 import type { InputPoint } from "../core/input";
 import { drawStroke, type BrushSettings } from "../core/brush";
 import { drawInkStrokeIncremental, resetInkState } from "../core/ink-brush";
@@ -47,6 +47,18 @@ export function createDrawDispatch() {
   let strokeCtx: CanvasRenderingContext2D | null = null;
   let strokeSnapshot: ImageData | null = null;
   let fillFired = false;
+
+  // Same latching idea as strokeLayer above, but for the tool itself: input.ts holds one stroke
+  // session open for the whole pointer-down-to-up gesture regardless of tool, and b/e/g/hold-X
+  // can all reassign ui.tool mid-gesture. Deciding the gesture's tool once, at its first call, and
+  // using that latched value everywhere below (not a fresh read of ui.tool) keeps a gesture that
+  // started painting completing as that same tool — eraser stays eraser for the whole gesture even
+  // if a hold-X release flips ui.tool back before the pointer lifts, so the final render pass
+  // doesn't silently repaint the accumulated path as a brush stroke — with one undo entry pushed
+  // and stroke state cleared. It also keeps a gesture that started on the bone tool from ever
+  // painting, even if ui.tool becomes a paint tool before release. `null` means no gesture is in
+  // flight; reset there on every `done` call so the next gesture re-latches.
+  let strokeTool: Tool | null = null;
 
   // Undo capture. One scratch canvas reused for every stroke: at stroke start the layer is
   // blitted into it with `drawImage` (a GPU copy, no `getImageData`), so at stroke end `before`
@@ -142,11 +154,16 @@ export function createDrawDispatch() {
 
   function handleStroke(points: InputPoint[], done: boolean) {
     // The rig gestures drive their own pointer handling (see Canvas.svelte); this dispatcher only
-    // draws, so it stands down for any non-painting tool.
-    if (!isPaintTool(ui.tool)) return;
+    // draws, so it stands down for any gesture that didn't start under a painting tool. Latched
+    // at the first call of the gesture (see strokeTool above) rather than re-read from ui.tool on
+    // every call, and used in place of ui.tool for the rest of this function.
+    if (strokeTool === null) strokeTool = ui.tool;
+    const tool = strokeTool;
+    if (done) strokeTool = null;
+    if (!isPaintTool(tool)) return;
     if (points.length === 0) return;
 
-    if (ui.tool === "fill") {
+    if (tool === "fill") {
       if (!fillFired) {
         const layer = resolveSelectedLayer();
         const fctx = layer?.canvas.getContext("2d") ?? null;
@@ -185,7 +202,7 @@ export function createDrawDispatch() {
 
     const curved = points.map((p) => ({ ...p, pressure: pressureCurve.evaluate(p.pressure) }));
     const sizeRange = curved[0]?.hasPressure ? PRESSURE_SIZE_RANGE : 1;
-    const settings = buildBrushSettings(ui.tool === "eraser");
+    const settings = buildBrushSettings(tool === "eraser");
     const brushType = ui.brushType; // local so TS narrows it across the branches
 
     if (brushType === "smooth") {

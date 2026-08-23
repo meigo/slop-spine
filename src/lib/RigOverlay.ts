@@ -187,6 +187,7 @@ function drawBone(ctx: CanvasRenderingContext2D, bone: Bone, selected: boolean, 
   const color = selected ? "#ffd23f" : "#4fd1c5";
 
   ctx.save();
+  const base = ctx.globalAlpha;
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   ctx.lineWidth = screenPx(selected ? 2.5 : 1.5);
@@ -205,14 +206,15 @@ function drawBone(ctx: CanvasRenderingContext2D, bone: Bone, selected: boolean, 
     ctx.lineTo(tipX, tipY);
     ctx.lineTo(earX - px * earWidth, earY - py * earWidth);
     ctx.closePath();
-    ctx.globalAlpha = 0.25;
+    ctx.globalAlpha = base * 0.25;
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = base;
     ctx.stroke();
   }
 
   ctx.beginPath();
   ctx.arc(bone.x, bone.y, screenPx(6), 0, Math.PI * 2);
+  ctx.globalAlpha = base;
   ctx.fill();
   ctx.restore();
 }

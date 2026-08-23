@@ -111,7 +111,7 @@
     ctx.globalAlpha = 1;
 
     const flags = overlayFlags(ui.tool, ui.showBones);
-    if (flags.bones || flags.mesh || flags.tint) {
+    if (flags.bones || flags.mesh || flags.tint || flags.capsule) {
       // Only derive when something that needs a mesh is actually being drawn. Under a paint tool
       // this list stays empty and deriveSlot never runs — bones alone need no mesh.
       const slots =
