@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ui } from "../state/ui.svelte";
+  import { ui, isPaintTool } from "../state/ui.svelte";
   import { document as doc, loadDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
   import { exportBundle } from "../export/bundle";
@@ -11,6 +11,9 @@
     Paintbrush,
     Eraser,
     PaintBucket,
+    Bone,
+    Eye,
+    EyeOff,
     Undo2,
     Redo2,
     Save,
@@ -180,40 +183,41 @@
   </div>
   <div class="flex overflow-hidden rounded border border-border">
     <button
-      class="px-3 py-1 {ui.mode === 'draw' ? 'bg-surface-active' : 'hover:bg-surface-hover'}"
-      onclick={() => (ui.mode = "draw")}
+      class={toolBtn}
+      class:bg-surface-active={ui.tool === "brush"}
+      title="Brush"
+      onclick={() => (ui.tool = "brush")}><Paintbrush size={18} /></button
     >
-      Draw
-    </button>
     <button
-      class="px-3 py-1 {ui.mode === 'rig' ? 'bg-surface-active' : 'hover:bg-surface-hover'}"
-      onclick={() => (ui.mode = "rig")}
+      class={toolBtn}
+      class:bg-surface-active={ui.tool === "eraser"}
+      title="Eraser"
+      onclick={() => (ui.tool = "eraser")}><Eraser size={18} /></button
     >
-      Rig
+    <button
+      class={toolBtn}
+      class:bg-surface-active={ui.tool === "fill"}
+      title="Fill"
+      onclick={() => (ui.tool = "fill")}><PaintBucket size={18} /></button
+    >
+    <button
+      class={toolBtn}
+      class:bg-surface-active={ui.tool === "bone"}
+      title="Bone"
+      onclick={() => (ui.tool = "bone")}><Bone size={18} /></button
+    >
+  </div>
+  <div class="flex overflow-hidden rounded border border-border">
+    <button
+      class={toolBtn}
+      class:bg-surface-active={ui.showBones}
+      title={ui.showBones ? "Bones visible — click to hide" : "Bones hidden — click to show"}
+      onclick={() => (ui.showBones = !ui.showBones)}
+    >
+      {#if ui.showBones}<Eye size={18} />{:else}<EyeOff size={18} />{/if}
     </button>
   </div>
-  {#if ui.mode === "draw"}
-    <div class="flex overflow-hidden rounded border border-border">
-      <button
-        class={toolBtn}
-        class:bg-surface-active={ui.tool === "brush"}
-        title="Brush"
-        onclick={() => (ui.tool = "brush")}><Paintbrush size={18} /></button
-      >
-      <button
-        class={toolBtn}
-        class:bg-surface-active={ui.tool === "eraser"}
-        title="Eraser"
-        onclick={() => (ui.tool = "eraser")}><Eraser size={18} /></button
-      >
-      <button
-        class={toolBtn}
-        class:bg-surface-active={ui.tool === "fill"}
-        title="Fill"
-        onclick={() => (ui.tool = "fill")}><PaintBucket size={18} /></button
-      >
-    </div>
-
+  {#if isPaintTool(ui.tool)}
     <div class="flex overflow-hidden rounded border border-border">
       <button
         class="px-3 py-1 {ui.brushType === 'smooth' ? 'bg-surface-active' : 'hover:bg-surface-hover'}"

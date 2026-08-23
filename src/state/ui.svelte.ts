@@ -1,4 +1,3 @@
-export type Mode = "draw" | "rig";
 export type Tool = "brush" | "eraser" | "fill" | "bone";
 export type BrushType = "smooth" | "ink" | "pencil";
 
@@ -18,7 +17,6 @@ export function isPaintTool(tool: Tool): boolean {
 }
 
 export const ui = $state({
-  mode: "draw" as Mode,
   selectedLayerId: null as number | null,
   selectedBone: null as string | null,
   tool: "brush" as Tool,

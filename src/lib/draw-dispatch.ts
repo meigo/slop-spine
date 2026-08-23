@@ -4,7 +4,7 @@
 // own canvas, resolved by id (layer array order is a display concern, not identity). Mild
 // pressure-response curve, applied uniformly regardless of brush engine.
 import { document as doc, markLayerDirty } from "../state/doc.svelte";
-import { ui } from "../state/ui.svelte";
+import { ui, isPaintTool } from "../state/ui.svelte";
 import type { InputPoint } from "../core/input";
 import { drawStroke, type BrushSettings } from "../core/brush";
 import { drawInkStrokeIncremental, resetInkState } from "../core/ink-brush";
@@ -141,8 +141,9 @@ export function createDrawDispatch() {
   }
 
   function handleStroke(points: InputPoint[], done: boolean) {
-    // Rig mode drives its own pointer handling (see Canvas.svelte); this dispatcher only draws.
-    if (ui.mode !== "draw") return;
+    // The rig gestures drive their own pointer handling (see Canvas.svelte); this dispatcher only
+    // draws, so it stands down for any non-painting tool.
+    if (!isPaintTool(ui.tool)) return;
     if (points.length === 0) return;
 
     if (ui.tool === "fill") {

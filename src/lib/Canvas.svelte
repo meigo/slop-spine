@@ -110,7 +110,7 @@
     }
     ctx.globalAlpha = 1;
 
-    if (ui.mode === "rig") {
+    if (ui.showBones || ui.tool === "bone") {
       // Every visible layer's slot, not just the selected one — bleed (Task 21) is a relationship
       // between two parts' meshes, invisible if only one is ever drawn.
       const slots = doc.layers
@@ -143,7 +143,8 @@
     void size.height;
     // Rig mode: mode/selection changes and bone edits also need a redraw. doc.bones is read
     // field-by-field (not just .length) so dragging a bone re-triggers this.
-    void ui.mode;
+    void ui.tool;
+    void ui.showBones;
     void ui.selectedBone;
     void ui.selectedLayerId;
     void doc.density;
@@ -336,7 +337,7 @@
   let poseStartBearing = 0;
 
   function onRigPointerDown(e: PointerEvent) {
-    if (ui.mode !== "rig" || e.button !== 0) return;
+    if (ui.tool !== "bone" || e.button !== 0) return;
     if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
     if (!viewport) return;
     e.preventDefault();
