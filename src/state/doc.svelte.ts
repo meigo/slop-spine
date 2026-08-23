@@ -173,7 +173,15 @@ export function moveBone(name: string, x: number, y: number) {
 
 export function setBoneLength(name: string, len: number) {
   const bone = document.bones.find((b) => b.name === name);
-  if (bone) bone.length = Math.max(0, len);
+  if (!bone) return;
+  bone.length = Math.max(0, len);
+  // Seed reach here, not in addBone: addBone always creates length 0 (length arrives from the
+  // drag that follows creation), so seeding there would seed reach at zero — and Bone.reach's own
+  // semantics treat 0 as "unlimited," so every vertex would silently fall through to the
+  // nearest-bone fallback instead of actually being limited. `bone.reach === undefined` is true
+  // only for a bone that has never had its reach set (by this seed or by setReach), so an existing
+  // bone's length can be resized later without this clobbering a reach the user already dragged.
+  if (bone.reach === undefined) bone.reach = Math.max(MIN_REACH, bone.length);
 }
 
 /** Degrees, screen-space CCW-positive (matches Bone.rotation). Refuses root: its rotation must
@@ -264,6 +272,18 @@ export function renameBone(oldName: string, newName: string) {
 export function setWobble(name: string, v: number) {
   const bone = document.bones.find((b) => b.name === name);
   if (bone) bone.wobble = Math.max(0, Math.min(1, v));
+}
+
+// Canvas px. Bone.reach's own doc comment (rig/document.ts) and computeWeights' guard (`R > 0`,
+// src/rig/weights.ts) both treat 0 as "unlimited," not "no influence" — so the drag handle must
+// never be able to reach exactly 0. Matches the distance floor weights.ts already uses for the
+// same reason (`Math.max(d, 1)`) rather than inventing a second arbitrary constant.
+const MIN_REACH = 1;
+
+/** Sets a bone's influence radius (Task 3's drag handle). Clamped above zero — see MIN_REACH. */
+export function setReach(name: string, reach: number) {
+  const bone = document.bones.find((b) => b.name === name);
+  if (bone) bone.reach = Math.max(MIN_REACH, reach);
 }
 
 /** Replaces the set of bones that influence `slotName`'s weights (see rig/derive.ts). */

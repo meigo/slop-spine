@@ -51,6 +51,69 @@ export function drawRigOverlay(ctx: CanvasRenderingContext2D, data: RigOverlayDa
     if (bone.name === "root") continue;
     drawBone(ctx, bone, bone.name === selectedBone, screenPx);
   }
+
+  // Selected bone only, on top of everything else — drawing every bone's region at once makes
+  // the canvas unreadable (Task 3 brief). A bone with reach === undefined draws nothing.
+  const selected = bones.find((b) => b.name === selectedBone);
+  if (selected && selected.reach !== undefined) {
+    drawCapsule(ctx, selected, selected.reach, screenPx);
+    drawReachHandle(ctx, selected, screenPx);
+  }
+}
+
+/** Capsule = the bone's segment offset by ±R, with semicircular caps at both ends. Standard
+ *  two-arc capsule outline: walk one offset side out, cap around the far end, walk the other
+ *  offset side back, cap around the near end. */
+function drawCapsule(ctx: CanvasRenderingContext2D, bone: Bone, R: number, screenPx: (px: number) => number) {
+  const rad = (bone.rotation * Math.PI) / 180;
+  const x0 = bone.x;
+  const y0 = bone.y;
+  const x1 = bone.x + Math.cos(rad) * bone.length;
+  const y1 = bone.y + Math.sin(rad) * bone.length;
+  const perp = rad + Math.PI / 2;
+  const ox = Math.cos(perp) * R;
+  const oy = Math.sin(perp) * R;
+
+  ctx.save();
+  ctx.strokeStyle = "#38bdf8"; // same sky-blue as drawMeshTriangles' stroke, at full alpha
+  ctx.lineWidth = screenPx(1.5);
+  ctx.setLineDash([screenPx(5), screenPx(4)]);
+  ctx.beginPath();
+  ctx.moveTo(x0 + ox, y0 + oy);
+  ctx.lineTo(x1 + ox, y1 + oy);
+  ctx.arc(x1, y1, R, perp, perp - Math.PI, true);
+  ctx.lineTo(x0 - ox, y0 - oy);
+  ctx.arc(x0, y0, R, perp - Math.PI, perp, true);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Where the drag handle sits: on the capsule edge, perpendicular to the bone at its midpoint.
+ *  Exported so Canvas.svelte's hit-test uses the exact same point the handle is drawn at, rather
+ *  than a second copy of this geometry that could drift from it. `undefined` reach (nothing to
+ *  grab) and root (no length, and never selectable — see document.ts) both return null. */
+export function reachHandlePosition(bone: Bone): Pt | null {
+  if (bone.reach === undefined) return null;
+  const rad = (bone.rotation * Math.PI) / 180;
+  const midX = bone.x + Math.cos(rad) * (bone.length / 2);
+  const midY = bone.y + Math.sin(rad) * (bone.length / 2);
+  const perp = rad + Math.PI / 2;
+  return { x: midX + Math.cos(perp) * bone.reach, y: midY + Math.sin(perp) * bone.reach };
+}
+
+function drawReachHandle(ctx: CanvasRenderingContext2D, bone: Bone, screenPx: (px: number) => number) {
+  const pos = reachHandlePosition(bone);
+  if (!pos) return;
+  ctx.save();
+  ctx.fillStyle = "#38bdf8";
+  ctx.strokeStyle = "#0c4a6e";
+  ctx.lineWidth = screenPx(1.5);
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, screenPx(7), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawMeshTriangles(

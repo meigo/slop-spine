@@ -15,7 +15,10 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 function boneSignature(bones: Bone[]): string {
-  return bones.map((b) => `${b.name}:${b.x}:${b.y}:${b.rotation}:${b.length}`).join(",");
+  // reach is included: it's a weights-only input (see computeWeights), but the cache's single
+  // key covers both mesh and weights, so leaving it out would let a reach-only change (Task 3's
+  // drag handle) return stale weights from cache instead of re-deriving them.
+  return bones.map((b) => `${b.name}:${b.x}:${b.y}:${b.rotation}:${b.length}:${b.reach}`).join(",");
 }
 
 /** Drop cached derivation for one slot, or every slot. Not required for correctness — the cache

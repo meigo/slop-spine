@@ -6,8 +6,10 @@ export interface Influence {
   weight: number;
 }
 
-/** Shortest distance from p to the segment from the bone's origin along its length. */
-function distanceToBone(px: number, py: number, b: Bone): number {
+/** Shortest distance from p to the segment from the bone's origin along its length. Exported so
+ *  the influence-radius handle (Canvas.svelte) can reuse this exact projection instead of a
+ *  second copy that would drift from this one. */
+export function distanceToBone(px: number, py: number, b: Bone): number {
   const rad = (b.rotation * Math.PI) / 180;
   const ex = b.x + Math.cos(rad) * b.length;
   const ey = b.y + Math.sin(rad) * b.length;

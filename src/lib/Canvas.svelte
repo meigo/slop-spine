@@ -6,6 +6,7 @@
     moveBone,
     setBoneLength,
     setBoneRotation,
+    setReach,
     descendantsOf,
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
@@ -16,7 +17,8 @@
   import { createDrawDispatch } from "./draw-dispatch";
   import { history } from "../state/history.svelte";
   import { deriveSlot } from "../rig/derive";
-  import { drawRigOverlay, poseDeform, drawWarpedLayer, type PoseDelta } from "./RigOverlay";
+  import { distanceToBone } from "../rig/weights";
+  import { drawRigOverlay, poseDeform, drawWarpedLayer, reachHandlePosition, type PoseDelta } from "./RigOverlay";
   import type { Bone } from "../rig/document";
 
   let stage: HTMLDivElement;
@@ -140,7 +142,7 @@
     void ui.selectedBone;
     void ui.selectedLayerId;
     void doc.density;
-    void doc.bones.map((b) => [b.name, b.x, b.y, b.rotation, b.length]);
+    void doc.bones.map((b) => [b.name, b.x, b.y, b.rotation, b.length, b.reach]);
     void poseDrag;
     redraw();
   });
@@ -315,7 +317,10 @@
     return best ?? pt;
   }
 
-  type DragState = { type: "move" | "length"; bone: string } | { type: "pose"; bone: string };
+  type DragState =
+    | { type: "move" | "length"; bone: string }
+    | { type: "pose"; bone: string }
+    | { type: "reach"; bone: string };
   let dragState: DragState | null = null;
   let poseStart: { x: number; y: number } | null = null;
   // Only meaningful during a pose drag: whether it's a tip-grab (rotate) rather than a body-grab
@@ -366,6 +371,17 @@
       poseDrag = { bone: b.name, pivot: { x: b.x, y: b.y }, dtheta: 0, dx: 0, dy: 0 };
       return;
     }
+    // The influence-radius handle, checked ahead of tip/move hit-testing so grabbing it (drawn
+    // only for the selected bone — see RigOverlay's drawRigOverlay) always wins over re-selecting
+    // or moving that same bone.
+    if (ui.selectedBone) {
+      const selected = doc.bones.find((b) => b.name === ui.selectedBone);
+      const handle = selected ? reachHandlePosition(selected) : null;
+      if (handle && Math.hypot(handle.x - pt.x, handle.y - pt.y) < hitRadius) {
+        dragState = { type: "reach", bone: selected!.name };
+        return;
+      }
+    }
     const tip = tipHit(pt, hitRadius);
     if (tip) {
       ui.selectedBone = tip.name;
@@ -397,6 +413,11 @@
         setBoneLength(dragState.bone, Math.hypot(dx, dy));
         setBoneRotation(dragState.bone, (Math.atan2(dy, dx) * 180) / Math.PI);
       }
+    } else if (dragState.type === "reach") {
+      // Reuses distanceToBone's own point-to-segment projection (src/rig/weights.ts) rather than
+      // a second copy of that maths, which would drift from the one computeWeights actually uses.
+      const bone = doc.bones.find((b) => b.name === dragState!.bone);
+      if (bone) setReach(dragState.bone, distanceToBone(pt.x, pt.y, bone));
     } else if (dragState.type === "pose" && poseStart && poseDrag) {
       if (poseIsRotate) {
         // Δθ is the change in bearing from the bone's origin to the pointer.
