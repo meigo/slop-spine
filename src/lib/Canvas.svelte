@@ -400,7 +400,7 @@
       return;
     }
     const near = nearestBone(pt);
-    if (near) {
+    if (near && Math.hypot(near.x - pt.x, near.y - pt.y) < hitRadius) {
       ui.selectedBone = near.name;
       dragState = { type: "move", bone: near.name };
     } else {
