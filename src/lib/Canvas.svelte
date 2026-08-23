@@ -34,7 +34,7 @@
   // Bumped by the resize observer so the redraw $effect also reruns on container resize.
   let size = $state({ width: 0, height: 0 });
 
-  // --- Rig mode: transient pose-drag offset. This is the ONE piece of rig state that must be
+  // --- Bone tool: transient pose-drag offset. This is the ONE piece of rig state that must be
   // $state — it never touches doc.bones (pose is never stored), so it needs its own reactive
   // trigger for the redraw below. Everything else rig-related reads doc.bones/doc.density/ui
   // directly, which are already reactive. `pivot` is the dragged bone's rest origin; `dtheta` is
@@ -260,7 +260,7 @@
     else viewport.panBy(-e.deltaX, -e.deltaY); // content follows the scroll
   }
 
-  // --- Rig mode: bones. Runs alongside setupInput's own listeners on canvasEl (handleStroke
+  // --- Bone-tool gestures. Runs alongside setupInput's own listeners on canvasEl (handleStroke
   // no-ops for any non-painting tool (see isPaintTool), so the two never fight over a stroke).
   // Raw PointerEvents rather than
   // input.ts's InputPoint pipeline, because bone dragging wants exact deltas and shift/alt, neither

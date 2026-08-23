@@ -1,4 +1,4 @@
-// Extracted from Canvas.svelte by Task 10 (rig mode adds a 7th concern to that file; this is
+// Extracted from Canvas.svelte by Task 10 (bone editing adds a 7th concern to that file; this is
 // Task 9's "which layer takes a stroke, with which brush" concern, unchanged otherwise). Pointer
 // events (already parsed into document-space InputPoints by input.ts) land on ui.selectedLayerId's
 // own canvas, resolved by id (layer array order is a display concern, not identity). Mild
