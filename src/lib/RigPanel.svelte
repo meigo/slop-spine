@@ -125,7 +125,8 @@
 
   {#if selectedSlot}
     <div class="flex flex-col gap-1">
-      <span class="text-xs text-text-secondary">Bind — {selectedSlot.name}</span>
+      <span class="text-xs text-text-secondary">Bind override — {selectedSlot.name}</span>
+      <p class="text-xs text-text-muted">Reach already scopes weights. Only check bones here to override it, e.g. when overlapping geometry gets linked to the wrong bone.</p>
       {#if bindableBones.length === 0}
         <p class="text-xs text-text-muted">No bones yet.</p>
       {:else}

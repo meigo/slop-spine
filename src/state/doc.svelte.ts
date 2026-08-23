@@ -1,4 +1,4 @@
-import { emptyDocument, defaultBind, type RigDocument, type Layer, type Slot, type Bone } from "../rig/document";
+import { emptyDocument, type RigDocument, type Layer, type Slot, type Bone } from "../rig/document";
 import { invalidate } from "../rig/derive";
 import { ui } from "./ui.svelte";
 import { history } from "./history.svelte";
@@ -38,13 +38,15 @@ function uniqueSlotName(base: string): string {
 }
 
 /** Adds a new layer on top of the stack (end of the array), plus the one slot every layer has
- *  (bound to root by default — override its influencing bones via setBind). Returns the layer id. */
+ *  (bound to root by default — override its influencing bones via setBind). An empty bind list
+ *  means unrestricted: deriveSlot falls back to every non-root bone, and each bone's reach does
+ *  the scoping from there. Returns the layer id. */
 export function addLayer(name: string): number {
   const layer = createLayer(name);
   document.layers.push(layer);
   const slot: Slot = { name: uniqueSlotName(name), layerId: layer.id, bone: "root", order: nextSlotOrder++ };
   document.slots.push(slot);
-  document.binds.push({ slot: slot.name, bones: defaultBind(document, slot) });
+  document.binds.push({ slot: slot.name, bones: [] });
   return layer.id;
 }
 
