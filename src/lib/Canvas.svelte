@@ -9,7 +9,7 @@
     setReach,
     descendantsOf,
   } from "../state/doc.svelte";
-  import { ui } from "../state/ui.svelte";
+  import { ui, overlayFlags } from "../state/ui.svelte";
   import type { Tool } from "../state/ui.svelte";
   import { Viewport } from "../core/viewport";
   import { setupInput } from "../core/input";
@@ -34,7 +34,7 @@
   // Bumped by the resize observer so the redraw $effect also reruns on container resize.
   let size = $state({ width: 0, height: 0 });
 
-  // --- Rig mode: transient pose-drag offset. This is the ONE piece of rig state that must be
+  // --- Bone tool: transient pose-drag offset. This is the ONE piece of rig state that must be
   // $state — it never touches doc.bones (pose is never stored), so it needs its own reactive
   // trigger for the redraw below. Everything else rig-related reads doc.bones/doc.density/ui
   // directly, which are already reactive. `pivot` is the dragged bone's rest origin; `dtheta` is
@@ -110,18 +110,22 @@
     }
     ctx.globalAlpha = 1;
 
-    if (ui.mode === "rig") {
-      // Every visible layer's slot, not just the selected one — bleed (Task 21) is a relationship
-      // between two parts' meshes, invisible if only one is ever drawn.
-      const slots = doc.layers
-        .filter((l) => l.visible)
-        .map((l) => doc.slots.find((s) => s.layerId === l.id))
-        .filter((s) => s !== undefined)
-        .map((slot) => {
-          const derived = deriveSlot(doc, slot.name);
-          return { ...derived, selected: slot.layerId === ui.selectedLayerId };
-        });
-      drawRigOverlay(ctx, { bones: doc.bones, selectedBone: ui.selectedBone, slots }, viewport.zoom);
+    const flags = overlayFlags(ui.tool, ui.showBones);
+    if (flags.bones || flags.mesh || flags.tint || flags.capsule) {
+      // Only derive when something that needs a mesh is actually being drawn. Under a paint tool
+      // this list stays empty and deriveSlot never runs — bones alone need no mesh.
+      const slots =
+        flags.mesh || flags.tint
+          ? doc.layers
+              .filter((l) => l.visible)
+              .map((l) => doc.slots.find((s) => s.layerId === l.id))
+              .filter((s) => s !== undefined)
+              .map((slot) => {
+                const derived = deriveSlot(doc, slot.name);
+                return { ...derived, selected: slot.layerId === ui.selectedLayerId };
+              })
+          : [];
+      drawRigOverlay(ctx, { bones: doc.bones, selectedBone: ui.selectedBone, slots }, viewport.zoom, flags);
     }
   }
 
@@ -141,9 +145,10 @@
     void doc.layers.map((l) => [l.id, l.visible, l.opacity, l.revision]);
     void size.width;
     void size.height;
-    // Rig mode: mode/selection changes and bone edits also need a redraw. doc.bones is read
+    // Tool, bone-visibility, and selection changes, plus bone edits, all need a redraw. doc.bones is read
     // field-by-field (not just .length) so dragging a bone re-triggers this.
-    void ui.mode;
+    void ui.tool;
+    void ui.showBones;
     void ui.selectedBone;
     void ui.selectedLayerId;
     void doc.density;
@@ -259,8 +264,9 @@
     else viewport.panBy(-e.deltaX, -e.deltaY); // content follows the scroll
   }
 
-  // --- Rig mode: bones. Runs alongside setupInput's own listeners on canvasEl (handleStroke
-  // no-ops outside draw mode, so the two never fight over a stroke). Raw PointerEvents rather than
+  // --- Bone-tool gestures. Runs alongside setupInput's own listeners on canvasEl (handleStroke
+  // no-ops for any non-painting tool (see isPaintTool), so the two never fight over a stroke).
+  // Raw PointerEvents rather than
   // input.ts's InputPoint pipeline, because bone dragging wants exact deltas and shift/alt, neither
   // of which the stroke pipeline carries. ---
   const RIG_HIT_RADIUS = 14; // screen px, converted to canvas px by dividing by zoom below
@@ -336,7 +342,7 @@
   let poseStartBearing = 0;
 
   function onRigPointerDown(e: PointerEvent) {
-    if (ui.mode !== "rig" || e.button !== 0) return;
+    if (ui.tool !== "bone" || e.button !== 0) return;
     if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
     if (!viewport) return;
     e.preventDefault();

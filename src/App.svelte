@@ -48,7 +48,9 @@
     <div class="min-w-0 flex-1">
       <Canvas />
     </div>
-    {#if ui.mode === "rig"}
+    <!-- Transitional and mode-ish on purpose: keeps density and the bind override reachable
+         until increment 2 replaces both panels with the tree and inspector. -->
+    {#if ui.tool === "bone"}
       <RigPanel />
     {:else}
       <LayerPanel />
