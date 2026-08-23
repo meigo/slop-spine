@@ -55,12 +55,18 @@ export function addLayer(name: string): number {
 
 /** Undoable: pushes a command that re-inserts the layer, its slot (at its original `order` —
  *  see Slot.order's comment) and its bind at their original array indices. The layer's `canvas`
- *  is retained by the closure, so undo brings the pixels back for free. */
+ *  is retained by the closure, so undo brings the pixels back for free.
+ *
+ *  `document.layers`' position is re-anchored to the id of the preceding layer rather than
+ *  trusting `index`: `reorderLayer` mutates that array without going through history, so by undo
+ *  time `index` may no longer describe where the layer was. Slots/binds keep their original
+ *  indices since nothing reorders those arrays. */
 export function removeLayer(id: number) {
   const index = document.layers.findIndex((l) => l.id === id);
   if (index === -1) return;
   const slotIndex = document.slots.findIndex((s) => s.layerId === id);
   if (slotIndex === -1) return;
+  const prevLayerId = index > 0 ? document.layers[index - 1].id : null;
   const [layer] = document.layers.splice(index, 1);
   const [slot] = document.slots.splice(slotIndex, 1);
   const bindIndex = document.binds.findIndex((b) => b.slot === slot.name);
@@ -68,7 +74,9 @@ export function removeLayer(id: number) {
   invalidate(slot.name);
   history.push({
     undo() {
-      document.layers.splice(index, 0, layer);
+      const p = prevLayerId === null ? -1 : document.layers.findIndex((l) => l.id === prevLayerId);
+      const at = prevLayerId === null ? 0 : p === -1 ? document.layers.length : p + 1;
+      document.layers.splice(at, 0, layer);
       document.slots.splice(slotIndex, 0, slot);
       if (bind !== undefined) document.binds.splice(bindIndex, 0, bind);
       markLayerDirty(id);
