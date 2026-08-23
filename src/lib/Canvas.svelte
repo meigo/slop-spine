@@ -93,24 +93,26 @@
     const poseDelta: PoseDelta | null = poseDrag
       ? { pivot: poseDrag.pivot, dtheta: poseDrag.dtheta, dx: poseDrag.dx, dy: poseDrag.dy }
       : null;
-    for (const layer of doc.layers) {
-      if (!layer.visible) continue;
-      ctx.globalAlpha = layer.opacity;
-      const warped = poseBones && poseDelta && warpFor(layer.id);
-      // Reach does the scoping now, so most layers have zero weight for the posed bones — skip
-      // the warp for those and draw normally, rather than clipping them to their mesh hull (which
-      // loses soft brush fringe outside the hull) for no visual difference.
-      const hasInfluence = warped && warped.weights.some((infs) => infs.some((i) => poseBoneSet!.has(i.bone)));
-      if (warped && hasInfluence) {
-        const deformed = poseDeform(warped.mesh, warped.weights, poseBones!, poseDelta!);
-        drawWarpedLayer(ctx, layer.canvas, warped.mesh, deformed);
-      } else {
-        ctx.drawImage(layer.canvas, 0, 0);
+    if (ui.showDrawings) {
+      for (const layer of doc.layers) {
+        if (!layer.visible) continue;
+        ctx.globalAlpha = layer.opacity;
+        const warped = poseBones && poseDelta && warpFor(layer.id);
+        // Reach does the scoping now, so most layers have zero weight for the posed bones — skip
+        // the warp for those and draw normally, rather than clipping them to their mesh hull (which
+        // loses soft brush fringe outside the hull) for no visual difference.
+        const hasInfluence = warped && warped.weights.some((infs) => infs.some((i) => poseBoneSet!.has(i.bone)));
+        if (warped && hasInfluence) {
+          const deformed = poseDeform(warped.mesh, warped.weights, poseBones!, poseDelta!);
+          drawWarpedLayer(ctx, layer.canvas, warped.mesh, deformed);
+        } else {
+          ctx.drawImage(layer.canvas, 0, 0);
+        }
       }
     }
     ctx.globalAlpha = 1;
 
-    const flags = overlayFlags(ui.tool, ui.showBones);
+    const flags = overlayFlags(ui.tool, ui.showBones, ui.showMeshes);
     if (flags.bones || flags.mesh || flags.tint || flags.capsule) {
       // Only derive when something that needs a mesh is actually being drawn. Under a paint tool
       // this list stays empty and deriveSlot never runs — bones alone need no mesh.
@@ -141,19 +143,16 @@
   }
 
   $effect(() => {
-    // Track layer identity + the fields that affect the picture, plus container size.
-    void doc.layers.map((l) => [l.id, l.visible, l.opacity, l.revision]);
-    void size.width;
-    void size.height;
-    // Tool, bone-visibility, and selection changes, plus bone edits, all need a redraw. doc.bones is read
-    // field-by-field (not just .length) so dragging a bone re-triggers this.
+    JSON.stringify(doc);
     void ui.tool;
     void ui.showBones;
+    void ui.showDrawings;
+    void ui.showMeshes;
     void ui.selectedBone;
     void ui.selectedLayerId;
-    void doc.density;
-    void JSON.stringify(doc.bones);
     void poseDrag;
+    void size.width;
+    void size.height;
     redraw();
   });
 

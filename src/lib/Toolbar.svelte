@@ -12,8 +12,8 @@
     Eraser,
     PaintBucket,
     Bone,
-    Eye,
-    EyeOff,
+    Image,
+    Grid3x3,
     Undo2,
     Redo2,
     Save,
@@ -210,11 +210,27 @@
   <div class="flex overflow-hidden rounded border border-border">
     <button
       class={toolBtn}
+      class:bg-surface-active={ui.showDrawings}
+      title={ui.showDrawings ? "Drawings visible — click to hide" : "Drawings hidden — click to show"}
+      onclick={() => (ui.showDrawings = !ui.showDrawings)}
+    >
+      <Image size={18} />
+    </button>
+    <button
+      class={toolBtn}
       class:bg-surface-active={ui.showBones}
       title={ui.showBones ? "Bones visible — click to hide" : "Bones hidden — click to show"}
       onclick={() => (ui.showBones = !ui.showBones)}
     >
-      {#if ui.showBones}<Eye size={18} />{:else}<EyeOff size={18} />{/if}
+      <Bone size={18} />
+    </button>
+    <button
+      class={toolBtn}
+      class:bg-surface-active={ui.showMeshes}
+      title={ui.showMeshes ? "Meshes visible — click to hide" : "Meshes hidden — click to show"}
+      onclick={() => (ui.showMeshes = !ui.showMeshes)}
+    >
+      <Grid3x3 size={18} />
     </button>
   </div>
   {#if isPaintTool(ui.tool)}
