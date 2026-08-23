@@ -99,10 +99,10 @@
   }
 </script>
 
-<div class="flex w-56 flex-col border-l border-neutral-800 bg-neutral-900 text-sm text-neutral-200">
-  <div class="flex items-center justify-between border-b border-neutral-800 p-2">
-    <span class="font-mono text-xs uppercase text-neutral-400">Layers</span>
-    <button class="rounded bg-neutral-700 px-2 py-0.5 hover:bg-neutral-600" onclick={onAdd}>+ Add</button>
+<div class="flex w-56 flex-col border-l border-border bg-surface text-sm text-text">
+  <div class="flex items-center justify-between border-b border-border p-2">
+    <span class="font-mono text-xs uppercase text-text-secondary">Layers</span>
+    <button class="rounded bg-surface-active px-2 py-0.5 hover:bg-surface-hover" onclick={onAdd}>+ Add</button>
   </div>
   <ul class="flex-1 overflow-y-auto">
     {#each topFirst as layer (layer.id)}
@@ -111,9 +111,9 @@
         ondragstart={() => onDragStart(layer.id)}
         ondragover={onDragOver}
         ondrop={() => onDrop(layer.id)}
-        class="flex flex-col gap-1 border-b border-neutral-800 px-2 py-1 {ui.selectedLayerId === layer.id
-          ? 'bg-neutral-700'
-          : 'hover:bg-neutral-800'}"
+        class="flex flex-col gap-1 border-b border-border-light px-2 py-1 {ui.selectedLayerId === layer.id
+          ? 'bg-surface-active'
+          : 'hover:bg-surface-hover'}"
       >
         <div class="flex items-center gap-2">
           <button
@@ -125,7 +125,7 @@
           </button>
           {#if editingId === layer.id}
             <input
-              class="min-w-0 flex-1 bg-neutral-950 px-1 text-neutral-200"
+              class="min-w-0 flex-1 bg-canvas-bg px-1 text-text"
               bind:value={draftName}
               onblur={commitRename}
               onkeydown={onRenameKey}
@@ -140,14 +140,14 @@
             </button>
           {/if}
           <button
-            class="shrink-0 text-neutral-500 hover:text-neutral-200"
+            class="shrink-0 text-text-muted hover:text-text"
             onclick={() => onRemove(layer.id)}
             title="Remove layer"
           >
             ✕
           </button>
         </div>
-        <div class="flex items-center gap-1 pl-7 text-xs text-neutral-400">
+        <div class="flex items-center gap-1 pl-7 text-xs text-text-secondary">
           <span>Opacity</span>
           <input
             type="range"
@@ -160,7 +160,7 @@
           />
           <span class="w-8 text-right font-mono">{Math.round(layer.opacity * 100)}</span>
           <button
-            class="shrink-0 text-neutral-500 hover:text-neutral-200"
+            class="shrink-0 text-text-muted hover:text-text"
             onclick={() => onClear(layer.id)}
             title="Clear layer to transparent"
           >

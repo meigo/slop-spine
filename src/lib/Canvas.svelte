@@ -376,7 +376,7 @@
   });
 </script>
 
-<div bind:this={stage} class="relative h-full w-full touch-none overflow-hidden bg-neutral-950">
+<div bind:this={stage} class="relative h-full w-full touch-none overflow-hidden bg-canvas-bg">
   <div bind:this={anchor} class="absolute h-0 w-0"></div>
   <canvas bind:this={canvasEl} class="absolute left-0 top-0 h-full w-full"></canvas>
 </div>
