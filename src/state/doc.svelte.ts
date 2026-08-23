@@ -87,13 +87,29 @@ export function removeLayer(id: number) {
   });
 }
 
-/** Moves the layer to array index `index` (0 = bottom of the stack). */
+function applyLayerOrder(ids: number[]) {
+  const byId = new Map(document.layers.map((l) => [l.id, l]));
+  document.layers = ids.map((id) => byId.get(id)!);
+}
+
+/** Moves the layer to array index `index` (0 = bottom of the stack). One undo step. */
 export function reorderLayer(id: number, index: number) {
   const from = document.layers.findIndex((l) => l.id === id);
   if (from === -1) return;
+  const before = document.layers.map((l) => l.id);
   const [layer] = document.layers.splice(from, 1);
   const clamped = Math.max(0, Math.min(index, document.layers.length));
   document.layers.splice(clamped, 0, layer);
+  const after = document.layers.map((l) => l.id);
+  if (before.join(",") === after.join(",")) return;
+  history.push({
+    undo() {
+      applyLayerOrder(before);
+    },
+    redo() {
+      applyLayerOrder(after);
+    },
+  });
 }
 
 export function renameLayer(id: number, name: string) {

@@ -13,7 +13,7 @@
   import type { Layer } from "../rig/document";
   import { pixelCommand } from "../core/history";
   import { history } from "../state/history.svelte";
-  import { Plus, Trash2, Eye, EyeOff } from "@lucide/svelte";
+  import { Plus, Trash2, Eye, EyeOff, GripVertical } from "@lucide/svelte";
 
   // Panel shows the topmost layer first; the document array is bottom-to-top (index 0 = bottom).
   let topFirst = $derived([...doc.layers].reverse());
@@ -114,8 +114,6 @@
   <ul class="flex-1 overflow-y-auto">
     {#each topFirst as layer (layer.id)}
       <li
-        draggable="true"
-        ondragstart={() => onDragStart(layer.id)}
         ondragover={onDragOver}
         ondrop={() => onDrop(layer.id)}
         class="flex flex-col gap-1 border-b border-border-light px-2 py-1 {ui.selectedLayerId === layer.id
@@ -123,6 +121,16 @@
           : 'hover:bg-surface-hover'}"
       >
         <div class="flex items-center gap-2">
+          <span
+            role="button"
+            tabindex="0"
+            draggable="true"
+            class="layer-drag-handle shrink-0 cursor-grab text-text-muted"
+            title="Drag to reorder"
+            ondragstart={() => onDragStart(layer.id)}
+          >
+            <GripVertical size={14} />
+          </span>
           <button
             class="w-5 shrink-0 flex items-center justify-center text-text-secondary hover:text-text"
             onclick={() => toggleVisible(layer.id)}
