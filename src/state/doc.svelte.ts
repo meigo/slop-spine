@@ -177,13 +177,6 @@ export function setBoneLength(name: string, len: number) {
   const bone = document.bones.find((b) => b.name === name);
   if (!bone) return;
   bone.length = Math.max(0, len);
-  // Seed reach here, not in addBone: addBone always creates length 0 (length arrives from the
-  // drag that follows creation), so seeding there would seed reach at zero — and Bone.reach's own
-  // semantics treat 0 as "unlimited," so every vertex would silently fall through to the
-  // nearest-bone fallback instead of actually being limited. `bone.reach === undefined` is true
-  // only for a bone that has never had its reach set (by this seed or by setReach), so an existing
-  // bone's length can be resized later without this clobbering a reach the user already dragged.
-  if (bone.reach === undefined) bone.reach = Math.max(MIN_REACH, bone.length);
 }
 
 /** Degrees, screen-space CCW-positive (matches Bone.rotation). Refuses root: its rotation must

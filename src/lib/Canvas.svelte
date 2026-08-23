@@ -89,6 +89,7 @@
     // The dragged bone and every descendant pose together, rigidly, about the dragged bone's
     // pivot — rotating a shoulder must carry the forearm (see poseDeform's doc comment).
     const poseBones = poseDrag ? [poseDrag.bone, ...descendantsOf(poseDrag.bone).map((b) => b.name)] : null;
+    const poseBoneSet = poseBones ? new Set(poseBones) : null;
     const poseDelta: PoseDelta | null = poseDrag
       ? { pivot: poseDrag.pivot, dtheta: poseDrag.dtheta, dx: poseDrag.dx, dy: poseDrag.dy }
       : null;
@@ -96,7 +97,11 @@
       if (!layer.visible) continue;
       ctx.globalAlpha = layer.opacity;
       const warped = poseBones && poseDelta && warpFor(layer.id);
-      if (warped) {
+      // Reach does the scoping now, so most layers have zero weight for the posed bones — skip
+      // the warp for those and draw normally, rather than clipping them to their mesh hull (which
+      // loses soft brush fringe outside the hull) for no visual difference.
+      const hasInfluence = warped && warped.weights.some((infs) => infs.some((i) => poseBoneSet!.has(i.bone)));
+      if (warped && hasInfluence) {
         const deformed = poseDeform(warped.mesh, warped.weights, poseBones!, poseDelta!);
         drawWarpedLayer(ctx, layer.canvas, warped.mesh, deformed);
       } else {
@@ -142,7 +147,7 @@
     void ui.selectedBone;
     void ui.selectedLayerId;
     void doc.density;
-    void doc.bones.map((b) => [b.name, b.x, b.y, b.rotation, b.length, b.reach]);
+    void JSON.stringify(doc.bones);
     void poseDrag;
     redraw();
   });
@@ -318,7 +323,8 @@
   }
 
   type DragState =
-    | { type: "move" | "length"; bone: string }
+    | { type: "move"; bone: string }
+    | { type: "length"; bone: string; created?: true }
     | { type: "pose"; bone: string }
     | { type: "reach"; bone: string };
   let dragState: DragState | null = null;
@@ -346,7 +352,7 @@
       const name = addBone(parent.name, pt.x, pt.y);
       if (name) {
         ui.selectedBone = name;
-        dragState = { type: "length", bone: name };
+        dragState = { type: "length", bone: name, created: true };
       }
       return;
     }
@@ -432,6 +438,16 @@
 
   function onRigPointerUp(e: PointerEvent) {
     if (!dragState) return;
+    // Seed reach once, at the end of the drag that created the bone — not in setBoneLength, which
+    // runs on every pointermove of that same drag and would otherwise lock reach to whatever the
+    // hand's first few pixels of motion happened to be (see doc.svelte.ts's setBoneLength for why
+    // that made every new bone's influence region ~100x too small). `length > 0` excludes a
+    // shift-click with no drag: seeding a zero-length bone would give it a 1px influence region,
+    // and leaving reach undefined (unlimited) is the less surprising of two bad outcomes for it.
+    if (dragState.type === "length" && dragState.created) {
+      const bone = doc.bones.find((b) => b.name === dragState!.bone);
+      if (bone && bone.length > 0 && bone.reach === undefined) setReach(bone.name, bone.length);
+    }
     dragState = null;
     poseStart = null;
     poseDrag = null;
