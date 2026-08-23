@@ -1,5 +1,4 @@
 import type { RigDocument, Layer, Slot } from "../rig/document";
-import { defaultBind } from "../rig/document";
 
 function makeLayer(id: number, name: string, width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void): Layer {
   const canvas = document.createElement("canvas");
@@ -50,7 +49,7 @@ export function buildFixture(): RigDocument {
     { name: "arm", layerId: arm.id, bone: "arm", order: 2 },
   ];
   doc.slots = slots;
-  doc.binds = slots.map((slot) => ({ slot: slot.name, bones: defaultBind(doc, slot) }));
+  doc.binds = slots.map((slot) => ({ slot: slot.name, bones: [] }));
 
   return doc;
 }

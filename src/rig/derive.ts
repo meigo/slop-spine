@@ -39,6 +39,17 @@ function allNonRootBoneNames(doc: RigDocument): string[] {
   return doc.bones.filter((b) => b.name !== "root").map((b) => b.name);
 }
 
+/** A slot's bind list is empty by default — addLayer creates every new slot with `bones: []` —
+ *  and reach, not this list, does the scoping in that normal case. Only when a user has manually
+ *  picked bones for a slot does the stored list narrow it further. Either way, empty must not be
+ *  read as "bound to nothing": a slot with zero influences exports `boneCount: 0`, which spine-ts
+ *  silently collapses to the skeleton origin (valid file, no error, invisible character), so an
+ *  empty list falls back to every bone instead. */
+export function bindNamesFor(doc: RigDocument, slotName: string): string[] {
+  const stored = doc.binds.find((b) => b.slot === slotName)?.bones;
+  return stored?.length ? stored : allNonRootBoneNames(doc);
+}
+
 /** Mesh + weights for one slot, memoised on (layer.revision, effective density, bound-bone
  *  signature). Effective density is slot.density ?? doc.density — a slot's override, or the
  *  document default when it has none. The mesh depends only on the layer's pixels and density,
@@ -50,12 +61,7 @@ export function deriveSlot(doc: RigDocument, slotName: string): { mesh: RigMesh;
   const layer = doc.layers.find((l) => l.id === slot.layerId);
   if (!layer) return EMPTY;
 
-  // A stored bind list can be empty — not just absent — when the layer was created before any
-  // bone existed (addLayer's defaultBind() call filters root out of an all-root bone list). An
-  // empty list is "not yet bound", not "bound to nothing": fall back to every bone rather than
-  // leaving the slot with zero influences, which collapses it to the skeleton origin on export.
-  const stored = doc.binds.find((b) => b.slot === slotName)?.bones;
-  const bindNames = stored?.length ? stored : allNonRootBoneNames(doc);
+  const bindNames = bindNamesFor(doc, slotName);
   const bones = doc.bones.filter((b) => bindNames.includes(b.name));
 
   const density = slot.density ?? doc.density;
