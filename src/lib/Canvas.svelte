@@ -521,10 +521,13 @@
       toolBeforeEraser = ui.tool;
       ui.tool = "eraser";
     }
-    // An active marquee takes Delete before the selected bone does: the marquee is the more recent,
-    // more visible intent, and it is dismissed with Escape, so the bone is one keystroke away.
     if (e.key === "Backspace" || e.key === "Delete") {
-      if (selection?.state === "selected") {
+      // Under every tool but bone an active marquee takes Delete: it is the more recent, more
+      // visible intent, and Escape dismisses it, so the bone stays one keystroke away. The bone
+      // tool is rig-domain and is excluded — a marquee outlives a tool switch on purpose (paint
+      // tools clip to it), which is exactly how a stale one ends up on screen while rigging, and
+      // it would otherwise erase pixels instead of the bone you meant.
+      if (ui.tool !== "bone" && selection?.state === "selected") {
         e.preventDefault();
         deleteSelection();
         return;
