@@ -1,8 +1,8 @@
 # slop-spine
 
-A **very limited** browser app for one job: draw a simple character, put a handful of bones on it, and export a **Spine 4.2** skeleton for web puppets (the [sloppets](https://github.com/meigo/Sloppets) style — side view, ~10 bones, physics wobble).
+A **very limited** browser app for one job: draw a simple character, put a handful of bones on it, and export a **Spine 4.2** skeleton for **programmatic animation** — a runtime that sets bone transforms from code each frame, not a timeline of keys. Side view, ~10 bones, optional physics wobble.
 
-**It is not a general Spine editor, not a general drawing app, and probably not useful outside that pipeline.** There is no animation timeline, no IK, no skins, no constraints beyond a cheap wobble preview, no professional mesh editing. Meshes and weights are **derived** from the silhouette and the bones, not stored per vertex — so you can redraw a limb without repairing a rig. That is the whole point. If you need Spine's actual editor, use Spine.
+**It is not a general Spine editor, not a general drawing app, and not an animation tool.** There is no timeline, no IK, no skins, no constraints beyond a cheap wobble preview, no professional mesh editing. Meshes and weights are **derived** from the silhouette and the bones, not stored per vertex — so you can redraw a limb without repairing a rig. That is the whole point. If you need Spine's actual editor, use Spine.
 
 **▶ Try it: [slop-spine.meigo.workers.dev](https://slop-spine.meigo.workers.dev)** — iPad + Apple Pencil works; mouse/desktop too.
 
@@ -15,12 +15,12 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 - Select / transform / warp on pixels
 - Pose preview with rotation wobble (optional translation)
 - Derived mesh + Euclidean weights, reach capsules, per-layer bone excludes
-- Spine 4.2 export for a runtime that pokes bones from code
+- Spine 4.2 export for programmatic animation (runtime pokes bones; no baked clips)
 
 ## What it does not do
 
 - Edit or round-trip a Spine project from the official editor
-- Animate on a timeline
+- Animate on a timeline — motion is supposed to happen in your code
 - Guarantee a “correct” deformation — “good enough that it doesn't tear” is the bar
 
 ## Development
