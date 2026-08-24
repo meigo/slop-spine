@@ -75,6 +75,11 @@ export default tseslint.config(
     },
   },
   {
+    // The icon generator is a build-time Node script — Node globals (Buffer), not browser ones.
+    files: ["tools/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     ignores: ["dist/"],
   },
 );
