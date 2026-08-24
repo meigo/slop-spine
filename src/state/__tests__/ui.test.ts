@@ -1,5 +1,14 @@
-import { describe, it, expect } from "vitest";
-import { isPaintTool, toolFromKey, type Tool } from "../ui.svelte";
+import { describe, it, expect, afterEach } from "vitest";
+import {
+  isPaintTool,
+  toolFromKey,
+  type Tool,
+  ui,
+  applyPreferences,
+  gatherPreferences,
+  bumpCurve,
+} from "../ui.svelte";
+import { pressureCurve } from "../../core/pressure-curve";
 
 describe("isPaintTool", () => {
   it("is true for every tool that paints", () => {
@@ -74,5 +83,72 @@ describe("overlayFlags", () => {
       expect(bone.tint).toBe(true);
       expect(bone.capsule).toBe(true);
     }
+  });
+});
+
+describe("applyPreferences / gatherPreferences", () => {
+  afterEach(() => {
+    applyPreferences({
+      tool: "brush",
+      brushType: "smooth",
+      brushSize: 12,
+      brushOpacity: 100,
+      brushValue: "#000000",
+      brushPress: 3,
+      eraserPress: 3,
+      fillTolerance: 32,
+      fillExpand: 2,
+      fillGap: 0,
+      showBones: true,
+      showDrawings: true,
+      showMeshes: false,
+      whiteBg: false,
+      dockWidth: 224,
+      inspectorHeight: 200,
+      pressureCurve: { cp1: { x: 0.25, y: 0.25 }, cp2: { x: 0.75, y: 0.75 } },
+    });
+    pressureCurve.reset();
+    ui.curveVersion = 0;
+    ui.selectedLayerId = null;
+    ui.selectedBone = null;
+    ui.boneMode = "edit";
+  });
+
+  it("applies known tool and brush fields and ignores junk", () => {
+    applyPreferences({
+      tool: "fill",
+      brushSize: 40,
+      brushValue: "#AABBCC",
+      whiteBg: true,
+    } as never);
+    expect(ui.tool).toBe("fill");
+    expect(ui.brushSize).toBe(40);
+    expect(ui.brushValue).toBe("#aabbcc");
+    expect(ui.whiteBg).toBe(true);
+    applyPreferences({ tool: "not-a-tool", brushSize: 999, brushValue: "red" } as never);
+    expect(ui.tool).toBe("fill");
+    expect(ui.brushSize).toBe(64);
+    expect(ui.brushValue).toBe("#aabbcc");
+  });
+
+  it("applies pressure-curve control points and rebuilds the lut", () => {
+    applyPreferences({
+      pressureCurve: { cp1: { x: 0.1, y: 0.9 }, cp2: { x: 0.8, y: 0.2 } },
+    });
+    expect(pressureCurve.cp1).toEqual({ x: 0.1, y: 0.9 });
+    expect(pressureCurve.cp2).toEqual({ x: 0.8, y: 0.2 });
+    expect(pressureCurve.evaluate(0.5)).not.toBeCloseTo(0.5, 2);
+  });
+
+  it("gather includes the curve and bumps when bumpCurve runs", () => {
+    applyPreferences({ brushSize: 8, pressureCurve: { cp1: { x: 0.2, y: 0.3 }, cp2: { x: 0.7, y: 0.6 } } });
+    const before = ui.curveVersion;
+    bumpCurve();
+    expect(ui.curveVersion).toBe(before + 1);
+    const g = gatherPreferences();
+    expect(g.brushSize).toBe(8);
+    expect(g.pressureCurve.cp1).toEqual({ x: 0.2, y: 0.3 });
+    expect("selectedLayerId" in g).toBe(false);
+    expect("selectedBone" in g).toBe(false);
   });
 });

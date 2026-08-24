@@ -80,6 +80,9 @@ export class PressureCurve {
   }
 }
 
+/** Shared instance: the toolbar editor mutates this, draw-dispatch evaluates it. */
+export const pressureCurve = new PressureCurve();
+
 /**
  * Creates the curve editor UI element.
  * Returns the container element and the PressureCurve instance.

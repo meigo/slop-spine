@@ -1,4 +1,7 @@
 import { DEFAULT_DOCK_WIDTH, DEFAULT_INSPECTOR_HEIGHT } from "../core/panel-layout";
+import { clampGap } from "../core/fill-holes";
+import { pressureCurve, type CurvePoint } from "../core/pressure-curve";
+import type { Preferences } from "../persist/preferences";
 
 export type Tool = "brush" | "eraser" | "fill" | "select" | "lasso" | "bone";
 export type BrushType = "smooth" | "ink" | "pencil";
@@ -85,7 +88,107 @@ export const ui = $state({
   dockWidth: DEFAULT_DOCK_WIDTH,
   /** Inspector pane height (px) inside the dock. Layer list takes the rest. */
   inspectorHeight: DEFAULT_INSPECTOR_HEIGHT,
+  /** Bumped when the imperative pressure curve changes so the prefs $effect re-runs. */
+  curveVersion: 0,
 });
+
+/** Signal that the (imperative) pressure curve changed, so the preferences save effect re-runs. */
+export function bumpCurve() {
+  ui.curveVersion++;
+}
+
+const TOOLS: readonly Tool[] = ["brush", "eraser", "fill", "select", "lasso", "bone"];
+const BRUSH_TYPES: readonly BrushType[] = ["smooth", "ink", "pencil"];
+
+function isTool(v: unknown): v is Tool {
+  return TOOLS.includes(v as Tool);
+}
+function isBrushType(v: unknown): v is BrushType {
+  return BRUSH_TYPES.includes(v as BrushType);
+}
+function intIn(v: unknown, min: number, max: number): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return Math.min(max, Math.max(min, Math.round(v)));
+}
+function pressIn(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return Math.min(8, Math.max(1, Math.round(v * 2) / 2));
+}
+function finiteNum(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+function isHexColor(v: unknown): v is string {
+  return typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
+}
+function clamp01(n: number): number {
+  return Math.min(1, Math.max(0, n));
+}
+function asPoint(v: unknown): CurvePoint | null {
+  if (!v || typeof v !== "object") return null;
+  const p = v as { x?: unknown; y?: unknown };
+  if (typeof p.x !== "number" || typeof p.y !== "number") return null;
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+  return { x: clamp01(p.x), y: clamp01(p.y) };
+}
+
+/** Snapshot the persisted-preference fields from live state. */
+export function gatherPreferences(): Preferences {
+  void ui.curveVersion;
+  return {
+    tool: ui.tool,
+    brushType: ui.brushType,
+    brushSize: ui.brushSize,
+    brushOpacity: ui.brushOpacity,
+    brushValue: ui.brushValue,
+    brushPress: ui.brushPress,
+    eraserPress: ui.eraserPress,
+    fillTolerance: ui.fillTolerance,
+    fillExpand: ui.fillExpand,
+    fillGap: ui.fillGap,
+    showBones: ui.showBones,
+    showDrawings: ui.showDrawings,
+    showMeshes: ui.showMeshes,
+    whiteBg: ui.whiteBg,
+    dockWidth: ui.dockWidth,
+    inspectorHeight: ui.inspectorHeight,
+    pressureCurve: { cp1: { ...pressureCurve.cp1 }, cp2: { ...pressureCurve.cp2 } },
+  };
+}
+
+/** Apply stored preferences over the current state, field-by-field with type guards. */
+export function applyPreferences(p: Partial<Preferences>): void {
+  if (isTool(p.tool)) ui.tool = p.tool;
+  if (isBrushType(p.brushType)) ui.brushType = p.brushType;
+  const size = intIn(p.brushSize, 1, 64);
+  if (size !== null) ui.brushSize = size;
+  const opacity = intIn(p.brushOpacity, 1, 100);
+  if (opacity !== null) ui.brushOpacity = opacity;
+  if (isHexColor(p.brushValue)) ui.brushValue = p.brushValue.toLowerCase();
+  const bp = pressIn(p.brushPress);
+  if (bp !== null) ui.brushPress = bp;
+  const ep = pressIn(p.eraserPress);
+  if (ep !== null) ui.eraserPress = ep;
+  const tol = intIn(p.fillTolerance, 0, 128);
+  if (tol !== null) ui.fillTolerance = tol;
+  const expand = intIn(p.fillExpand, 0, 8);
+  if (expand !== null) ui.fillExpand = expand;
+  if (p.fillGap !== undefined) ui.fillGap = clampGap(p.fillGap);
+  if (typeof p.showBones === "boolean") ui.showBones = p.showBones;
+  if (typeof p.showDrawings === "boolean") ui.showDrawings = p.showDrawings;
+  if (typeof p.showMeshes === "boolean") ui.showMeshes = p.showMeshes;
+  if (typeof p.whiteBg === "boolean") ui.whiteBg = p.whiteBg;
+  const dock = finiteNum(p.dockWidth);
+  if (dock !== null) ui.dockWidth = dock;
+  const inspector = finiteNum(p.inspectorHeight);
+  if (inspector !== null) ui.inspectorHeight = inspector;
+  if (p.pressureCurve && typeof p.pressureCurve === "object") {
+    const cp1 = asPoint(p.pressureCurve.cp1);
+    const cp2 = asPoint(p.pressureCurve.cp2);
+    if (cp1) pressureCurve.cp1 = cp1;
+    if (cp2) pressureCurve.cp2 = cp2;
+    if (cp1 || cp2) pressureCurve.buildLUT();
+  }
+}
 
 export interface OverlayFlags {
   bones: boolean;

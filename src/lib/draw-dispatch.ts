@@ -11,7 +11,7 @@ import { drawInkStrokeIncremental, resetInkState } from "../core/ink-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
 import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../core/fill";
 import { clampGap } from "../core/fill-holes";
-import { PressureCurve } from "../core/pressure-curve";
+import { pressureCurve } from "../core/pressure-curve";
 import type { Layer } from "../rig/document";
 import { pixelCommand } from "../core/history";
 import { history } from "../state/history.svelte";
@@ -21,11 +21,6 @@ import { history } from "../state/history.svelte";
 function pressFor(tool: Tool): number {
   return tool === "eraser" ? ui.eraserPress : ui.brushPress;
 }
-
-// Module-level (not inside createDrawDispatch) so Toolbar.svelte's pressure curve editor can
-// mutate the same instance handleStroke reads below — createDrawDispatch() runs once, from
-// Canvas.svelte's onMount, so a closure-local instance would be unreachable from the toolbar.
-export const pressureCurve = new PressureCurve();
 
 /** Fill every ink-enclosed region on the selected layer, behind the strokes. */
 export function fillAllEnclosed() {

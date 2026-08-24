@@ -5,8 +5,9 @@
   import LayerPanel from "./lib/LayerPanel.svelte";
   import Inspector from "./lib/Inspector.svelte";
   import { document as doc, loadDocument } from "./state/doc.svelte";
-  import { ui } from "./state/ui.svelte";
+  import { ui, applyPreferences, gatherPreferences } from "./state/ui.svelte";
   import { armAutosave, restore } from "./persist/autosave";
+  import { loadPreferences, savePreferences } from "./persist/preferences";
   import { clampDockWidth, clampInspectorHeight } from "./core/panel-layout";
 
   // Gate autosave until the startup restore has settled — `doc` is a blank document until then,
@@ -18,8 +19,8 @@
   // autosave with the blank document. Only a null restore (genuinely no autosave yet) arms.
   let restoreFailed = false;
 
-  const PANEL_PREFS = "slop-spine:panels";
   let dockEl: HTMLDivElement | undefined = $state();
+  let prefsReady = false;
 
   function columnH() {
     return dockEl?.clientHeight ?? window.innerHeight;
@@ -28,29 +29,6 @@
   function applyPanelPrefs() {
     ui.dockWidth = clampDockWidth(ui.dockWidth, window.innerWidth);
     ui.inspectorHeight = clampInspectorHeight(ui.inspectorHeight, columnH());
-  }
-
-  function savePanelPrefs() {
-    try {
-      localStorage.setItem(
-        PANEL_PREFS,
-        JSON.stringify({ dockWidth: ui.dockWidth, inspectorHeight: ui.inspectorHeight }),
-      );
-    } catch {
-      /* private mode */
-    }
-  }
-
-  function loadPanelPrefs() {
-    try {
-      const raw = localStorage.getItem(PANEL_PREFS);
-      if (!raw) return;
-      const p = JSON.parse(raw) as { dockWidth?: number; inspectorHeight?: number };
-      if (typeof p.dockWidth === "number") ui.dockWidth = p.dockWidth;
-      if (typeof p.inspectorHeight === "number") ui.inspectorHeight = p.inspectorHeight;
-    } catch {
-      /* ignore */
-    }
   }
 
   let widthStartX = 0;
@@ -71,7 +49,6 @@
     } catch {
       /* already released */
     }
-    savePanelPrefs();
   }
 
   let heightStartY = 0;
@@ -92,10 +69,12 @@
     } catch {
       /* already released */
     }
-    savePanelPrefs();
   }
 
   onMount(async () => {
+    applyPreferences(loadPreferences());
+    applyPanelPrefs();
+    prefsReady = true;
     try {
       const restored = await restore();
       if (restored) loadDocument(restored);
@@ -103,9 +82,15 @@
       console.error("autosave restore failed", e);
       restoreFailed = true;
     }
-    loadPanelPrefs();
-    applyPanelPrefs();
     ready = true;
+  });
+
+  let prefsTimer: ReturnType<typeof setTimeout>;
+  $effect(() => {
+    const prefs = gatherPreferences();
+    if (!prefsReady) return;
+    clearTimeout(prefsTimer);
+    prefsTimer = setTimeout(() => savePreferences(prefs), 400);
   });
 
   $effect(() => {

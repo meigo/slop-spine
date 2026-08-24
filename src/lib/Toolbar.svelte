@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ui, isPaintTool, type BoneMode } from "../state/ui.svelte";
+  import { ui, isPaintTool, bumpCurve, type BoneMode } from "../state/ui.svelte";
   import { document as doc, loadDocument, newDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
   import { importPsd } from "../persist/psd";
@@ -8,7 +8,8 @@
   import NewDocDialog from "./NewDocDialog.svelte";
   import { exportBundle, ExportError } from "../export/bundle";
   import { history, historyState } from "../state/history.svelte";
-  import { pressureCurve, fillAllEnclosed } from "./draw-dispatch";
+  import { fillAllEnclosed } from "./draw-dispatch";
+  import { pressureCurve } from "../core/pressure-curve";
   import { MAX_GAP, clampGap } from "../core/fill-holes";
   import { createCurveEditor } from "../core/pressure-curve";
   import { clickOutside } from "./click-outside";
@@ -36,10 +37,7 @@
   let curveEditor: (HTMLElement & { redraw: () => void }) | null = null;
 
   onMount(() => {
-    // No persisted-preference bump on change: this app doesn't persist the curve across reloads
-    // (constraint), and the instance is mutated directly by createCurveEditor — draw-dispatch.ts
-    // reads it live, so nothing else needs to react to the change.
-    curveEditor = createCurveEditor(pressureCurve, () => {});
+    curveEditor = createCurveEditor(pressureCurve, bumpCurve);
   });
 
   $effect(() => {
