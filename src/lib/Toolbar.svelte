@@ -31,6 +31,8 @@
     SquareDashed,
     Lasso,
     Bone,
+    Image,
+    Grid3x3,
     Plus,
     RotateCcw,
     Undo2,
@@ -247,6 +249,36 @@
       title="Bone (R)"
       onclick={() => (ui.tool = "bone")}><Bone size={18} /></button
     >
+  </div>
+  <!-- Visibility toggles. These live in the toolbar rather than only under View because they are
+       switched constantly while rigging; the View menu keeps matching entries for discoverability. -->
+  <div class="flex overflow-hidden rounded border border-border">
+    <button
+      class={toolBtn}
+      class:bg-surface-active={ui.showDrawings}
+      title={ui.showDrawings
+        ? "Drawings visible — click to hide"
+        : "Drawings hidden — click to show"}
+      onclick={() => (ui.showDrawings = !ui.showDrawings)}
+    >
+      <Image size={18} />
+    </button>
+    <button
+      class={toolBtn}
+      class:bg-surface-active={ui.showBones}
+      title={ui.showBones ? "Bones visible — click to hide" : "Bones hidden — click to show"}
+      onclick={() => (ui.showBones = !ui.showBones)}
+    >
+      <Bone size={18} />
+    </button>
+    <button
+      class={toolBtn}
+      class:bg-surface-active={ui.showMeshes}
+      title={ui.showMeshes ? "Meshes visible — click to hide" : "Meshes hidden — click to show"}
+      onclick={() => (ui.showMeshes = !ui.showMeshes)}
+    >
+      <Grid3x3 size={18} />
+    </button>
   </div>
   {#if ui.tool === "bone"}
     <div class="flex overflow-hidden rounded border border-border">
