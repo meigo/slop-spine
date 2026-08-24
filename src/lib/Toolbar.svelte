@@ -3,6 +3,7 @@
   import {
     ui,
     isPaintTool,
+    isSelectTool,
     bumpCurve,
     whyNotEditable,
     editBlockLabel,
@@ -16,6 +17,8 @@
   import { exportBundle, ExportError } from "../export/bundle";
   import { history, historyState } from "../state/history.svelte";
   import { fillAllEnclosed } from "./draw-dispatch";
+  import { clipboard } from "../state/clipboard.svelte";
+  import { selectionCommands } from "../state/selection-commands";
   import { pressureCurve } from "../core/pressure-curve";
   import { MAX_GAP, clampGap } from "../core/fill-holes";
   import { createCurveEditor } from "../core/pressure-curve";
@@ -33,6 +36,11 @@
     Undo2,
     Redo2,
     Spline,
+    Copy,
+    Scissors,
+    ClipboardPaste,
+    Trash2,
+    MousePointerBan,
   } from "@lucide/svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
@@ -278,6 +286,66 @@
     <input type="color" class="color-well" title="Color" bind:value={ui.brushValue} />
   {/snippet}
 
+  {#if isSelectTool(ui.tool)}
+    <!-- Select subtools. The commands live in Canvas (it owns the marquee, the layer contexts and
+         the undo bracket) and are reached through the selectionCommands registry. Disabled states
+         mirror the canvas's own refusals: copy needs a marquee, everything that writes also needs
+         an editable layer, paste needs something in the pixel clipboard. -->
+    {@const canCopy = ui.selectionActive && canPaint}
+    {@const canPaste = clipboard.hasPixels && canPaint}
+    {@const why = editBlock
+      ? ` — ${editBlockLabel(editBlock)}`
+      : ui.selectionActive
+        ? ""
+        : " — select something first"}
+    <div class="flex overflow-hidden rounded border border-border">
+      <button
+        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+        title="Copy (Cmd/Ctrl+C){why}"
+        aria-disabled={!canCopy}
+        onclick={() => {
+          if (canCopy) selectionCommands.copy?.();
+        }}><Copy size={18} /></button
+      >
+      <button
+        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+        title="Cut (Cmd/Ctrl+X){why}"
+        aria-disabled={!canCopy}
+        onclick={() => {
+          if (canCopy) selectionCommands.cut?.();
+        }}><Scissors size={18} /></button
+      >
+      <button
+        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+        title={"Paste (Cmd/Ctrl+V)" +
+          (editBlock
+            ? ` — ${editBlockLabel(editBlock)}`
+            : clipboard.hasPixels
+              ? ""
+              : " — nothing copied yet")}
+        aria-disabled={!canPaste}
+        onclick={() => {
+          if (canPaste) selectionCommands.paste?.();
+        }}><ClipboardPaste size={18} /></button
+      >
+      <button
+        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+        title="Delete (Del){why}"
+        aria-disabled={!canCopy}
+        onclick={() => {
+          if (canCopy) selectionCommands.del?.();
+        }}><Trash2 size={18} /></button
+      >
+      <button
+        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+        title="Deselect (Esc){ui.selectionActive ? '' : ' — nothing selected'}"
+        aria-disabled={!ui.selectionActive}
+        onclick={() => {
+          if (ui.selectionActive) selectionCommands.deselect?.();
+        }}><MousePointerBan size={18} /></button
+      >
+    </div>
+  {/if}
   {#if ui.tool === "fill"}
     {@render colorPicker()}
     <label class="flex items-center gap-1 text-xs text-text-secondary" title="Fill color tolerance">
@@ -422,6 +490,16 @@
             psdInput?.click();
             close();
           }}>Import PSD…</button
+        >
+        <!-- The no-keyboard path (iPad): Cmd/Ctrl+V covers the desktop case. Canvas owns the
+             clipboard read because it also owns addLayer's follow-up (select the new layer,
+             recomposite). -->
+        <button
+          class={menuItem}
+          onclick={() => {
+            window.dispatchEvent(new Event("slop-spine:paste-image"));
+            close();
+          }}>Paste image as layer</button
         >
         <button
           class={menuItem}

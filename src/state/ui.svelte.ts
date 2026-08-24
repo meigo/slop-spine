@@ -122,6 +122,10 @@ export const ui = $state({
   dockWidth: DEFAULT_DOCK_WIDTH,
   /** Inspector pane height (px) inside the dock. Layer list takes the rest. */
   inspectorHeight: DEFAULT_INSPECTOR_HEIGHT,
+  /** True while a plain marquee is up (not a lifted float). Transient view state, never persisted:
+   *  gatherPreferences lists its fields explicitly. Set by Canvas from Selection.onStateChange so
+   *  the toolbar's select-tool row can enable Copy/Cut/Delete/Deselect. */
+  selectionActive: false,
   /** Bumped when the imperative pressure curve changes so the prefs $effect re-runs. */
   curveVersion: 0,
 });

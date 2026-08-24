@@ -15,6 +15,7 @@
     pushRigCommand,
     insertJoint,
     setParent,
+    addLayer,
     type RigSnapshot,
   } from "../state/doc.svelte";
   import {
@@ -26,10 +27,13 @@
     editBlockLabel,
     needsEditableLayer,
   } from "../state/ui.svelte";
+  import { setClipboardPixels, getClipboardPixels } from "../state/clipboard.svelte";
+  import { selectionCommands } from "../state/selection-commands";
   import { boneTip, reparentDropTarget } from "../rig/chain";
   import type { Tool } from "../state/ui.svelte";
   import { Viewport } from "../core/viewport";
   import { setupInput, isStageChromeTarget } from "../core/input";
+  import { computeImagePlacement } from "../core/image-fit";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
   import { history } from "../state/history.svelte";
@@ -465,6 +469,22 @@
       window.dispatchEvent(new Event("slop-spine:load"));
       return;
     }
+    // Selection clipboard. Copy/cut need a marquee; paste reports whether it consumed the gesture,
+    // and a decline falls through to the window `paste` listener, which imports an image instead.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+      copySelection();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "x") {
+      cutSelection();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+      // No return: a decline must still reach the browser's own paste, which fires the window
+      // `paste` listener that imports an image.
+      pasteSelection();
+      return;
+    }
     // Plain digits, matching slop-animator's `0` for fit — NOT slop-paint's Cmd/Ctrl+0 and +1.
     // Browsers reserve those two for page-zoom-reset and switch-to-tab-N and handle them ahead of
     // the page, so preventDefault cannot claim them: the app command never runs and the browser
@@ -501,12 +521,21 @@
       toolBeforeEraser = ui.tool;
       ui.tool = "eraser";
     }
-    if ((e.key === "Backspace" || e.key === "Delete") && ui.selectedBone) {
-      e.preventDefault();
-      const before = snapshotRig();
-      removeBone(ui.selectedBone);
-      ui.selectedBone = null;
-      pushRigCommand(before, snapshotRig());
+    // An active marquee takes Delete before the selected bone does: the marquee is the more recent,
+    // more visible intent, and it is dismissed with Escape, so the bone is one keystroke away.
+    if (e.key === "Backspace" || e.key === "Delete") {
+      if (selection?.state === "selected") {
+        e.preventDefault();
+        deleteSelection();
+        return;
+      }
+      if (ui.selectedBone) {
+        e.preventDefault();
+        const before = snapshotRig();
+        removeBone(ui.selectedBone);
+        ui.selectedBone = null;
+        pushRigCommand(before, snapshotRig());
+      }
     }
   }
   function onKeyUp(e: KeyboardEvent) {
@@ -725,6 +754,160 @@
     liftSelection();
   }
 
+  // --- Selection clipboard commands. Registered on `selectionCommands` in onMount so the toolbar
+  // row and the keyboard both reach the same implementations. Each resolves the layer through
+  // `whyNotEditable`, so a hidden or missing layer refuses here exactly as painting does. ---
+
+  /** Document px a paste is nudged by, so pasting over the source reads as a second copy. */
+  const PASTE_OFFSET = 8;
+
+  /** The clipboard hands out the same canvas on every paste; the float takes ownership of the
+   *  pixels it is given (commit/cancel can discard it), so each paste gets its own copy. */
+  function cloneCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
+    const c = document.createElement("canvas");
+    c.width = src.width;
+    c.height = src.height;
+    c.getContext("2d")?.drawImage(src, 0, 0);
+    return c;
+  }
+
+  /** The layer these commands act on, or null when it cannot be written. */
+  function commandLayer() {
+    const layer = doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null;
+    return layer && !whyNotEditable(layer) ? layer : null;
+  }
+
+  function copySelection() {
+    if (!selection || selection.state !== "selected") return;
+    const layer = commandLayer();
+    const lctx = layer?.canvas.getContext("2d");
+    if (!layer || !lctx || !selection.rect) return;
+    // copyPixelsFromDoc is lasso-aware: a lasso copies only what is inside its path, not the AABB.
+    const cvs = selection.copyPixelsFromDoc(lctx, 1);
+    if (cvs) setClipboardPixels(cvs, selection.rect);
+  }
+
+  function deleteSelection() {
+    if (!selection || selection.state !== "selected") return;
+    const layer = commandLayer();
+    const lctx = layer?.canvas.getContext("2d");
+    if (!layer || !lctx) return;
+    const cw = layer.canvas.width;
+    const ch = layer.canvas.height;
+    const before = lctx.getImageData(0, 0, cw, ch);
+    selection.clearRegion(lctx, 1);
+    const after = lctx.getImageData(0, 0, cw, ch);
+    markLayerDirty(layer.id);
+    history.push(
+      pixelCommand(
+        () => {
+          lctx.putImageData(before, 0, 0);
+          markLayerDirty(layer.id);
+        },
+        () => {
+          lctx.putImageData(after, 0, 0);
+          markLayerDirty(layer.id);
+        },
+        before,
+        after,
+      ),
+    );
+    // Nothing is floating, so onCancel no-ops — this just drops the marquee.
+    selection.cancel();
+    scheduleComposite();
+  }
+
+  function cutSelection() {
+    copySelection();
+    deleteSelection();
+  }
+
+  /** Paste the pixel clipboard as a float on the active layer. Returns false when there is nothing
+   *  to paste or nowhere to put it, so Cmd+V can fall through to importing an image instead. */
+  function pasteSelection(): boolean {
+    const clip = getClipboardPixels();
+    if (!clip || !selection) return false;
+    const layer = commandLayer();
+    const lctx = layer?.canvas.getContext("2d");
+    if (!layer || !lctx) return false;
+    // A float already in flight has uncommitted pixels; bake it before starting another.
+    if (selection.hasFloating) selection.commit();
+    // Same bracket the lift path sets up, so commit bakes and cancel restores.
+    selBefore = lctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height);
+    selCtx = lctx;
+    selLayerId = layer.id;
+    const r = clip.rect;
+    // Offset so a paste over its own source is visibly a separate copy rather than a no-op.
+    selection.pasteFloat(cloneCanvas(clip.canvas), {
+      x: r.x + PASTE_OFFSET,
+      y: r.y + PASTE_OFFSET,
+      w: r.w,
+      h: r.h,
+    });
+    redraw();
+    return true;
+  }
+
+  function deselectSelection() {
+    selection?.cancel();
+  }
+
+  // --- Image import: an external image becomes its own layer, never a float. addLayer already
+  // creates the matching rig slot and bind, so a pasted image is riggable the moment it lands. ---
+
+  async function pasteImageAsLayer(blob: Blob) {
+    let bitmap: ImageBitmap;
+    try {
+      bitmap = await createImageBitmap(blob);
+    } catch (e) {
+      console.error("paste image failed", e);
+      alert("Couldn't read that image.");
+      return;
+    }
+    const id = addLayer("pasted");
+    const layer = doc.layers.find((l) => l.id === id);
+    const lctx = layer?.canvas.getContext("2d");
+    if (!layer || !lctx) {
+      bitmap.close();
+      return;
+    }
+    const p = computeImagePlacement(
+      bitmap.width,
+      bitmap.height,
+      layer.canvas.width,
+      layer.canvas.height,
+    );
+    lctx.drawImage(bitmap, p.x, p.y, p.w, p.h);
+    bitmap.close();
+    markLayerDirty(layer.id);
+    ui.selectedLayerId = layer.id;
+    scheduleComposite();
+  }
+
+  /** The no-keyboard path (iPad), driven from the File menu. The async Clipboard API only exists in
+   *  a secure context, which the LAN dev server over plain http is not — say so rather than failing
+   *  with a bare permission error. Same message slop-animator shows. */
+  async function pasteImageFromSystemClipboard() {
+    if (!navigator.clipboard?.read) {
+      alert(
+        "Clipboard paste needs HTTPS. On iPad, open the app over https, or use Cmd+V with a keyboard.",
+      );
+      return;
+    }
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        const type = item.types.find((t) => t.startsWith("image/"));
+        if (type) {
+          await pasteImageAsLayer(await item.getType(type));
+          return;
+        }
+      }
+      alert("No image found in the clipboard.");
+    } catch {
+      alert("Couldn't read the clipboard (permission denied or unsupported).");
+    }
+  }
+
   function enterWarp(rows: number, cols: number) {
     if (!selection) return;
     if (selection.state === "selected") liftSelection();
@@ -739,7 +922,10 @@
       redraw();
       syncSelectionOverlay();
     };
-    selection.onStateChange = () => syncSelectionOverlay();
+    selection.onStateChange = () => {
+      ui.selectionActive = selection?.state === "selected";
+      syncSelectionOverlay();
+    };
     selection.onCommit = () => {
       if (!selCtx || !selBefore || selLayerId === null || !selection) return;
       selection.renderFloatingTo(selCtx);
@@ -1072,6 +1258,37 @@
     window.addEventListener("slop-spine:fit-view", onFitViewRequest);
     window.addEventListener("slop-spine:actual-size", onActualSizeRequest);
 
+    selectionCommands.copy = copySelection;
+    selectionCommands.cut = cutSelection;
+    selectionCommands.paste = pasteSelection;
+    selectionCommands.del = deleteSelection;
+    selectionCommands.deselect = deselectSelection;
+
+    // Image import. Precedence is read straight off the clipboard rather than latched from the
+    // keydown: a flag set by Cmd/Ctrl+V is only cleared by a FOLLOWING paste event, so a keystroke
+    // that produced no paste event left it armed and silently ate the next real image paste. A
+    // non-empty pixel clipboard simply means the keydown already handled this — importing an image
+    // while pixels are held is what File > "Paste image as layer" is for. The listener is on window
+    // because a paste has no pointer target and the stage is not focusable.
+    const onWindowPaste = (e: ClipboardEvent) => {
+      if (getClipboardPixels()) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.kind === "file" && it.type.startsWith("image/")) {
+          const blob = it.getAsFile();
+          if (blob) {
+            e.preventDefault();
+            void pasteImageAsLayer(blob);
+          }
+          return;
+        }
+      }
+    };
+    window.addEventListener("paste", onWindowPaste);
+    const onPasteImageRequest = () => void pasteImageFromSystemClipboard();
+    window.addEventListener("slop-spine:paste-image", onPasteImageRequest);
+
     return () => {
       stopPoseLoop();
       if (compositeRaf) cancelAnimationFrame(compositeRaf);
@@ -1095,6 +1312,14 @@
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("slop-spine:fit-view", onFitViewRequest);
       window.removeEventListener("slop-spine:actual-size", onActualSizeRequest);
+      window.removeEventListener("paste", onWindowPaste);
+      window.removeEventListener("slop-spine:paste-image", onPasteImageRequest);
+      // Leaving these bound would let the toolbar drive a destroyed canvas's marquee.
+      selectionCommands.copy = null;
+      selectionCommands.cut = null;
+      selectionCommands.paste = null;
+      selectionCommands.del = null;
+      selectionCommands.deselect = null;
     };
   });
 </script>
