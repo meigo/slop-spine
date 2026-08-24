@@ -787,7 +787,30 @@
     if (!layer || !lctx || !selection.rect) return;
     // copyPixelsFromDoc is lasso-aware: a lasso copies only what is inside its path, not the AABB.
     const cvs = selection.copyPixelsFromDoc(lctx, 1);
-    if (cvs) setClipboardPixels(cvs, selection.rect);
+    if (!cvs) return;
+    setClipboardPixels(cvs, selection.rect);
+    writeSystemClipboard(cvs);
+  }
+
+  /** Mirror the copy onto the system clipboard as a PNG, so pixels can travel to the other slop
+   *  apps. Strictly best-effort and deliberately secondary: the in-app clipboard above is the one
+   *  that carries the rect (which is what lets a paste land as a positioned float instead of a
+   *  centred new layer), works with no permissions, and works outside a secure context. A failure
+   *  here must never surface — the copy the user asked for has already succeeded. */
+  function writeSystemClipboard(cvs: HTMLCanvasElement) {
+    // clipboard.write needs a secure context, so the LAN dev server over plain http (iPad) is out.
+    // Firefox has been the last to support image writes; both just fall through to the warn below.
+    if (!window.isSecureContext || !navigator.clipboard?.write) return;
+    if (typeof ClipboardItem === "undefined") return;
+    // The ClipboardItem must be built from the blob PROMISE, synchronously inside the gesture that
+    // triggered the copy. Awaiting toBlob first spends the user activation, and Safari rejects the
+    // write outright when it does.
+    const png = new Promise<Blob>((resolve, reject) =>
+      cvs.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob returned null"))), "image/png"),
+    );
+    void navigator.clipboard
+      .write([new ClipboardItem({ "image/png": png })])
+      .catch((e) => console.warn("system clipboard copy unavailable", e));
   }
 
   function deleteSelection() {
