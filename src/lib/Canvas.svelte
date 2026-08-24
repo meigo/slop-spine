@@ -1067,7 +1067,7 @@
 
 <div
   bind:this={stage}
-  class="relative h-full w-full touch-none overflow-hidden bg-canvas-bg"
+  class="relative size-full touch-none overflow-hidden bg-canvas-bg"
   class:cursor-not-allowed={toolBlocked && !panning && !spaceHeld}
 >
   <!-- No `style=` here: the Viewport owns this element's inline style (see the sizing $effect). -->
@@ -1083,7 +1083,7 @@
       style="width: {doc.canvas.width}px; height: {doc.canvas.height}px"
     ></canvas>
   </div>
-  <canvas bind:this={rigEl} class="pointer-events-none absolute inset-0 z-[5]"></canvas>
+  <canvas bind:this={rigEl} class="pointer-events-none absolute inset-0 z-5"></canvas>
   <canvas bind:this={overlayEl} class="pointer-events-none absolute inset-0 z-10"></canvas>
   {#if editBlockCaption}
     <div

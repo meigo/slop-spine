@@ -29,10 +29,10 @@
   let storedBinds = $derived(selectedSlot ? (doc.binds.find((b) => b.slot === selectedSlot!.name)?.bones ?? []) : []);
   let bindIncluded = $derived(new Set(storedBinds.length ? storedBinds : bindableBones.map((b) => b.name)));
 
-  let nameDraft = $state("");
-  $effect(() => {
-    nameDraft = selectedBone?.name ?? "";
-  });
+  // Writable $derived: resets to the selected bone's name whenever the selection changes, but
+  // typing still assigns over it until the next change. Same behaviour as the $state + $effect
+  // pair this replaces, without the extra effect tick (svelte/prefer-writable-derived).
+  let nameDraft = $derived(selectedBone?.name ?? "");
 
   let wobbleBefore: ReturnType<typeof snapshotRig> | null = null;
   function onWobblePointerDown() {

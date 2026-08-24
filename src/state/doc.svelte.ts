@@ -6,7 +6,7 @@ import { history } from "./history.svelte";
 
 /** The single open document. Mutated in place (push/splice/property writes) so the
  *  exported binding never needs reassigning — see the mutations below. */
-export let document = $state<RigDocument>(emptyDocument());
+export const document = $state<RigDocument>(emptyDocument());
 
 let nextLayerId = 1;
 let nextBoneIndex = 1;
