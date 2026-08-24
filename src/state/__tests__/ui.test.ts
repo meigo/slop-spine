@@ -135,6 +135,7 @@ describe("applyPreferences / gatherPreferences", () => {
       brushSize: 12,
       brushOpacity: 100,
       brushValue: "#000000",
+      fillValue: "#ffffff",
       brushPress: 3,
       eraserPress: 3,
       fillTolerance: 32,
@@ -170,6 +171,22 @@ describe("applyPreferences / gatherPreferences", () => {
     expect(ui.tool).toBe("fill");
     expect(ui.brushSize).toBe(64);
     expect(ui.brushValue).toBe("#aabbcc");
+  });
+
+  it("keeps the fill colour independent of the brush colour", () => {
+    applyPreferences({ brushValue: "#112233", fillValue: "#445566" } as never);
+    expect(ui.brushValue).toBe("#112233");
+    expect(ui.fillValue).toBe("#445566");
+    // Outlines in black, flats in white: changing one must never move the other.
+    applyPreferences({ brushValue: "#000000" } as never);
+    expect(ui.fillValue).toBe("#445566");
+    expect(gatherPreferences().fillValue).toBe("#445566");
+  });
+
+  it("rejects a malformed fill colour and keeps the previous one", () => {
+    applyPreferences({ fillValue: "#abcdef" } as never);
+    applyPreferences({ fillValue: "white" } as never);
+    expect(ui.fillValue).toBe("#abcdef");
   });
 
   it("applies pressure-curve control points and rebuilds the lut", () => {

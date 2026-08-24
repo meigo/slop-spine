@@ -99,6 +99,11 @@ export const ui = $state({
   brushSize: 12,
   brushOpacity: 100,
   brushValue: "#000000",
+  /** Fill's colour, independent of the brush's. Fills land BEHIND the strokes (fillRegionBehind),
+   *  so the two tools are painting different things — outlines in one colour, flats in another —
+   *  and sharing one swatch meant re-picking on every switch, or silently inking a line in the
+   *  fill colour. Defaults to white because a fill behind black outlines is what this is for. */
+  fillValue: "#ffffff",
   /** Pen pressure multiplier (animator `sizeRange`): light → size/press, full → size*press. */
   brushPress: 3,
   eraserPress: 3,
@@ -178,6 +183,7 @@ export function gatherPreferences(): Preferences {
     brushSize: ui.brushSize,
     brushOpacity: ui.brushOpacity,
     brushValue: ui.brushValue,
+    fillValue: ui.fillValue,
     brushPress: ui.brushPress,
     eraserPress: ui.eraserPress,
     fillTolerance: ui.fillTolerance,
@@ -202,6 +208,7 @@ export function applyPreferences(p: Partial<Preferences>): void {
   const opacity = intIn(p.brushOpacity, 1, 100);
   if (opacity !== null) ui.brushOpacity = opacity;
   if (isHexColor(p.brushValue)) ui.brushValue = p.brushValue.toLowerCase();
+  if (isHexColor(p.fillValue)) ui.fillValue = p.fillValue.toLowerCase();
   const bp = pressIn(p.brushPress);
   if (bp !== null) ui.brushPress = bp;
   const ep = pressIn(p.eraserPress);

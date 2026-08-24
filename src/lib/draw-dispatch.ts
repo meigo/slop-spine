@@ -88,7 +88,7 @@ export function fillAllEnclosed() {
   const ch = layer.canvas.height;
   const before = ctx.getImageData(0, 0, cw, ch);
   fillThroughClip(ctx, (target) => {
-    fillRegionBehind(target, region, hexToRgba(ui.brushValue, ui.brushOpacity));
+    fillRegionBehind(target, region, hexToRgba(ui.fillValue, ui.brushOpacity));
   });
   markLayerDirty(layer.id);
   const after = ctx.getImageData(0, 0, cw, ch);
@@ -310,7 +310,7 @@ export function createDrawDispatch(opts?: {
           const ch = layer.canvas.height;
           const before = fctx.getImageData(0, 0, cw, ch);
           fillThroughClip(fctx, (target) => {
-            floodFill(target, p.x, p.y, hexToRgba(ui.brushValue, ui.brushOpacity), {
+            floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.brushOpacity), {
               alphaThreshold: 128,
               tolerance: ui.fillTolerance,
               expand: ui.fillExpand,

@@ -8,6 +8,7 @@ export interface Preferences {
   brushSize: number;
   brushOpacity: number;
   brushValue: string;
+  fillValue: string;
   brushPress: number;
   eraserPress: number;
   fillTolerance: number;

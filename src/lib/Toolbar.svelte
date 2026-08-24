@@ -314,8 +314,15 @@
       <Redo2 size={18} />
     </button>
   </div>
-  {#snippet colorPicker()}
-    <input type="color" class="color-well" title="Color" bind:value={ui.brushValue} />
+  <!-- Two swatches, not one: brush and fill hold separate colours (see ui.fillValue). A snippet
+       parameter cannot carry a two-way binding, so they are separate snippets rather than one
+       parameterised by target. -->
+  {#snippet brushColorPicker()}
+    <input type="color" class="color-well" title="Brush color" bind:value={ui.brushValue} />
+  {/snippet}
+
+  {#snippet fillColorPicker()}
+    <input type="color" class="color-well" title="Fill color" bind:value={ui.fillValue} />
   {/snippet}
 
   {#if isSelectTool(ui.tool)}
@@ -379,7 +386,7 @@
     </div>
   {/if}
   {#if ui.tool === "fill"}
-    {@render colorPicker()}
+    {@render fillColorPicker()}
     <label class="flex items-center gap-1 text-xs text-text-secondary" title="Fill color tolerance">
       Tolerance
       <input type="range" min="0" max="128" class="w-24" bind:value={ui.fillTolerance} />
@@ -452,7 +459,7 @@
     </div>
 
     {#if ui.tool !== "eraser"}
-      {@render colorPicker()}
+      {@render brushColorPicker()}
     {/if}
 
     <label class="flex items-center gap-1">
@@ -533,6 +540,8 @@
             close();
           }}>Paste image as layer</button
         >
+        <!-- Splits the menu into what brings content in (above) and what sends it out (below). -->
+        <div class="my-1 h-px bg-border"></div>
         <button
           class={menuItem}
           onclick={() => {

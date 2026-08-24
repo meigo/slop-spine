@@ -50,6 +50,7 @@ const sample: Preferences = {
   brushSize: 20,
   brushOpacity: 80,
   brushValue: "#ff00aa",
+  fillValue: "#00ff88",
   brushPress: 4,
   eraserPress: 2,
   fillTolerance: 16,
