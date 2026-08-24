@@ -200,120 +200,7 @@
 <input type="file" accept=".psd" class="hidden" bind:this={psdInput} onchange={onPsdChosen} />
 <NewDocDialog open={newDocOpen} onConfirm={onNewDocument} onCancel={() => (newDocOpen = false)} />
 
-<div
-  class="flex flex-wrap items-center gap-1 border-b border-border bg-surface p-2 text-sm text-text"
->
-  <div class="flex overflow-hidden rounded border border-border">
-    <button
-      class={toolBtn}
-      class:opacity-40={toolsDimmed}
-      class:bg-surface-active={ui.tool === "brush"}
-      title={pixelTitle("Brush (B)")}
-      onclick={() => (ui.tool = "brush")}><Paintbrush size={18} /></button
-    >
-    <button
-      class={toolBtn}
-      class:opacity-40={toolsDimmed}
-      class:bg-surface-active={ui.tool === "eraser"}
-      title={pixelTitle("Eraser (E)")}
-      onclick={() => (ui.tool = "eraser")}><Eraser size={18} /></button
-    >
-    <button
-      class={toolBtn}
-      class:opacity-40={toolsDimmed}
-      class:bg-surface-active={ui.tool === "fill"}
-      title={pixelTitle("Fill (G)")}
-      onclick={() => (ui.tool = "fill")}><PaintBucket size={18} /></button
-    >
-  </div>
-  <div class="flex overflow-hidden rounded border border-border">
-    <button
-      class={toolBtn}
-      class:opacity-40={toolsDimmed}
-      class:bg-surface-active={ui.tool === "select"}
-      title={pixelTitle("Select (S)")}
-      onclick={() => (ui.tool = "select")}><SquareDashed size={18} /></button
-    >
-    <button
-      class={toolBtn}
-      class:opacity-40={toolsDimmed}
-      class:bg-surface-active={ui.tool === "lasso"}
-      title={pixelTitle("Lasso (L)")}
-      onclick={() => (ui.tool = "lasso")}><Lasso size={18} /></button
-    >
-  </div>
-  <div class="flex overflow-hidden rounded border border-border">
-    <button
-      class={toolBtn}
-      class:bg-surface-active={ui.tool === "bone"}
-      title="Bone (R)"
-      onclick={() => (ui.tool = "bone")}><Bone size={18} /></button
-    >
-  </div>
-  <!-- Visibility toggles. These live in the toolbar rather than only under View because they are
-       switched constantly while rigging; the View menu keeps matching entries for discoverability. -->
-  <div class="flex overflow-hidden rounded border border-border">
-    <button
-      class={toolBtn}
-      class:bg-surface-active={ui.showDrawings}
-      title={ui.showDrawings
-        ? "Drawings visible — click to hide"
-        : "Drawings hidden — click to show"}
-      onclick={() => (ui.showDrawings = !ui.showDrawings)}
-    >
-      <Image size={18} />
-    </button>
-    <button
-      class={toolBtn}
-      class:bg-surface-active={ui.showBones}
-      title={ui.showBones ? "Bones visible — click to hide" : "Bones hidden — click to show"}
-      onclick={() => (ui.showBones = !ui.showBones)}
-    >
-      <Bone size={18} />
-    </button>
-    <button
-      class={toolBtn}
-      class:bg-surface-active={ui.showMeshes}
-      title={ui.showMeshes ? "Meshes visible — click to hide" : "Meshes hidden — click to show"}
-      onclick={() => (ui.showMeshes = !ui.showMeshes)}
-    >
-      <Grid3x3 size={18} />
-    </button>
-  </div>
-  {#if ui.tool === "bone"}
-    <div class="flex overflow-hidden rounded border border-border">
-      <button
-        class={toolBtn}
-        class:bg-surface-active={ui.boneMode === "create"}
-        title="Create bone (Shift-drag). Shift-click a shaft to insert a joint."
-        onclick={() => setBoneMode("create")}><Plus size={18} /></button
-      >
-      <button
-        class={toolBtn}
-        class:bg-surface-active={ui.boneMode === "pose"}
-        title="Pose (Alt-drag). Tip rotates, shaft translates."
-        onclick={() => setBoneMode("pose")}><RotateCcw size={18} /></button
-      >
-    </div>
-  {/if}
-  <div class="flex overflow-hidden rounded border border-border">
-    <button
-      class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
-      title={historyState.canUndo ? "Undo" : "Undo — nothing to undo"}
-      disabled={!historyState.canUndo}
-      onclick={() => history.undo()}
-    >
-      <Undo2 size={18} />
-    </button>
-    <button
-      class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
-      title={historyState.canRedo ? "Redo" : "Redo — nothing to redo"}
-      disabled={!historyState.canRedo}
-      onclick={() => history.redo()}
-    >
-      <Redo2 size={18} />
-    </button>
-  </div>
+<div class="flex flex-col gap-1 border-b border-border bg-surface p-2 text-sm text-text">
   <!-- Two swatches, not one: brush and fill hold separate colours (see ui.fillValue). A snippet
        parameter cannot carry a two-way binding, so they are separate snippets rather than one
        parameterised by target. -->
@@ -325,284 +212,411 @@
     <input type="color" class="color-well" title="Fill color" bind:value={ui.fillValue} />
   {/snippet}
 
-  {#if isSelectTool(ui.tool)}
-    <!-- Select subtools. The commands live in Canvas (it owns the marquee, the layer contexts and
+  <!-- Row 1 — stable chrome. Everything here is present for every tool, so the File/View menus
+       keep the same place on screen no matter the tool or the width. They used to share one
+       wrapping row with the contextual options below, which on a narrow screen (iPad) pushed the
+       menus onto a second row where `ml-auto` parked them somewhere else entirely. A wrapping
+       flex container cannot pin an item to the first row, so the rows are explicit. -->
+  <div class="flex flex-wrap items-center gap-1">
+    <div class="flex overflow-hidden rounded border border-border">
+      <button
+        class={toolBtn}
+        class:opacity-40={toolsDimmed}
+        class:bg-surface-active={ui.tool === "brush"}
+        title={pixelTitle("Brush (B)")}
+        onclick={() => (ui.tool = "brush")}><Paintbrush size={18} /></button
+      >
+      <button
+        class={toolBtn}
+        class:opacity-40={toolsDimmed}
+        class:bg-surface-active={ui.tool === "eraser"}
+        title={pixelTitle("Eraser (E)")}
+        onclick={() => (ui.tool = "eraser")}><Eraser size={18} /></button
+      >
+      <button
+        class={toolBtn}
+        class:opacity-40={toolsDimmed}
+        class:bg-surface-active={ui.tool === "fill"}
+        title={pixelTitle("Fill (G)")}
+        onclick={() => (ui.tool = "fill")}><PaintBucket size={18} /></button
+      >
+    </div>
+    <div class="flex overflow-hidden rounded border border-border">
+      <button
+        class={toolBtn}
+        class:opacity-40={toolsDimmed}
+        class:bg-surface-active={ui.tool === "select"}
+        title={pixelTitle("Select (S)")}
+        onclick={() => (ui.tool = "select")}><SquareDashed size={18} /></button
+      >
+      <button
+        class={toolBtn}
+        class:opacity-40={toolsDimmed}
+        class:bg-surface-active={ui.tool === "lasso"}
+        title={pixelTitle("Lasso (L)")}
+        onclick={() => (ui.tool = "lasso")}><Lasso size={18} /></button
+      >
+    </div>
+    <div class="flex overflow-hidden rounded border border-border">
+      <button
+        class={toolBtn}
+        class:bg-surface-active={ui.tool === "bone"}
+        title="Bone (R)"
+        onclick={() => (ui.tool = "bone")}><Bone size={18} /></button
+      >
+    </div>
+    <!-- Visibility toggles. These live in the toolbar rather than only under View because they are
+       switched constantly while rigging; the View menu keeps matching entries for discoverability. -->
+    <div class="flex overflow-hidden rounded border border-border">
+      <button
+        class={toolBtn}
+        class:bg-surface-active={ui.showDrawings}
+        title={ui.showDrawings
+          ? "Drawings visible — click to hide"
+          : "Drawings hidden — click to show"}
+        onclick={() => (ui.showDrawings = !ui.showDrawings)}
+      >
+        <Image size={18} />
+      </button>
+      <button
+        class={toolBtn}
+        class:bg-surface-active={ui.showBones}
+        title={ui.showBones ? "Bones visible — click to hide" : "Bones hidden — click to show"}
+        onclick={() => (ui.showBones = !ui.showBones)}
+      >
+        <Bone size={18} />
+      </button>
+      <button
+        class={toolBtn}
+        class:bg-surface-active={ui.showMeshes}
+        title={ui.showMeshes ? "Meshes visible — click to hide" : "Meshes hidden — click to show"}
+        onclick={() => (ui.showMeshes = !ui.showMeshes)}
+      >
+        <Grid3x3 size={18} />
+      </button>
+    </div>
+    <div class="flex overflow-hidden rounded border border-border">
+      <button
+        class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
+        title={historyState.canUndo ? "Undo" : "Undo — nothing to undo"}
+        disabled={!historyState.canUndo}
+        onclick={() => history.undo()}
+      >
+        <Undo2 size={18} />
+      </button>
+      <button
+        class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
+        title={historyState.canRedo ? "Redo" : "Redo — nothing to redo"}
+        disabled={!historyState.canRedo}
+        onclick={() => history.redo()}
+      >
+        <Redo2 size={18} />
+      </button>
+    </div>
+    <div class="ml-auto flex max-w-full shrink-0 flex-wrap items-center gap-1">
+      <ToolbarMenu label="File">
+        {#snippet children(close)}
+          <button
+            class={menuItem}
+            onclick={() => {
+              newDocOpen = true;
+              close();
+            }}>New…</button
+          >
+          <button
+            class={menuItem}
+            onclick={() => {
+              fileInput?.click();
+              close();
+            }}>Open…</button
+          >
+          <button
+            class={menuItem}
+            onclick={() => {
+              psdInput?.click();
+              close();
+            }}>Import PSD…</button
+          >
+          <!-- The no-keyboard path (iPad): Cmd/Ctrl+V covers the desktop case. Canvas owns the
+             clipboard read because it also owns addLayer's follow-up (select the new layer,
+             recomposite). -->
+          <button
+            class={menuItem}
+            onclick={() => {
+              window.dispatchEvent(new Event("slop-spine:paste-image"));
+              close();
+            }}>Paste image as layer</button
+          >
+          <!-- Splits the menu into what brings content in (above) and what sends it out (below). -->
+          <div class="my-1 h-px bg-border"></div>
+          <button
+            class={menuItem}
+            onclick={() => {
+              void onSave();
+              close();
+            }}>Save</button
+          >
+          <button
+            class={menuItem}
+            onclick={() => {
+              void onExport();
+              close();
+            }}>Export Spine…</button
+          >
+        {/snippet}
+      </ToolbarMenu>
+      <ToolbarMenu label="View">
+        {#snippet children(close)}
+          <button
+            class={menuItem}
+            onclick={() => {
+              onFitView();
+              close();
+            }}>Fit to view</button
+          >
+          <button
+            class={menuItem}
+            onclick={() => {
+              onActualSize();
+              close();
+            }}>100%</button
+          >
+          <button
+            class={menuItem}
+            onclick={() => {
+              ui.showDrawings = !ui.showDrawings;
+              close();
+            }}>{ui.showDrawings ? "Hide drawings" : "Show drawings"}</button
+          >
+          <button
+            class={menuItem}
+            onclick={() => {
+              ui.showBones = !ui.showBones;
+              close();
+            }}>{ui.showBones ? "Hide bones" : "Show bones"}</button
+          >
+          <button
+            class={menuItem}
+            onclick={() => {
+              ui.showMeshes = !ui.showMeshes;
+              close();
+            }}>{ui.showMeshes ? "Hide meshes" : "Show meshes"}</button
+          >
+          <button
+            class={menuItem}
+            onclick={() => {
+              ui.whiteBg = !ui.whiteBg;
+              close();
+            }}>{ui.whiteBg ? "Checkerboard page" : "White page"}</button
+          >
+        {/snippet}
+      </ToolbarMenu>
+    </div>
+  </div>
+  <!-- Row 2 — options for the active tool, the way slop-animator splits out ToolOptions. Every
+       tool has some, so this row is never empty in practice; it may wrap on its own without
+       moving anything in row 1. -->
+  <div class="flex flex-wrap items-center gap-1">
+    {#if ui.tool === "bone"}
+      <div class="flex overflow-hidden rounded border border-border">
+        <button
+          class={toolBtn}
+          class:bg-surface-active={ui.boneMode === "create"}
+          title="Create bone (Shift-drag). Shift-click a shaft to insert a joint."
+          onclick={() => setBoneMode("create")}><Plus size={18} /></button
+        >
+        <button
+          class={toolBtn}
+          class:bg-surface-active={ui.boneMode === "pose"}
+          title="Pose (Alt-drag). Tip rotates, shaft translates."
+          onclick={() => setBoneMode("pose")}><RotateCcw size={18} /></button
+        >
+      </div>
+    {/if}
+    {#if isSelectTool(ui.tool)}
+      <!-- Select subtools. The commands live in Canvas (it owns the marquee, the layer contexts and
          the undo bracket) and are reached through the selectionCommands registry. Disabled states
          mirror the canvas's own refusals: copy needs a marquee, everything that writes also needs
          an editable layer, paste needs something in the pixel clipboard. -->
-    {@const canCopy = ui.selectionActive && canPaint}
-    {@const canPaste = clipboard.hasPixels && canPaint}
-    {@const why = editBlock
-      ? ` — ${editBlockLabel(editBlock)}`
-      : ui.selectionActive
-        ? ""
-        : " — select something first"}
-    <div class="flex overflow-hidden rounded border border-border">
-      <button
-        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
-        title="Copy (Cmd/Ctrl+C){why}"
-        aria-disabled={!canCopy}
-        onclick={() => {
-          if (canCopy) selectionCommands.copy?.();
-        }}><Copy size={18} /></button
-      >
-      <button
-        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
-        title="Cut (Cmd/Ctrl+X){why}"
-        aria-disabled={!canCopy}
-        onclick={() => {
-          if (canCopy) selectionCommands.cut?.();
-        }}><Scissors size={18} /></button
-      >
-      <button
-        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
-        title={"Paste (Cmd/Ctrl+V)" +
-          (editBlock
-            ? ` — ${editBlockLabel(editBlock)}`
-            : clipboard.hasPixels
-              ? ""
-              : " — nothing copied yet")}
-        aria-disabled={!canPaste}
-        onclick={() => {
-          if (canPaste) selectionCommands.paste?.();
-        }}><ClipboardPaste size={18} /></button
-      >
-      <button
-        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
-        title="Delete (Del){why}"
-        aria-disabled={!canCopy}
-        onclick={() => {
-          if (canCopy) selectionCommands.del?.();
-        }}><Trash2 size={18} /></button
-      >
-      <button
-        class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
-        title="Deselect (Esc){ui.selectionActive ? '' : ' — nothing selected'}"
-        aria-disabled={!ui.selectionActive}
-        onclick={() => {
-          if (ui.selectionActive) selectionCommands.deselect?.();
-        }}><MousePointerBan size={18} /></button
-      >
-    </div>
-  {/if}
-  {#if ui.tool === "fill"}
-    {@render fillColorPicker()}
-    <label class="flex items-center gap-1 text-xs text-text-secondary" title="Fill color tolerance">
-      Tolerance
-      <input type="range" min="0" max="128" class="w-24" bind:value={ui.fillTolerance} />
-      <span class="w-6 text-right font-mono">{ui.fillTolerance}</span>
-    </label>
-    <label
-      class="flex items-center gap-1 text-xs text-text-secondary"
-      title="Grow the filled region (px)"
-    >
-      Expand
-      <input type="range" min="0" max="8" class="w-16" bind:value={ui.fillExpand} />
-      <span class="w-4 text-right font-mono">{ui.fillExpand}</span>
-    </label>
-    <label
-      class="flex items-center gap-1 text-xs text-text-secondary"
-      title="Bridge breaks in the outline before filling, up to about twice this many pixels"
-    >
-      Gap
-      <input
-        type="range"
-        min="0"
-        max={MAX_GAP}
-        class="w-16"
-        value={ui.fillGap}
-        oninput={(e) => (ui.fillGap = clampGap((e.currentTarget as HTMLInputElement).value))}
-      />
-      <span class="w-4 text-right font-mono">{ui.fillGap}</span>
-    </label>
-    <label class="flex items-center gap-1">
-      Opacity
-      <input type="range" min="1" max="100" bind:value={ui.brushOpacity} />
-      <span class="w-8 text-right font-mono text-xs">{ui.brushOpacity}</span>
-    </label>
-    <button
-      class="h-7 rounded border border-border px-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-surface"
-      title={editBlock
-        ? `Fill enclosed — ${editBlockLabel(editBlock)}`
-        : "Fill every area enclosed by the outline, behind the strokes"}
-      aria-disabled={!canPaint}
-      onclick={() => {
-        if (canPaint) fillAllEnclosed();
-      }}
-    >
-      Fill enclosed
-    </button>
-  {:else if isPaintTool(ui.tool)}
-    <div class="flex overflow-hidden rounded border border-border">
-      <button
-        class="px-3 py-1 {ui.brushType === 'smooth'
-          ? 'bg-surface-active'
-          : 'hover:bg-surface-hover'}"
-        onclick={() => (ui.brushType = "smooth")}
-      >
-        Smooth
-      </button>
-      <button
-        class="px-3 py-1 {ui.brushType === 'ink' ? 'bg-surface-active' : 'hover:bg-surface-hover'}"
-        onclick={() => (ui.brushType = "ink")}
-      >
-        Ink
-      </button>
-      <button
-        class="px-3 py-1 {ui.brushType === 'pencil'
-          ? 'bg-surface-active'
-          : 'hover:bg-surface-hover'}"
-        onclick={() => (ui.brushType = "pencil")}
-      >
-        Pencil
-      </button>
-    </div>
-
-    {#if ui.tool !== "eraser"}
-      {@render brushColorPicker()}
+      {@const canCopy = ui.selectionActive && canPaint}
+      {@const canPaste = clipboard.hasPixels && canPaint}
+      {@const why = editBlock
+        ? ` — ${editBlockLabel(editBlock)}`
+        : ui.selectionActive
+          ? ""
+          : " — select something first"}
+      <div class="flex overflow-hidden rounded border border-border">
+        <button
+          class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+          title="Copy (Cmd/Ctrl+C){why}"
+          aria-disabled={!canCopy}
+          onclick={() => {
+            if (canCopy) selectionCommands.copy?.();
+          }}><Copy size={18} /></button
+        >
+        <button
+          class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+          title="Cut (Cmd/Ctrl+X){why}"
+          aria-disabled={!canCopy}
+          onclick={() => {
+            if (canCopy) selectionCommands.cut?.();
+          }}><Scissors size={18} /></button
+        >
+        <button
+          class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+          title={"Paste (Cmd/Ctrl+V)" +
+            (editBlock
+              ? ` — ${editBlockLabel(editBlock)}`
+              : clipboard.hasPixels
+                ? ""
+                : " — nothing copied yet")}
+          aria-disabled={!canPaste}
+          onclick={() => {
+            if (canPaste) selectionCommands.paste?.();
+          }}><ClipboardPaste size={18} /></button
+        >
+        <button
+          class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+          title="Delete (Del){why}"
+          aria-disabled={!canCopy}
+          onclick={() => {
+            if (canCopy) selectionCommands.del?.();
+          }}><Trash2 size={18} /></button
+        >
+        <button
+          class="{toolBtn} aria-disabled:cursor-default aria-disabled:opacity-40"
+          title="Deselect (Esc){ui.selectionActive ? '' : ' — nothing selected'}"
+          aria-disabled={!ui.selectionActive}
+          onclick={() => {
+            if (ui.selectionActive) selectionCommands.deselect?.();
+          }}><MousePointerBan size={18} /></button
+        >
+      </div>
     {/if}
-
-    <label class="flex items-center gap-1">
-      Size
-      <input type="range" min="1" max="64" bind:value={ui.brushSize} />
-      <span class="w-6 text-right font-mono text-xs">{ui.brushSize}</span>
-    </label>
-
-    <label class="flex items-center gap-1" title="How much pen pressure widens the stroke">
-      Press
-      <input
-        type="range"
-        min="1"
-        max="8"
-        step="0.5"
-        value={ui.tool === "eraser" ? ui.eraserPress : ui.brushPress}
-        oninput={(e) => {
-          const v = Number((e.currentTarget as HTMLInputElement).value);
-          if (ui.tool === "eraser") ui.eraserPress = v;
-          else ui.brushPress = v;
-        }}
-      />
-      <span class="w-6 text-right font-mono text-xs"
-        >{ui.tool === "eraser" ? ui.eraserPress : ui.brushPress}×</span
+    {#if ui.tool === "fill"}
+      {@render fillColorPicker()}
+      <label
+        class="flex items-center gap-1 text-xs text-text-secondary"
+        title="Fill color tolerance"
       >
-    </label>
-
-    <label class="flex items-center gap-1">
-      Opacity
-      <input type="range" min="1" max="100" bind:value={ui.brushOpacity} />
-      <span class="w-8 text-right font-mono text-xs">{ui.brushOpacity}</span>
-    </label>
-
-    <div class="relative" use:clickOutside={() => (curveOpen = false)}>
+        Tolerance
+        <input type="range" min="0" max="128" class="w-24" bind:value={ui.fillTolerance} />
+        <span class="w-6 text-right font-mono">{ui.fillTolerance}</span>
+      </label>
+      <label
+        class="flex items-center gap-1 text-xs text-text-secondary"
+        title="Grow the filled region (px)"
+      >
+        Expand
+        <input type="range" min="0" max="8" class="w-16" bind:value={ui.fillExpand} />
+        <span class="w-4 text-right font-mono">{ui.fillExpand}</span>
+      </label>
+      <label
+        class="flex items-center gap-1 text-xs text-text-secondary"
+        title="Bridge breaks in the outline before filling, up to about twice this many pixels"
+      >
+        Gap
+        <input
+          type="range"
+          min="0"
+          max={MAX_GAP}
+          class="w-16"
+          value={ui.fillGap}
+          oninput={(e) => (ui.fillGap = clampGap((e.currentTarget as HTMLInputElement).value))}
+        />
+        <span class="w-4 text-right font-mono">{ui.fillGap}</span>
+      </label>
+      <label class="flex items-center gap-1">
+        Opacity
+        <input type="range" min="1" max="100" bind:value={ui.brushOpacity} />
+        <span class="w-8 text-right font-mono text-xs">{ui.brushOpacity}</span>
+      </label>
       <button
-        class={toolBtn}
-        class:bg-surface-active={curveOpen}
-        title="Pressure curve"
-        onclick={() => (curveOpen = !curveOpen)}
+        class="h-7 rounded border border-border px-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-surface"
+        title={editBlock
+          ? `Fill enclosed — ${editBlockLabel(editBlock)}`
+          : "Fill every area enclosed by the outline, behind the strokes"}
+        aria-disabled={!canPaint}
+        onclick={() => {
+          if (canPaint) fillAllEnclosed();
+        }}
       >
-        <Spline size={18} />
+        Fill enclosed
       </button>
-      <div class="curve-popup" class:open={curveOpen} bind:this={curvePopupEl}></div>
-    </div>
-  {/if}
+    {:else if isPaintTool(ui.tool)}
+      <div class="flex overflow-hidden rounded border border-border">
+        <button
+          class="px-3 py-1 {ui.brushType === 'smooth'
+            ? 'bg-surface-active'
+            : 'hover:bg-surface-hover'}"
+          onclick={() => (ui.brushType = "smooth")}
+        >
+          Smooth
+        </button>
+        <button
+          class="px-3 py-1 {ui.brushType === 'ink'
+            ? 'bg-surface-active'
+            : 'hover:bg-surface-hover'}"
+          onclick={() => (ui.brushType = "ink")}
+        >
+          Ink
+        </button>
+        <button
+          class="px-3 py-1 {ui.brushType === 'pencil'
+            ? 'bg-surface-active'
+            : 'hover:bg-surface-hover'}"
+          onclick={() => (ui.brushType = "pencil")}
+        >
+          Pencil
+        </button>
+      </div>
 
-  <div class="ml-auto flex max-w-full shrink-0 flex-wrap items-center gap-1">
-    <ToolbarMenu label="File">
-      {#snippet children(close)}
-        <button
-          class={menuItem}
-          onclick={() => {
-            newDocOpen = true;
-            close();
-          }}>New…</button
+      {#if ui.tool !== "eraser"}
+        {@render brushColorPicker()}
+      {/if}
+
+      <label class="flex items-center gap-1">
+        Size
+        <input type="range" min="1" max="64" bind:value={ui.brushSize} />
+        <span class="w-6 text-right font-mono text-xs">{ui.brushSize}</span>
+      </label>
+
+      <label class="flex items-center gap-1" title="How much pen pressure widens the stroke">
+        Press
+        <input
+          type="range"
+          min="1"
+          max="8"
+          step="0.5"
+          value={ui.tool === "eraser" ? ui.eraserPress : ui.brushPress}
+          oninput={(e) => {
+            const v = Number((e.currentTarget as HTMLInputElement).value);
+            if (ui.tool === "eraser") ui.eraserPress = v;
+            else ui.brushPress = v;
+          }}
+        />
+        <span class="w-6 text-right font-mono text-xs"
+          >{ui.tool === "eraser" ? ui.eraserPress : ui.brushPress}×</span
         >
+      </label>
+
+      <label class="flex items-center gap-1">
+        Opacity
+        <input type="range" min="1" max="100" bind:value={ui.brushOpacity} />
+        <span class="w-8 text-right font-mono text-xs">{ui.brushOpacity}</span>
+      </label>
+
+      <div class="relative" use:clickOutside={() => (curveOpen = false)}>
         <button
-          class={menuItem}
-          onclick={() => {
-            fileInput?.click();
-            close();
-          }}>Open…</button
+          class={toolBtn}
+          class:bg-surface-active={curveOpen}
+          title="Pressure curve"
+          onclick={() => (curveOpen = !curveOpen)}
         >
-        <button
-          class={menuItem}
-          onclick={() => {
-            psdInput?.click();
-            close();
-          }}>Import PSD…</button
-        >
-        <!-- The no-keyboard path (iPad): Cmd/Ctrl+V covers the desktop case. Canvas owns the
-             clipboard read because it also owns addLayer's follow-up (select the new layer,
-             recomposite). -->
-        <button
-          class={menuItem}
-          onclick={() => {
-            window.dispatchEvent(new Event("slop-spine:paste-image"));
-            close();
-          }}>Paste image as layer</button
-        >
-        <!-- Splits the menu into what brings content in (above) and what sends it out (below). -->
-        <div class="my-1 h-px bg-border"></div>
-        <button
-          class={menuItem}
-          onclick={() => {
-            void onSave();
-            close();
-          }}>Save</button
-        >
-        <button
-          class={menuItem}
-          onclick={() => {
-            void onExport();
-            close();
-          }}>Export Spine…</button
-        >
-      {/snippet}
-    </ToolbarMenu>
-    <ToolbarMenu label="View">
-      {#snippet children(close)}
-        <button
-          class={menuItem}
-          onclick={() => {
-            onFitView();
-            close();
-          }}>Fit to view</button
-        >
-        <button
-          class={menuItem}
-          onclick={() => {
-            onActualSize();
-            close();
-          }}>100%</button
-        >
-        <button
-          class={menuItem}
-          onclick={() => {
-            ui.showDrawings = !ui.showDrawings;
-            close();
-          }}>{ui.showDrawings ? "Hide drawings" : "Show drawings"}</button
-        >
-        <button
-          class={menuItem}
-          onclick={() => {
-            ui.showBones = !ui.showBones;
-            close();
-          }}>{ui.showBones ? "Hide bones" : "Show bones"}</button
-        >
-        <button
-          class={menuItem}
-          onclick={() => {
-            ui.showMeshes = !ui.showMeshes;
-            close();
-          }}>{ui.showMeshes ? "Hide meshes" : "Show meshes"}</button
-        >
-        <button
-          class={menuItem}
-          onclick={() => {
-            ui.whiteBg = !ui.whiteBg;
-            close();
-          }}>{ui.whiteBg ? "Checkerboard page" : "White page"}</button
-        >
-      {/snippet}
-    </ToolbarMenu>
+          <Spline size={18} />
+        </button>
+        <div class="curve-popup" class:open={curveOpen} bind:this={curvePopupEl}></div>
+      </div>
+    {/if}
   </div>
 </div>
