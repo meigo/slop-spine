@@ -465,12 +465,17 @@
       window.dispatchEvent(new Event("slop-spine:load"));
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === "0") {
+    // Plain digits, matching slop-animator's `0` for fit — NOT slop-paint's Cmd/Ctrl+0 and +1.
+    // Browsers reserve those two for page-zoom-reset and switch-to-tab-N and handle them ahead of
+    // the page, so preventDefault cannot claim them: the app command never runs and the browser
+    // does something disruptive instead. Digits are free here (tool keys are letters) and this
+    // handler already bails inside INPUT/TEXTAREA/SELECT.
+    if (!e.metaKey && !e.ctrlKey && e.key === "0") {
       e.preventDefault();
       viewport?.fitView(doc.canvas.width, doc.canvas.height);
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === "1") {
+    if (!e.metaKey && !e.ctrlKey && e.key === "1") {
       e.preventDefault();
       viewport?.actualSizeView(doc.canvas.width, doc.canvas.height);
       return;

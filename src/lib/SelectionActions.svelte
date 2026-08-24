@@ -86,7 +86,10 @@
     whyNotEditable(doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null),
   );
   const liftBlocked = $derived(liftBlock !== null && mode === "selected");
-  const liftTitle = (name: string) => (liftBlock ? `${name} — ${editBlockLabel(liftBlock)}` : name);
+  // Keyed off liftBlocked, not liftBlock: once the selection is lifted (transforming/warping) the
+  // buttons stay enabled even on a hidden layer, and a title claiming otherwise would lie.
+  const liftTitle = (name: string) =>
+    liftBlocked && liftBlock ? `${name} — ${editBlockLabel(liftBlock)}` : name;
 
   // stopPropagation is not enough on its own: Svelte 5 delegates pointerdown to the
   // document, so the stage's native bubble listener fires first and would treat this
