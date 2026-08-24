@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import {
     document as doc,
+    docLoad,
     addBone,
     moveBone,
     setBoneLength,
@@ -358,9 +359,17 @@
     fittedH = h;
     canvasEl.width = w;
     canvasEl.height = h;
+    viewport?.fitView(w, h);
+  });
+
+  // Per-document transient state, dropped on load rather than on size change. A project opened at
+  // the same canvas size never reaches the branch above, and a marquee now survives tool switches
+  // and clips brush/eraser/fill — so without this, painting in the new document stays confined to
+  // a selection that belonged to the old one.
+  $effect(() => {
+    void docLoad.count;
     clearPose();
     if (selection?.active) selection.cancel();
-    viewport?.fitView(w, h);
   });
 
   $effect(() => {

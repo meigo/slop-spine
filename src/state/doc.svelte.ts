@@ -15,6 +15,12 @@ import { history } from "./history.svelte";
  *  exported binding never needs reassigning — see the mutations below. */
 export const document = $state<RigDocument>(emptyDocument());
 
+/** Bumped by loadDocument. Lets views drop per-document transient state — the selection marquee,
+ *  a live pose drag — even when the incoming document happens to have the same canvas size as the
+ *  outgoing one. Deliberately NOT a field on `document`: that object is serialised straight into
+ *  autosave and saved project files, and a counter has no business in either. */
+export const docLoad = $state({ count: 0 });
+
 let nextLayerId = 1;
 let nextBoneIndex = 1;
 // Monotonic, not derived from document.slots.length — a slot can be removed (see removeLayer),
@@ -478,6 +484,7 @@ export function newDocument(width: number, height: number) {
 }
 
 export function loadDocument(doc: RigDocument) {
+  docLoad.count++;
   document.canvas = doc.canvas;
   document.density = doc.density;
   document.layers = doc.layers;

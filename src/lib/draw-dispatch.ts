@@ -19,12 +19,17 @@ import { history } from "../state/history.svelte";
 
 let getSelection: () => Selection | null = () => null;
 
-/** Clip subsequent draws to the marching-ants marquee. No-op when idle or floating. */
+/** Clip subsequent draws to the marching-ants marquee. No-op when idle or floating.
+ *  `finally`, because `ctx` is the layer's own long-lived context: a throw in `draw` that skipped
+ *  `restore` would strand the clip there and silently confine every later stroke on that layer. */
 function withClip(ctx: CanvasRenderingContext2D, draw: () => void) {
   ctx.save();
-  getSelection()?.applyClip(ctx);
-  draw();
-  ctx.restore();
+  try {
+    getSelection()?.applyClip(ctx);
+    draw();
+  } finally {
+    ctx.restore();
+  }
 }
 
 /** Flood/enclosed fill writes unconstrained ImageData, so paint on a copy then composite through the clip. */
@@ -42,9 +47,19 @@ function fillThroughClip(
     tctx.drawImage(ctx.canvas, 0, 0);
     paint(tctx);
     ctx.save();
-    sel.applyClip(ctx);
-    ctx.drawImage(tmp, 0, 0);
-    ctx.restore();
+    try {
+      sel.applyClip(ctx);
+      // `copy`, not the default source-over: tmp starts as a copy of this very layer, so blending it
+      // back would composite every pixel inside the clip with itself — a stroke edge at alpha 0.5
+      // becomes 0.75, darkening again on each fill. `copy` replaces instead, and the clip limits it
+      // to the marquee. Cost: on an anti-aliased lasso edge the boundary pixels become src*coverage
+      // rather than a blend, leaving a hairline seam. A rect marquee is pixel-exact.
+      ctx.globalCompositeOperation = "copy";
+      ctx.drawImage(tmp, 0, 0);
+    } finally {
+      // Leaking `copy` onto the layer's persistent context would make every later draw erase.
+      ctx.restore();
+    }
   } else {
     paint(ctx);
   }
@@ -97,7 +112,9 @@ export function createDrawDispatch(opts?: {
   onPainted?: () => void;
   getSelection?: () => Selection | null;
 }) {
-  if (opts?.getSelection) getSelection = opts.getSelection;
+  // Assigned unconditionally: a dispatch created without a selection source must leave the module
+  // reading `null`, not the previous Canvas instance's (possibly destroyed) selection.
+  getSelection = opts?.getSelection ?? (() => null);
   function resolveSelectedLayer(): Layer | null {
     const layer = doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null;
     return whyNotEditable(layer) ? null : layer;
