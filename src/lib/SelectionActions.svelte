@@ -4,6 +4,8 @@
   import type { Selection } from "../core/selection";
   import type { Viewport } from "../core/viewport";
   import { computeAnchor } from "../core/selection-anchor";
+  import { document as doc } from "../state/doc.svelte";
+  import { ui, whyNotEditable, editBlockLabel } from "../state/ui.svelte";
 
   let {
     getSelection,
@@ -80,7 +82,16 @@
 
   const distortActive = $derived(mode === "warping" && warp.rows === 2 && warp.cols === 2);
   const meshActive = $derived(mode === "warping" && (warp.rows !== 2 || warp.cols !== 2));
+  const liftBlock = $derived(
+    whyNotEditable(doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null),
+  );
+  const liftBlocked = $derived(liftBlock !== null && mode === "selected");
+  const liftTitle = (name: string) => (liftBlock ? `${name} — ${editBlockLabel(liftBlock)}` : name);
 
+  // stopPropagation is not enough on its own: Svelte 5 delegates pointerdown to the
+  // document, so the stage's native bubble listener fires first and would treat this
+  // tap as "click outside → cancel the selection". onSelPointerDown / setupInput
+  // filter `.selection-actions-panel`; keep both.
   function tap(handler: () => void) {
     return (e: PointerEvent) => {
       e.stopPropagation();
@@ -100,36 +111,45 @@
   <div class="flex items-center gap-1">
     {#if mode === "selected"}
       <button
-        class="flex size-10 items-center justify-center rounded-md border border-border bg-surface text-text-secondary hover:bg-surface-hover"
-        onpointerdown={tap(onTransform)}
-        title="Free transform"
+        class="flex size-10 items-center justify-center rounded-md border border-border bg-surface text-text-secondary hover:bg-surface-hover aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-surface"
+        aria-disabled={liftBlocked}
+        onpointerdown={tap(() => {
+          if (!liftBlocked) onTransform();
+        })}
+        title={liftTitle("Free transform")}
       >
         <Move size={18} />
       </button>
     {/if}
     <button
-      class="flex size-10 items-center justify-center rounded-md border"
+      class="flex size-10 items-center justify-center rounded-md border aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-surface"
       class:bg-accent={distortActive}
       class:text-accent-text={distortActive}
       class:border-accent={distortActive}
       class:bg-surface={!distortActive}
       class:text-text-secondary={!distortActive}
       class:border-border={!distortActive}
-      onpointerdown={tap(onDistort)}
-      title="Distort (4-corner)"
+      aria-disabled={liftBlocked}
+      onpointerdown={tap(() => {
+        if (!liftBlocked) onDistort();
+      })}
+      title={liftTitle("Distort (4-corner)")}
     >
       <SquareDashed size={18} />
     </button>
     <button
-      class="flex size-10 items-center justify-center rounded-md border"
+      class="flex size-10 items-center justify-center rounded-md border aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-surface"
       class:bg-accent={meshActive}
       class:text-accent-text={meshActive}
       class:border-accent={meshActive}
       class:bg-surface={!meshActive}
       class:text-text-secondary={!meshActive}
       class:border-border={!meshActive}
-      onpointerdown={tap(onMesh)}
-      title="Mesh warp (3×3)"
+      aria-disabled={liftBlocked}
+      onpointerdown={tap(() => {
+        if (!liftBlocked) onMesh();
+      })}
+      title={liftTitle("Mesh warp (3×3)")}
     >
       <Grid3x3 size={18} />
     </button>
@@ -166,6 +186,8 @@
       {/if}
     {/if}
     {#if mode === "selected"}
+      <!-- Deselect: the bar is the only on-canvas deselect while a paint tool is active
+           (tap-outside paints instead). Brush/eraser/fill clip to the marquee. -->
       <div class="mx-0.5 h-6 w-px bg-border"></div>
       <button
         class="flex size-10 items-center justify-center rounded-md border border-border bg-surface text-text-secondary hover:bg-surface-hover"

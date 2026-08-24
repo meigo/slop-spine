@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ui, isPaintTool, bumpCurve, type BoneMode } from "../state/ui.svelte";
+  import { ui, isPaintTool, bumpCurve, whyNotEditable, editBlockLabel, type BoneMode } from "../state/ui.svelte";
   import { document as doc, loadDocument, newDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
   import { importPsd } from "../persist/psd";
@@ -76,6 +76,16 @@
   const menuItem =
     "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-text-secondary hover:bg-surface-hover";
 
+  // Pixel/select tools need a layer. Dim them when none is selected (on load, after delete),
+  // still clickable so you can arm a tool before picking a layer — same as animator. Hidden is
+  // a canvas refusal, not a toolbar dim: the layer IS selected.
+  const selectedLayer = $derived(doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null);
+  const editBlock = $derived(whyNotEditable(selectedLayer));
+  const toolsDimmed = $derived(editBlock === "no-layer");
+  const canPaint = $derived(editBlock === null);
+  const pixelTitle = (name: string) =>
+    toolsDimmed ? `${name} — ${editBlockLabel("no-layer")}` : name;
+
   function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -150,6 +160,10 @@
     window.dispatchEvent(new Event("slop-spine:fit-view"));
   }
 
+  function onActualSize() {
+    window.dispatchEvent(new Event("slop-spine:actual-size"));
+  }
+
   // Bridge for Canvas.svelte's Cmd/Ctrl+S and Cmd/Ctrl+O keybindings — same window-event pattern
   // as Fit View above, since Save/Load's implementations (and the hidden file input) live here.
   onMount(() => {
@@ -172,34 +186,39 @@
   <div class="flex overflow-hidden rounded border border-border">
     <button
       class={toolBtn}
+      class:opacity-40={toolsDimmed}
       class:bg-surface-active={ui.tool === "brush"}
-      title="Brush (B)"
+      title={pixelTitle("Brush (B)")}
       onclick={() => (ui.tool = "brush")}><Paintbrush size={18} /></button
     >
     <button
       class={toolBtn}
+      class:opacity-40={toolsDimmed}
       class:bg-surface-active={ui.tool === "eraser"}
-      title="Eraser (E)"
+      title={pixelTitle("Eraser (E)")}
       onclick={() => (ui.tool = "eraser")}><Eraser size={18} /></button
     >
     <button
       class={toolBtn}
+      class:opacity-40={toolsDimmed}
       class:bg-surface-active={ui.tool === "fill"}
-      title="Fill (G)"
+      title={pixelTitle("Fill (G)")}
       onclick={() => (ui.tool = "fill")}><PaintBucket size={18} /></button
     >
   </div>
   <div class="flex overflow-hidden rounded border border-border">
     <button
       class={toolBtn}
+      class:opacity-40={toolsDimmed}
       class:bg-surface-active={ui.tool === "select"}
-      title="Select (S)"
+      title={pixelTitle("Select (S)")}
       onclick={() => (ui.tool = "select")}><SquareDashed size={18} /></button
     >
     <button
       class={toolBtn}
+      class:opacity-40={toolsDimmed}
       class:bg-surface-active={ui.tool === "lasso"}
-      title="Lasso (L)"
+      title={pixelTitle("Lasso (L)")}
       onclick={() => (ui.tool = "lasso")}><Lasso size={18} /></button
     >
   </div>
@@ -282,9 +301,14 @@
       <span class="w-8 text-right font-mono text-xs">{ui.brushOpacity}</span>
     </label>
     <button
-      class="h-7 rounded border border-border px-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text"
-      title="Fill every area enclosed by the outline, behind the strokes"
-      onclick={() => fillAllEnclosed()}
+      class="h-7 rounded border border-border px-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-surface"
+      title={editBlock
+        ? `Fill enclosed — ${editBlockLabel(editBlock)}`
+        : "Fill every area enclosed by the outline, behind the strokes"}
+      aria-disabled={!canPaint}
+      onclick={() => {
+        if (canPaint) fillAllEnclosed();
+      }}
     >
       Fill enclosed
     </button>
@@ -406,6 +430,13 @@
             onFitView();
             close();
           }}>Fit to view</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            onActualSize();
+            close();
+          }}>100%</button
         >
         <button
           class={menuItem}

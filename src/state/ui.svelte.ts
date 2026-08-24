@@ -57,6 +57,38 @@ export function isSelectTool(tool: Tool): boolean {
   }
 }
 
+/** Why a layer-bound tool (paint / select) refuses. Bone does not consult this. */
+export type LayerEditBlock = "no-layer" | "hidden";
+
+export function whyNotEditable(layer: { visible: boolean } | null | undefined): LayerEditBlock | null {
+  if (layer == null) return "no-layer";
+  if (!layer.visible) return "hidden";
+  return null;
+}
+
+export function editBlockLabel(block: LayerEditBlock): string {
+  switch (block) {
+    case "no-layer":
+      return "Select a layer to edit";
+    case "hidden":
+      return "Layer hidden — show it to edit";
+  }
+}
+
+/** Tools that write or lift pixels and therefore need an editable layer. Bone is excluded. */
+export function needsEditableLayer(tool: Tool): boolean {
+  switch (tool) {
+    case "brush":
+    case "eraser":
+    case "fill":
+    case "select":
+    case "lasso":
+      return true;
+    case "bone":
+      return false;
+  }
+}
+
 export const ui = $state({
   selectedLayerId: null as number | null,
   selectedBone: null as string | null,

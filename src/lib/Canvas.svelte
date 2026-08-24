@@ -16,11 +16,19 @@
     setParent,
     type RigSnapshot,
   } from "../state/doc.svelte";
-  import { ui, overlayFlags, isSelectTool, toolFromKey } from "../state/ui.svelte";
+  import {
+    ui,
+    overlayFlags,
+    isSelectTool,
+    toolFromKey,
+    whyNotEditable,
+    editBlockLabel,
+    needsEditableLayer,
+  } from "../state/ui.svelte";
   import { boneTip, reparentDropTarget } from "../rig/chain";
   import type { Tool } from "../state/ui.svelte";
   import { Viewport } from "../core/viewport";
-  import { setupInput } from "../core/input";
+  import { setupInput, isStageChromeTarget } from "../core/input";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
   import { history } from "../state/history.svelte";
@@ -311,17 +319,32 @@
     return deriveSlot(doc, slot.name);
   }
 
+  // Document size the view was last fitted to. A read-back of `canvasEl.width` cannot stand in
+  // for this: the template's `width={doc.canvas.width}` is a render effect, and render effects
+  // flush before user effects, so by the time this runs canvasEl already matches and the resize
+  // would never be noticed.
+  let fittedW = 0;
+  let fittedH = 0;
+
   $effect(() => {
     const w = doc.canvas.width;
     const h = doc.canvas.height;
-    if (!canvasEl) return;
-    if (canvasEl.width !== w || canvasEl.height !== h) {
-      canvasEl.width = w;
-      canvasEl.height = h;
-      clearPose();
-      if (selection?.active) selection.cancel();
-      viewport?.fitView(w, h);
-    }
+    if (!canvasEl || !paper) return;
+    // Paper is sized here rather than with a `style=` attribute in the template. Svelte compiles
+    // that to set_style(), which assigns `style.cssText` wholesale — wiping the transform and
+    // transform-origin the Viewport writes to this same element. The Viewport's pan/zoom state
+    // survived that wipe, so the canvas jumped to the top-left while strokes still landed at the
+    // old transform's coordinates, until the next zoom re-applied it.
+    paper.style.width = `${w}px`;
+    paper.style.height = `${h}px`;
+    if (w === fittedW && h === fittedH) return;
+    fittedW = w;
+    fittedH = h;
+    canvasEl.width = w;
+    canvasEl.height = h;
+    clearPose();
+    if (selection?.active) selection.cancel();
+    viewport?.fitView(w, h);
   });
 
   $effect(() => {
@@ -340,17 +363,28 @@
     redraw();
   });
 
+  let selection: Selection | null = null;
+
+  const activeLayer = $derived(doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null);
+  const editBlock = $derived(whyNotEditable(activeLayer));
+  const toolBlocked = $derived(needsEditableLayer(ui.tool) && editBlock !== null);
+  const editBlockCaption = $derived(toolBlocked && editBlock ? editBlockLabel(editBlock) : null);
+
   $effect(() => {
     void ui.tool;
     if (!selection) return;
-    selection.mode = ui.tool === "lasso" ? "lasso" : "rect";
-    if (!isSelectTool(ui.tool) && selection.active) {
-      if (selection.hasFloating) selection.commit();
-      else selection.cancel();
-    }
+    // Only the select/lasso tools own the marquee *shape*. Switching to brush must not
+    // flip a lasso into a rect, or applyClip would drop the path.
+    if (isSelectTool(ui.tool)) selection.mode = ui.tool === "lasso" ? "lasso" : "rect";
+    // A floating transform/warp has uncommitted pixels and must resolve. A plain marquee
+    // survives so brush/eraser/fill can clip to it (same as slop-paint / animator).
+    if (!isSelectTool(ui.tool) && selection.hasFloating) selection.commit();
   });
 
-  const drawDispatch = createDrawDispatch({ onPainted: scheduleComposite });
+  const drawDispatch = createDrawDispatch({
+    onPainted: scheduleComposite,
+    getSelection: () => selection,
+  });
 
   function transformCoords(sx: number, sy: number): { x: number; y: number } {
     return viewport ? viewport.screenToCanvas(sx, sy) : { x: sx, y: sy };
@@ -358,7 +392,7 @@
 
   // --- Mouse pan (middle-button or space+drag) and wheel zoom. ---
   let spaceHeld = $state(false);
-  let panning = false;
+  let panning = $state(false);
 
   // Hold-X temporary eraser (matches slop-paint's App.svelte): remembers the tool active before
   // X was pressed so keyup can restore it. Set only from onKeyDown's guarded path, so a keyup
@@ -404,6 +438,16 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
       e.preventDefault();
       window.dispatchEvent(new Event("slop-spine:load"));
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "0") {
+      e.preventDefault();
+      viewport?.fitView(doc.canvas.width, doc.canvas.height);
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "1") {
+      e.preventDefault();
+      viewport?.actualSizeView(doc.canvas.width, doc.canvas.height);
       return;
     }
     // Tool keys, matching slop-animator's App.svelte exactly.
@@ -605,7 +649,6 @@
   // canvasEl with the bone tool and stand down unless isSelectTool. Lift bakes into the layer
   // on Enter/commit; Escape restores the pre-lift snapshot. dpr is 1: layer canvases are 1:1
   // with document pixels. ---
-  let selection: Selection | null = null;
   let selectionMode: "create" | "drag" | null = null;
   let selCtx: CanvasRenderingContext2D | null = null;
   let selBefore: ImageData | null = null;
@@ -704,7 +747,12 @@
 
   function onSelPointerDown(e: PointerEvent) {
     if (!isSelectTool(ui.tool) || e.button !== 0) return;
+    if (editBlock) return;
     if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
+    // Svelte 5 delegates the panel's onpointerdown to document, so this native
+    // stage listener fires first. Without this, Transform/Distort look like
+    // "click outside" and cancel the selection. Same guard as setupInput.
+    if (isStageChromeTarget(e.target)) return;
     if (!viewport || !selection) return;
     e.preventDefault();
     stage.setPointerCapture(e.pointerId);
@@ -986,7 +1034,9 @@
     // component (needs its own anchor element), so a window event is the smallest cross-component
     // link back to it. See Toolbar.svelte's dispatch.
     const onFitViewRequest = () => viewport?.fitView(doc.canvas.width, doc.canvas.height);
+    const onActualSizeRequest = () => viewport?.actualSizeView(doc.canvas.width, doc.canvas.height);
     window.addEventListener("slop-spine:fit-view", onFitViewRequest);
+    window.addEventListener("slop-spine:actual-size", onActualSizeRequest);
 
     return () => {
       stopPoseLoop();
@@ -1010,16 +1060,18 @@
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("slop-spine:fit-view", onFitViewRequest);
+      window.removeEventListener("slop-spine:actual-size", onActualSizeRequest);
     };
   });
 </script>
 
-<div bind:this={stage} class="relative h-full w-full touch-none overflow-hidden bg-canvas-bg">
-  <div
-    bind:this={paper}
-    class="absolute left-0 top-0 will-change-transform"
-    style="width: {doc.canvas.width}px; height: {doc.canvas.height}px"
-  >
+<div
+  bind:this={stage}
+  class="relative h-full w-full touch-none overflow-hidden bg-canvas-bg"
+  class:cursor-not-allowed={toolBlocked && !panning && !spaceHeld}
+>
+  <!-- No `style=` here: the Viewport owns this element's inline style (see the sizing $effect). -->
+  <div bind:this={paper} class="absolute left-0 top-0 will-change-transform">
     <div
       class="pointer-events-none absolute inset-0 {ui.whiteBg ? 'paper-white' : 'paper-checker'}"
     ></div>
@@ -1033,6 +1085,13 @@
   </div>
   <canvas bind:this={rigEl} class="pointer-events-none absolute inset-0 z-[5]"></canvas>
   <canvas bind:this={overlayEl} class="pointer-events-none absolute inset-0 z-10"></canvas>
+  {#if editBlockCaption}
+    <div
+      class="pointer-events-none absolute top-2 left-2 z-10 rounded bg-surface/70 px-1.5 py-0.5 text-xs text-amber-500"
+    >
+      {editBlockCaption}
+    </div>
+  {/if}
   <SelectionActions
     getSelection={() => selection}
     getViewport={() => viewport}

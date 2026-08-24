@@ -5,7 +5,7 @@
  * Transform origin is top-left (0,0).
  */
 
-import { computeFitTransform } from "./viewport-fit";
+import { computeFitTransform, computeActualSizeTransform } from "./viewport-fit";
 
 /** After changing rotation about the CSS origin (0,0), the pan that keeps
  *  parent-relative screen point `(rx, ry)` over the same canvas point. */
@@ -212,6 +212,22 @@ export class Viewport {
     this.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, fit.zoom)); // clamp is a no-op at realistic sizes
     this.panX = fit.panX;
     this.panY = fit.panY;
+    this.rotation = 0;
+    this.applyTransform();
+    this.onChange?.();
+  }
+
+  /** 1:1 zoom, canvas centered, rotation cleared. */
+  actualSizeView(contentW: number, contentH: number) {
+    const t = computeActualSizeTransform(
+      this.parent.clientWidth,
+      this.parent.clientHeight,
+      contentW,
+      contentH,
+    );
+    this.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, t.zoom));
+    this.panX = t.panX;
+    this.panY = t.panY;
     this.rotation = 0;
     this.applyTransform();
     this.onChange?.();

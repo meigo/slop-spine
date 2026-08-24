@@ -4,7 +4,7 @@
 // own canvas, resolved by id (layer array order is a display concern, not identity). Mild
 // pressure-response curve, applied uniformly regardless of brush engine.
 import { document as doc, markLayerDirty } from "../state/doc.svelte";
-import { ui, isPaintTool, type Tool } from "../state/ui.svelte";
+import { ui, isPaintTool, whyNotEditable, type Tool } from "../state/ui.svelte";
 import type { InputPoint } from "../core/input";
 import { drawStroke, type BrushSettings } from "../core/brush";
 import { drawInkStrokeIncremental, resetInkState } from "../core/ink-brush";
@@ -13,8 +13,42 @@ import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../c
 import { clampGap } from "../core/fill-holes";
 import { pressureCurve } from "../core/pressure-curve";
 import type { Layer } from "../rig/document";
+import type { Selection } from "../core/selection";
 import { pixelCommand } from "../core/history";
 import { history } from "../state/history.svelte";
+
+let getSelection: () => Selection | null = () => null;
+
+/** Clip subsequent draws to the marching-ants marquee. No-op when idle or floating. */
+function withClip(ctx: CanvasRenderingContext2D, draw: () => void) {
+  ctx.save();
+  getSelection()?.applyClip(ctx);
+  draw();
+  ctx.restore();
+}
+
+/** Flood/enclosed fill writes unconstrained ImageData, so paint on a copy then composite through the clip. */
+function fillThroughClip(
+  ctx: CanvasRenderingContext2D,
+  paint: (target: CanvasRenderingContext2D) => void,
+) {
+  const sel = getSelection();
+  if (sel?.state === "selected") {
+    const tmp = document.createElement("canvas");
+    tmp.width = ctx.canvas.width;
+    tmp.height = ctx.canvas.height;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return;
+    tctx.drawImage(ctx.canvas, 0, 0);
+    paint(tctx);
+    ctx.save();
+    sel.applyClip(ctx);
+    ctx.drawImage(tmp, 0, 0);
+    ctx.restore();
+  } else {
+    paint(ctx);
+  }
+}
 
 // Pressure widens/thins the nominal size by this factor; mouse (no pressure) always draws at
 // constant nominal width (see widthRange in brush.ts).
@@ -26,7 +60,7 @@ function pressFor(tool: Tool): number {
 export function fillAllEnclosed() {
   const layer = doc.layers.find((l) => l.id === ui.selectedLayerId);
   const ctx = layer?.canvas.getContext("2d");
-  if (!layer || !ctx) return;
+  if (!layer || !ctx || whyNotEditable(layer)) return;
   const { region, area } = enclosedFillRegion(layer.canvas, {
     gap: clampGap(ui.fillGap),
     expand: Math.max(0, Math.floor(ui.fillExpand)),
@@ -38,7 +72,9 @@ export function fillAllEnclosed() {
   const cw = layer.canvas.width;
   const ch = layer.canvas.height;
   const before = ctx.getImageData(0, 0, cw, ch);
-  fillRegionBehind(ctx, region, hexToRgba(ui.brushValue, ui.brushOpacity));
+  fillThroughClip(ctx, (target) => {
+    fillRegionBehind(target, region, hexToRgba(ui.brushValue, ui.brushOpacity));
+  });
   markLayerDirty(layer.id);
   const after = ctx.getImageData(0, 0, cw, ch);
   history.push(
@@ -57,9 +93,14 @@ export function fillAllEnclosed() {
   );
 }
 
-export function createDrawDispatch(opts?: { onPainted?: () => void }) {
+export function createDrawDispatch(opts?: {
+  onPainted?: () => void;
+  getSelection?: () => Selection | null;
+}) {
+  if (opts?.getSelection) getSelection = opts.getSelection;
   function resolveSelectedLayer(): Layer | null {
-    return doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null;
+    const layer = doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null;
+    return whyNotEditable(layer) ? null : layer;
   }
 
   function buildBrushSettings(isEraser: boolean): BrushSettings {
@@ -204,18 +245,21 @@ export function createDrawDispatch(opts?: { onPainted?: () => void }) {
 
   function paintStroke(points: InputPoint[], done: boolean, tool: Tool) {
     if (!strokeLayer || !strokeCtx) return;
+    const ctx = strokeCtx;
     const curved = points.map((p) => ({ ...p, pressure: pressureCurve.evaluate(p.pressure) }));
     const sizeRange = curved[0]?.hasPressure ? pressFor(tool) : 1;
     const settings = buildBrushSettings(tool === "eraser");
     const brushType = ui.brushType;
 
     if (brushType === "smooth") {
-      restorePreStroke(strokeCtx, strokeLayer);
-      drawStroke(strokeCtx, curved, settings, done, sizeRange);
+      restorePreStroke(ctx, strokeLayer);
+      withClip(ctx, () => drawStroke(ctx, curved, settings, done, sizeRange));
     } else if (brushType === "ink") {
-      drawInkStrokeIncremental(strokeCtx, curved, settings, sizeRange);
+      withClip(ctx, () => drawInkStrokeIncremental(ctx, curved, settings, sizeRange));
     } else {
-      drawStampStrokeIncremental(strokeCtx, curved, { ...settings, brushType }, sizeRange);
+      withClip(ctx, () =>
+        drawStampStrokeIncremental(ctx, curved, { ...settings, brushType }, sizeRange),
+      );
     }
     opts?.onPainted?.();
   }
@@ -242,10 +286,12 @@ export function createDrawDispatch(opts?: { onPainted?: () => void }) {
           const cw = layer.canvas.width;
           const ch = layer.canvas.height;
           const before = fctx.getImageData(0, 0, cw, ch);
-          floodFill(fctx, p.x, p.y, hexToRgba(ui.brushValue, ui.brushOpacity), {
-            alphaThreshold: 128,
-            tolerance: ui.fillTolerance,
-            expand: ui.fillExpand,
+          fillThroughClip(fctx, (target) => {
+            floodFill(target, p.x, p.y, hexToRgba(ui.brushValue, ui.brushOpacity), {
+              alphaThreshold: 128,
+              tolerance: ui.fillTolerance,
+              expand: ui.fillExpand,
+            });
           });
           markLayerDirty(layer.id);
           const after = fctx.getImageData(0, 0, cw, ch);

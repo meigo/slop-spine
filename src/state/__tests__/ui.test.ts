@@ -7,6 +7,9 @@ import {
   applyPreferences,
   gatherPreferences,
   bumpCurve,
+  whyNotEditable,
+  editBlockLabel,
+  needsEditableLayer,
 } from "../ui.svelte";
 import { pressureCurve } from "../../core/pressure-curve";
 
@@ -32,6 +35,32 @@ describe("isPaintTool", () => {
     const all: Tool[] = ["brush", "eraser", "fill", "select", "lasso", "bone"];
     const painting = all.filter(isPaintTool);
     expect(painting).toEqual(["brush", "eraser", "fill"]);
+  });
+});
+
+describe("whyNotEditable", () => {
+  it("names no-layer when nothing is selected", () => {
+    expect(whyNotEditable(null)).toBe("no-layer");
+    expect(whyNotEditable(undefined)).toBe("no-layer");
+  });
+  it("names hidden before allowing edits", () => {
+    expect(whyNotEditable({ visible: false })).toBe("hidden");
+    expect(whyNotEditable({ visible: true })).toBeNull();
+  });
+});
+
+describe("editBlockLabel", () => {
+  it("tells the user how to unblock", () => {
+    expect(editBlockLabel("no-layer")).toBe("Select a layer to edit");
+    expect(editBlockLabel("hidden")).toBe("Layer hidden — show it to edit");
+  });
+});
+
+describe("needsEditableLayer", () => {
+  it("is true for paint and select, false for bone", () => {
+    expect(needsEditableLayer("brush")).toBe(true);
+    expect(needsEditableLayer("select")).toBe(true);
+    expect(needsEditableLayer("bone")).toBe(false);
   });
 });
 
