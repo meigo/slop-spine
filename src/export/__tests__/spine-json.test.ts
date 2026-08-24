@@ -79,9 +79,27 @@ describe("writeSkeleton", () => {
       binds: [{ slot: "body", bones: ["body"] }],
       density: 48,
     },
-    meshes: { body: { vertices: [{ x: 1000, y: 1400 }, { x: 1100, y: 1400 }, { x: 1050, y: 1300 }], triangles: [[0, 1, 2] as [number, number, number]], hull: 3 } },
-    weights: { body: [[{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }]] },
-    regions: [{ name: "body", trim: { x: 1000, y: 1300, width: 101, height: 101 }, pageX: 2, pageY: 2 }],
+    meshes: {
+      body: {
+        vertices: [
+          { x: 1000, y: 1400 },
+          { x: 1100, y: 1400 },
+          { x: 1050, y: 1300 },
+        ],
+        triangles: [[0, 1, 2] as [number, number, number]],
+        hull: 3,
+      },
+    },
+    weights: {
+      body: [
+        [{ bone: "body", weight: 1 }],
+        [{ bone: "body", weight: 1 }],
+        [{ bone: "body", weight: 1 }],
+      ],
+    },
+    regions: [
+      { name: "body", trim: { x: 1000, y: 1300, width: 101, height: 101 }, pageX: 2, pageY: 2 },
+    ],
     page: { width: 2048, height: 256 },
   };
 
@@ -103,7 +121,10 @@ describe("writeSkeleton", () => {
     expect(mesh.vertices.length).toBe(15);
     expect(mesh.vertices[0]).toBe(1);
     expect(mesh.uvs.length).toBe(6);
-    for (const uv of mesh.uvs) { expect(uv).toBeGreaterThanOrEqual(0); expect(uv).toBeLessThanOrEqual(1); }
+    for (const uv of mesh.uvs) {
+      expect(uv).toBeGreaterThanOrEqual(0);
+      expect(uv).toBeLessThanOrEqual(1);
+    }
     // Exact uv for vertex 0, hand-derived from the fixture's canvas (see report): Spine mesh uvs
     // are normalized against the ORIGINAL untrimmed canvas, y-down — not the trimmed region and
     // not the atlas page (the runtime's own AtlasAttachmentLoader remaps region-local uvs into the
@@ -127,7 +148,14 @@ describe("writeSkeleton", () => {
         canvas: { width: 2048, height: 2048 },
         layers: [
           { id: 1, name: "body_layer", visible: true, opacity: 1, canvas: {} as any, revision: 0 },
-          { id: 2, name: "hidden_layer", visible: false, opacity: 1, canvas: {} as any, revision: 0 },
+          {
+            id: 2,
+            name: "hidden_layer",
+            visible: false,
+            opacity: 1,
+            canvas: {} as any,
+            revision: 0,
+          },
         ],
         slots: [
           { name: "body", layerId: 1, bone: "body", order: 0 },
@@ -141,12 +169,36 @@ describe("writeSkeleton", () => {
         density: 48,
       },
       meshes: {
-        body: { vertices: [{ x: 1000, y: 1400 }, { x: 1100, y: 1400 }, { x: 1050, y: 1300 }], triangles: [[0, 1, 2] as [number, number, number]], hull: 3 },
-        hidden: { vertices: [{ x: 1000, y: 1400 }, { x: 1100, y: 1400 }, { x: 1050, y: 1300 }], triangles: [[0, 1, 2] as [number, number, number]], hull: 3 },
+        body: {
+          vertices: [
+            { x: 1000, y: 1400 },
+            { x: 1100, y: 1400 },
+            { x: 1050, y: 1300 },
+          ],
+          triangles: [[0, 1, 2] as [number, number, number]],
+          hull: 3,
+        },
+        hidden: {
+          vertices: [
+            { x: 1000, y: 1400 },
+            { x: 1100, y: 1400 },
+            { x: 1050, y: 1300 },
+          ],
+          triangles: [[0, 1, 2] as [number, number, number]],
+          hull: 3,
+        },
       },
       weights: {
-        body: [[{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }]],
-        hidden: [[{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }], [{ bone: "body", weight: 1 }]],
+        body: [
+          [{ bone: "body", weight: 1 }],
+          [{ bone: "body", weight: 1 }],
+          [{ bone: "body", weight: 1 }],
+        ],
+        hidden: [
+          [{ bone: "body", weight: 1 }],
+          [{ bone: "body", weight: 1 }],
+          [{ bone: "body", weight: 1 }],
+        ],
       },
       regions: [
         { name: "body", trim: { x: 1000, y: 1300, width: 101, height: 101 }, pageX: 2, pageY: 2 },
@@ -165,7 +217,16 @@ describe("writeSkeleton", () => {
     const s = writeSkeleton({
       doc: {
         canvas: { width: 2048, height: 2048 },
-        layers: [{ id: 1, name: "body_layer", visible: true, opacity: 0.4, canvas: {} as any, revision: 0 }],
+        layers: [
+          {
+            id: 1,
+            name: "body_layer",
+            visible: true,
+            opacity: 0.4,
+            canvas: {} as any,
+            revision: 0,
+          },
+        ],
         slots: [{ name: "body", layerId: 1, bone: "body", order: 0 }],
         bones,
         binds: [{ slot: "body", bones: ["body"] }],
@@ -215,7 +276,16 @@ describe("physics", () => {
   it("emits x/y mix when wobbleMove is on", () => {
     const bones: Bone[] = [
       { name: "root", parent: null, x: 1024, y: 1024, rotation: 0, length: 0, wobble: 0 },
-      { name: "hair", parent: "root", x: 1024, y: 900, rotation: -90, length: 80, wobble: 1, wobbleMove: true },
+      {
+        name: "hair",
+        parent: "root",
+        x: 1024,
+        y: 900,
+        rotation: -90,
+        length: 80,
+        wobble: 1,
+        wobbleMove: true,
+      },
     ];
     const s = writeSkeleton({ ...input, doc: { ...input.doc, bones } }) as any;
     expect(s.physics).toEqual([

@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { parsePreferences, loadPreferences, savePreferences, LEGACY_PANEL_KEY } from "../preferences";
+import {
+  parsePreferences,
+  loadPreferences,
+  savePreferences,
+  LEGACY_PANEL_KEY,
+} from "../preferences";
 import type { Preferences } from "../preferences";
 
 const mem = new Map<string, string>();
@@ -74,7 +79,10 @@ describe("loadPreferences / savePreferences", () => {
   });
 
   it("fills dock size from the old panels key when the unified object has none", () => {
-    localStorage.setItem(LEGACY_PANEL_KEY, JSON.stringify({ dockWidth: 300, inspectorHeight: 150 }));
+    localStorage.setItem(
+      LEGACY_PANEL_KEY,
+      JSON.stringify({ dockWidth: 300, inspectorHeight: 150 }),
+    );
     expect(loadPreferences()).toEqual({ dockWidth: 300, inspectorHeight: 150 });
   });
 

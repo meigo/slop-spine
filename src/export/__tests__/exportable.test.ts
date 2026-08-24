@@ -15,7 +15,12 @@ describe("assertExportable", () => {
 
   it("allows a document with a real bone", () => {
     expect(() =>
-      assertExportable(doc([root, { name: "arm", parent: "root", x: 4, y: 0, rotation: -90, length: 10, wobble: 0 }])),
+      assertExportable(
+        doc([
+          root,
+          { name: "arm", parent: "root", x: 4, y: 0, rotation: -90, length: 10, wobble: 0 },
+        ]),
+      ),
     ).not.toThrow();
   });
 });

@@ -23,7 +23,10 @@ describe("meshFromMask", () => {
     for (let i = 0; i < m.hull; i++) {
       const { x, y } = m.vertices[i];
       const edge =
-        !square.at(x + 1, y) || !square.at(x - 1, y) || !square.at(x, y + 1) || !square.at(x, y - 1);
+        !square.at(x + 1, y) ||
+        !square.at(x - 1, y) ||
+        !square.at(x, y + 1) ||
+        !square.at(x, y - 1);
       expect(edge).toBe(true);
     }
   });

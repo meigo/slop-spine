@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ui, isPaintTool, bumpCurve, whyNotEditable, editBlockLabel, type BoneMode } from "../state/ui.svelte";
+  import {
+    ui,
+    isPaintTool,
+    bumpCurve,
+    whyNotEditable,
+    editBlockLabel,
+    type BoneMode,
+  } from "../state/ui.svelte";
   import { document as doc, loadDocument, newDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
   import { importPsd } from "../persist/psd";
@@ -145,7 +152,8 @@
     try {
       const imported = importPsd(await file.arrayBuffer());
       loadDocument(imported);
-      if (imported.layers.length) ui.selectedLayerId = imported.layers[imported.layers.length - 1].id;
+      if (imported.layers.length)
+        ui.selectedLayerId = imported.layers[imported.layers.length - 1].id;
       window.dispatchEvent(new Event("slop-spine:fit-view"));
     } catch (err) {
       console.error("psd import failed", err);
@@ -182,7 +190,9 @@
 <input type="file" accept=".psd" class="hidden" bind:this={psdInput} onchange={onPsdChosen} />
 <NewDocDialog open={newDocOpen} onConfirm={onNewDocument} onCancel={() => (newDocOpen = false)} />
 
-<div class="flex flex-wrap items-center gap-1 border-b border-border bg-surface p-2 text-sm text-text">
+<div
+  class="flex flex-wrap items-center gap-1 border-b border-border bg-surface p-2 text-sm text-text"
+>
   <div class="flex overflow-hidden rounded border border-border">
     <button
       class={toolBtn}
@@ -275,7 +285,10 @@
       <input type="range" min="0" max="128" class="w-24" bind:value={ui.fillTolerance} />
       <span class="w-6 text-right font-mono">{ui.fillTolerance}</span>
     </label>
-    <label class="flex items-center gap-1 text-xs text-text-secondary" title="Grow the filled region (px)">
+    <label
+      class="flex items-center gap-1 text-xs text-text-secondary"
+      title="Grow the filled region (px)"
+    >
       Expand
       <input type="range" min="0" max="8" class="w-16" bind:value={ui.fillExpand} />
       <span class="w-4 text-right font-mono">{ui.fillExpand}</span>
@@ -315,7 +328,9 @@
   {:else if isPaintTool(ui.tool)}
     <div class="flex overflow-hidden rounded border border-border">
       <button
-        class="px-3 py-1 {ui.brushType === 'smooth' ? 'bg-surface-active' : 'hover:bg-surface-hover'}"
+        class="px-3 py-1 {ui.brushType === 'smooth'
+          ? 'bg-surface-active'
+          : 'hover:bg-surface-hover'}"
         onclick={() => (ui.brushType = "smooth")}
       >
         Smooth
@@ -327,7 +342,9 @@
         Ink
       </button>
       <button
-        class="px-3 py-1 {ui.brushType === 'pencil' ? 'bg-surface-active' : 'hover:bg-surface-hover'}"
+        class="px-3 py-1 {ui.brushType === 'pencil'
+          ? 'bg-surface-active'
+          : 'hover:bg-surface-hover'}"
         onclick={() => (ui.brushType = "pencil")}
       >
         Pencil

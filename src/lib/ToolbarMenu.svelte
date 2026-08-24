@@ -17,7 +17,7 @@
   </button>
   {#if open}
     <div
-      class="absolute right-0 top-full z-30 mt-1 min-w-44 rounded border border-border bg-surface py-1 shadow-lg"
+      class="absolute top-full right-0 z-30 mt-1 min-w-44 rounded border border-border bg-surface py-1 shadow-lg"
       role="menu"
     >
       {@render children(close)}

@@ -36,7 +36,9 @@ function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
 /** Decodes PNG bytes into an <img>. Callers draw it themselves — this does not touch alpha. */
 function decodePng(bytes: Uint8Array): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }));
+    const url = URL.createObjectURL(
+      new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }),
+    );
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
@@ -56,7 +58,13 @@ export async function saveProject(doc: RigDocument): Promise<Blob> {
   const json: DocumentJson = {
     canvas: doc.canvas,
     density: doc.density,
-    layers: doc.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, revision: l.revision })),
+    layers: doc.layers.map((l) => ({
+      id: l.id,
+      name: l.name,
+      visible: l.visible,
+      opacity: l.opacity,
+      revision: l.revision,
+    })),
     slots: doc.slots,
     bones: doc.bones,
     binds: doc.binds,
@@ -88,7 +96,14 @@ export async function loadProject(file: Blob): Promise<RigDocument> {
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     }
-    layers.push({ id: lj.id, name: lj.name, visible: lj.visible, opacity: lj.opacity, canvas, revision: lj.revision });
+    layers.push({
+      id: lj.id,
+      name: lj.name,
+      visible: lj.visible,
+      opacity: lj.opacity,
+      canvas,
+      revision: lj.revision,
+    });
   }
 
   return {

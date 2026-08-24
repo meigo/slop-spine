@@ -137,7 +137,10 @@
       <div class="min-h-0 flex-1 overflow-hidden">
         <LayerPanel />
       </div>
-      <div class="relative flex shrink-0 flex-col border-t border-border" style="height: {ui.inspectorHeight}px">
+      <div
+        class="relative flex shrink-0 flex-col border-t border-border"
+        style="height: {ui.inspectorHeight}px"
+      >
         <div
           class="group absolute inset-x-0 top-0 z-30 h-2 cursor-row-resize"
           style="touch-action: none"

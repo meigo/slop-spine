@@ -71,7 +71,11 @@ function rdpOpen(pts: Pt[], eps: number): Pt[] {
 
 function simplifyClosed(pts: Pt[], eps: number): Pt[] {
   let ring = pts;
-  if (ring.length >= 2 && ring[0].x === ring[ring.length - 1].x && ring[0].y === ring[ring.length - 1].y) {
+  if (
+    ring.length >= 2 &&
+    ring[0].x === ring[ring.length - 1].x &&
+    ring[0].y === ring[ring.length - 1].y
+  ) {
     ring = ring.slice(0, -1);
   }
   if (ring.length < 3) return ring.slice();
@@ -103,7 +107,10 @@ function traceContour(
   let y = sy;
   let dir = 0;
   for (let i = 0; i < 8; i++) {
-    if (!isEdge(inside, width, height, x + N8[i][0], y + N8[i][1]) && !inside(x + N8[i][0], y + N8[i][1])) {
+    if (
+      !isEdge(inside, width, height, x + N8[i][0], y + N8[i][1]) &&
+      !inside(x + N8[i][0], y + N8[i][1])
+    ) {
       dir = i;
       break;
     }

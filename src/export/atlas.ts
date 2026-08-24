@@ -23,7 +23,9 @@ export function packAtlas(
   const needed = widest + 2 * PAD;
   pageWidth = Math.max(pageWidth, needed > 0 ? 2 ** Math.ceil(Math.log2(needed)) : 0);
   const regions: Region[] = [];
-  let x = PAD, y = PAD, rowHeight = 0;
+  let x = PAD,
+    y = PAD,
+    rowHeight = 0;
   for (const it of sorted) {
     if (x + it.trim.width + PAD > pageWidth) {
       x = PAD;

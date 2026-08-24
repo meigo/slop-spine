@@ -66,7 +66,17 @@ export function emptyDocument(width = 2048, height = 2048): RigDocument {
     canvas: { width, height },
     layers: [],
     slots: [],
-    bones: [{ name: "root", parent: null, x: width / 2, y: height / 2, rotation: 0, length: 0, wobble: 0 }],
+    bones: [
+      {
+        name: "root",
+        parent: null,
+        x: width / 2,
+        y: height / 2,
+        rotation: 0,
+        length: 0,
+        wobble: 0,
+      },
+    ],
     binds: [],
     density: 24,
   };

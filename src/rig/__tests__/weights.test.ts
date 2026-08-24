@@ -3,8 +3,15 @@ import { computeWeights } from "../weights";
 import type { Bone } from "../document";
 import type { RigMesh } from "../mesh";
 
-const bone = (name: string, x: number, y: number, length: number, rotation = 0): Bone =>
-  ({ name, parent: null, x, y, rotation, length, wobble: 0 });
+const bone = (name: string, x: number, y: number, length: number, rotation = 0): Bone => ({
+  name,
+  parent: null,
+  x,
+  y,
+  rotation,
+  length,
+  wobble: 0,
+});
 
 const mesh = (pts: [number, number][]): RigMesh => ({
   vertices: pts.map(([x, y]) => ({ x, y })),
@@ -14,7 +21,14 @@ const mesh = (pts: [number, number][]): RigMesh => ({
 
 describe("computeWeights", () => {
   it("gives every vertex weights summing to 1", () => {
-    const w = computeWeights(mesh([[0, 0], [50, 0], [100, 0]]), [bone("a", 0, 0, 100), bone("b", 0, 80, 100)]);
+    const w = computeWeights(
+      mesh([
+        [0, 0],
+        [50, 0],
+        [100, 0],
+      ]),
+      [bone("a", 0, 0, 100), bone("b", 0, 80, 100)],
+    );
     for (const v of w) expect(v.reduce((s, i) => s + i.weight, 0)).toBeCloseTo(1, 5);
   });
 
@@ -41,10 +55,7 @@ describe("computeWeights", () => {
     // Vertex at (50,0): exactly on a's segment (segment-distance 0), but far from a's origin.
     // b's origin is much closer (distance 10), but b's segment points away (closest point also 10).
     // With correct segment-distance, a dominates. With buggy origin-distance, b would win.
-    const w = computeWeights(
-      mesh([[50, 0]]),
-      [bone("a", 0, 0, 100, 0), bone("b", 50, 10, 50, 90)]
-    );
+    const w = computeWeights(mesh([[50, 0]]), [bone("a", 0, 0, 100, 0), bone("b", 50, 10, 50, 90)]);
     const a = w[0].find((i) => i.bone === "a")!;
     const b = w[0].find((i) => i.bone === "b")!;
     expect(a.weight).toBeGreaterThan(0.95);

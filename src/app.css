@@ -49,7 +49,11 @@
     linear-gradient(45deg, transparent 75%, #dcdcdc 75%),
     linear-gradient(-45deg, transparent 75%, #dcdcdc 75%);
   background-size: 64px 64px;
-  background-position: 0 0, 0 32px, 32px -32px, -32px 0;
+  background-position:
+    0 0,
+    0 32px,
+    32px -32px,
+    -32px 0;
   box-shadow: 0 0 0 1px #000;
 }
 .paper-white {

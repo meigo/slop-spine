@@ -18,16 +18,24 @@
 
   let selectedSlot = $derived(doc.slots.find((s) => s.layerId === ui.selectedLayerId) ?? null);
   let selectedLayer = $derived(doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null);
-  let effectiveDensity = $derived(selectedSlot ? (selectedSlot.density ?? doc.density) : doc.density);
+  let effectiveDensity = $derived(
+    selectedSlot ? (selectedSlot.density ?? doc.density) : doc.density,
+  );
   let hasDensityOverride = $derived(selectedSlot?.density !== undefined);
   let selectedBone = $derived(doc.bones.find((b) => b.name === ui.selectedBone) ?? null);
   let invalidParents = $derived(
-    selectedBone ? new Set([selectedBone.name, ...descendantsOf(selectedBone.name).map((b) => b.name)]) : new Set<string>(),
+    selectedBone
+      ? new Set([selectedBone.name, ...descendantsOf(selectedBone.name).map((b) => b.name)])
+      : new Set<string>(),
   );
   let parentOptions = $derived(doc.bones.filter((b) => !invalidParents.has(b.name)));
   let bindableBones = $derived(doc.bones.filter((b) => b.name !== "root"));
-  let storedBinds = $derived(selectedSlot ? (doc.binds.find((b) => b.slot === selectedSlot!.name)?.bones ?? []) : []);
-  let bindIncluded = $derived(new Set(storedBinds.length ? storedBinds : bindableBones.map((b) => b.name)));
+  let storedBinds = $derived(
+    selectedSlot ? (doc.binds.find((b) => b.slot === selectedSlot!.name)?.bones ?? []) : [],
+  );
+  let bindIncluded = $derived(
+    new Set(storedBinds.length ? storedBinds : bindableBones.map((b) => b.name)),
+  );
 
   // Writable $derived: resets to the selected bone's name whenever the selection changes, but
   // typing still assigns over it until the next change. Same behaviour as the $state + $effect
@@ -95,7 +103,7 @@
 </script>
 
 <div class="flex flex-col gap-3 p-2 text-sm text-text">
-  <span class="font-mono text-xs uppercase text-text-secondary">Inspector</span>
+  <span class="font-mono text-xs text-text-secondary uppercase">Inspector</span>
 
   {#if selectedBone}
     <label class="flex flex-col gap-1">
@@ -120,7 +128,11 @@
 
     <label class="flex flex-col gap-1">
       Parent
-      <select class="bg-canvas-bg px-1 text-text" value={selectedBone.parent} onchange={onParentChange}>
+      <select
+        class="bg-canvas-bg px-1 text-text"
+        value={selectedBone.parent}
+        onchange={onParentChange}
+      >
         {#each parentOptions as bone (bone.name)}
           <option value={bone.name}>{bone.name}</option>
         {/each}
@@ -130,10 +142,22 @@
     <label class="flex flex-col gap-1">
       Wobble
       <div class="flex items-center gap-1">
-        <input type="range" min="0" max="1" step="0.01" value={selectedBone.wobble} onpointerdown={onWobblePointerDown} onpointerup={onWobblePointerUp} oninput={onWobbleInput} />
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={selectedBone.wobble}
+          onpointerdown={onWobblePointerDown}
+          onpointerup={onWobblePointerUp}
+          oninput={onWobbleInput}
+        />
         <span class="w-8 text-right font-mono text-xs">{selectedBone.wobble.toFixed(2)}</span>
       </div>
-      <label class="flex items-center gap-1 text-xs text-text-secondary" title="Off: rotation only (default). On: also lag position.">
+      <label
+        class="flex items-center gap-1 text-xs text-text-secondary"
+        title="Off: rotation only (default). On: also lag position."
+      >
         <input
           type="checkbox"
           checked={!!selectedBone.wobbleMove}
@@ -162,7 +186,11 @@
         <input type="range" min="8" max="96" value={effectiveDensity} oninput={onDensityInput} />
         <span class="w-6 text-right font-mono text-xs">{effectiveDensity}</span>
         {#if hasDensityOverride}
-          <button class="shrink-0 text-text-muted hover:text-text" onclick={resetDensity} title="Reset to document default">
+          <button
+            class="shrink-0 text-text-muted hover:text-text"
+            onclick={resetDensity}
+            title="Reset to document default"
+          >
             ↺
           </button>
         {/if}
@@ -170,8 +198,13 @@
     </label>
 
     <div class="flex flex-col gap-1">
-      <span class="text-xs text-text-secondary">Deformers — {selectedLayer?.name ?? selectedSlot.name}</span>
-      <p class="text-xs text-text-muted">Uncheck a bone to exclude it from this layer. Reach still limits how far each included bone reaches.</p>
+      <span class="text-xs text-text-secondary"
+        >Deformers — {selectedLayer?.name ?? selectedSlot.name}</span
+      >
+      <p class="text-xs text-text-muted">
+        Uncheck a bone to exclude it from this layer. Reach still limits how far each included bone
+        reaches.
+      </p>
       {#if bindableBones.length === 0}
         <p class="text-xs text-text-muted">No bones yet.</p>
       {:else}

@@ -74,7 +74,10 @@ export function bindListAfterToggle(
  *  document default when it has none. The mesh depends only on the layer's pixels and density,
  *  not on bones — moving a bone reuses the same mesh object and only recomputes weights, which is
  *  what keeps bone-dragging responsive. */
-export function deriveSlot(doc: RigDocument, slotName: string): { mesh: RigMesh; weights: Influence[][] } {
+export function deriveSlot(
+  doc: RigDocument,
+  slotName: string,
+): { mesh: RigMesh; weights: Influence[][] } {
   const slot = doc.slots.find((s) => s.name === slotName);
   if (!slot) return EMPTY;
   const layer = doc.layers.find((l) => l.id === slot.layerId);
@@ -95,7 +98,9 @@ export function deriveSlot(doc: RigDocument, slotName: string): { mesh: RigMesh;
   if (cached && cached.key === key) return { mesh: cached.mesh, weights: cached.weights };
 
   const mesh =
-    cached && cached.meshKey === meshKey ? cached.mesh : meshFromMask(maskFromCanvas(layer.canvas), density);
+    cached && cached.meshKey === meshKey
+      ? cached.mesh
+      : meshFromMask(maskFromCanvas(layer.canvas), density);
   const weights = computeWeights(mesh, bones);
 
   cache.set(slotName, { key, meshKey, mesh, weights });

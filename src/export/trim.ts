@@ -11,7 +11,10 @@ export function trimLayer(canvas: HTMLCanvasElement, alphaThreshold = 8): Trim {
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   const { width, height } = canvas;
   const data = ctx.getImageData(0, 0, width, height).data;
-  let minX = width, minY = height, maxX = -1, maxY = -1;
+  let minX = width,
+    minY = height,
+    maxX = -1,
+    maxY = -1;
   for (let y = 0; y < height; y++)
     for (let x = 0; x < width; x++)
       if (data[(y * width + x) * 4 + 3] > alphaThreshold) {

@@ -83,7 +83,11 @@ describe("drawRigOverlay bone alpha", () => {
 });
 
 describe("poseDeform extraTheta", () => {
-  const mesh = { vertices: [{ x: 10, y: 0 }], triangles: [] as [number, number, number][], hull: 0 };
+  const mesh = {
+    vertices: [{ x: 10, y: 0 }],
+    triangles: [] as [number, number, number][],
+    hull: 0,
+  };
   const weights = [[{ bone: "b", weight: 1 }]];
   const rest = { pivot: { x: 0, y: 0 }, dtheta: 0, dx: 0, dy: 0 };
 
@@ -100,9 +104,7 @@ describe("poseDeform extraTheta", () => {
     const poses = makeBonePoses(
       ["upper", "lower"],
       (name) =>
-        name === "upper"
-          ? { parent: "root", x: 0, y: 0 }
-          : { parent: "upper", x: 100, y: 0 },
+        name === "upper" ? { parent: "root", x: 0, y: 0 } : { parent: "upper", x: 100, y: 0 },
       () => rest,
       (name) => (name === "upper" ? Math.PI / 2 : 0),
     );

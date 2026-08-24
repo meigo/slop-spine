@@ -1,4 +1,11 @@
-import { emptyDocument, type RigDocument, type Layer, type Slot, type Bone, type Bind } from "../rig/document";
+import {
+  emptyDocument,
+  type RigDocument,
+  type Layer,
+  type Slot,
+  type Bone,
+  type Bind,
+} from "../rig/document";
 import { invalidate } from "../rig/derive";
 import { splitBoneAt } from "../rig/chain";
 import { ui } from "./ui.svelte";
@@ -45,7 +52,12 @@ function uniqueSlotName(base: string): string {
 export function addLayer(name: string): number {
   const layer = createLayer(name);
   document.layers.push(layer);
-  const slot: Slot = { name: uniqueSlotName(name), layerId: layer.id, bone: "root", order: nextSlotOrder++ };
+  const slot: Slot = {
+    name: uniqueSlotName(name),
+    layerId: layer.id,
+    bone: "root",
+    order: nextSlotOrder++,
+  };
   document.slots.push(slot);
   document.binds.push({ slot: slot.name, bones: [] });
   return layer.id;
@@ -80,8 +92,14 @@ export function removeLayer(id: number) {
       markLayerDirty(id);
     },
     redo() {
-      document.layers.splice(document.layers.findIndex((l) => l.id === id), 1);
-      document.slots.splice(document.slots.findIndex((s) => s.name === slot.name), 1);
+      document.layers.splice(
+        document.layers.findIndex((l) => l.id === id),
+        1,
+      );
+      document.slots.splice(
+        document.slots.findIndex((s) => s.name === slot.name),
+        1,
+      );
       document.binds = document.binds.filter((b) => b.slot !== slot.name);
       invalidate(slot.name);
     },
@@ -326,7 +344,9 @@ export function insertJoint(name: string, x: number, y: number): string | null {
   setBoneLength(added, split.child.length);
   setBoneRotation(added, split.child.rotation);
   setReach(added, split.child.length);
-  const former = document.bones.filter((b) => b.parent === name && b.name !== added).map((b) => b.name);
+  const former = document.bones
+    .filter((b) => b.parent === name && b.name !== added)
+    .map((b) => b.name);
   for (const child of former) setParent(child, added);
   return added;
 }

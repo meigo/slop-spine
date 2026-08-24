@@ -127,9 +127,9 @@
   }
 </script>
 
-<div class="flex flex-col h-full bg-surface text-sm text-text">
+<div class="flex h-full flex-col bg-surface text-sm text-text">
   <div class="flex items-center gap-1 border-b border-border p-1">
-    <span class="flex-1 px-1 font-mono text-xs uppercase text-text-secondary">Layers</span>
+    <span class="flex-1 px-1 font-mono text-xs text-text-secondary uppercase">Layers</span>
     <button class={headerBtn} title="Add layer" onclick={onAdd}><Plus size={16} /></button>
     <button
       class={headerBtn}
@@ -152,41 +152,45 @@
   </div>
   <ul bind:this={listEl} class="flex-1 overflow-y-auto">
     {#key dragNonce}
-    {#each topFirst as layer (layer.id)}
-      <li
-        data-layer-id={layer.id}
-        class="flex items-center gap-1 border-b border-border-light px-2 py-1 {ui.selectedLayerId === layer.id
-          ? 'bg-surface-active'
-          : 'hover:bg-surface-hover'}"
-      >
-        <span class="layer-drag-handle shrink-0 cursor-grab text-text-muted" title="Drag to reorder">
-          <GripVertical size={14} />
-        </span>
-        <button
-          class="flex w-5 shrink-0 items-center justify-center text-text-secondary hover:text-text"
-          onclick={() => toggleVisible(layer.id)}
-          title={layer.visible ? "Visible — click to hide" : "Hidden — click to show"}
+      {#each topFirst as layer (layer.id)}
+        <li
+          data-layer-id={layer.id}
+          class="flex items-center gap-1 border-b border-border-light px-2 py-1 {ui.selectedLayerId ===
+          layer.id
+            ? 'bg-surface-active'
+            : 'hover:bg-surface-hover'}"
         >
-          {#if layer.visible}<Eye size={15} />{:else}<EyeOff size={15} />{/if}
-        </button>
-        {#if editingId === layer.id}
-          <input
-            class="min-w-0 flex-1 bg-canvas-bg px-1 text-text"
-            bind:value={draftName}
-            onblur={commitRename}
-            onkeydown={onRenameKey}
-          />
-        {:else}
-          <button
-            class="min-w-0 flex-1 truncate text-left"
-            onclick={() => onSelect(layer)}
-            ondblclick={() => startRename(layer)}
+          <span
+            class="layer-drag-handle shrink-0 cursor-grab text-text-muted"
+            title="Drag to reorder"
           >
-            {layer.name}
+            <GripVertical size={14} />
+          </span>
+          <button
+            class="flex w-5 shrink-0 items-center justify-center text-text-secondary hover:text-text"
+            onclick={() => toggleVisible(layer.id)}
+            title={layer.visible ? "Visible — click to hide" : "Hidden — click to show"}
+          >
+            {#if layer.visible}<Eye size={15} />{:else}<EyeOff size={15} />{/if}
           </button>
-        {/if}
-      </li>
-    {/each}
+          {#if editingId === layer.id}
+            <input
+              class="min-w-0 flex-1 bg-canvas-bg px-1 text-text"
+              bind:value={draftName}
+              onblur={commitRename}
+              onkeydown={onRenameKey}
+            />
+          {:else}
+            <button
+              class="min-w-0 flex-1 truncate text-left"
+              onclick={() => onSelect(layer)}
+              ondblclick={() => startRename(layer)}
+            >
+              {layer.name}
+            </button>
+          {/if}
+        </li>
+      {/each}
     {/key}
   </ul>
 </div>

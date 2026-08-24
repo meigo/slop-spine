@@ -1,6 +1,12 @@
 import type { RigDocument, Layer, Slot } from "../rig/document";
 
-function makeLayer(id: number, name: string, width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void): Layer {
+function makeLayer(
+  id: number,
+  name: string,
+  width: number,
+  height: number,
+  draw: (ctx: CanvasRenderingContext2D) => void,
+): Layer {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -34,10 +40,45 @@ export function buildFixture(): RigDocument {
     layers: [body, head, arm],
     slots: [],
     bones: [
-      { name: "root", parent: null, x: width / 2, y: height / 2, rotation: 0, length: 0, wobble: 0 },
-      { name: "body", parent: "root", x: 1024, y: 1500, rotation: -90, length: 600, wobble: 0, reach: 600 },
-      { name: "head", parent: "root", x: 1024, y: 900, rotation: -90, length: 300, wobble: 0.3, reach: 300 },
-      { name: "arm", parent: "root", x: 1100, y: 990, rotation: 0, length: 300, wobble: 0.6, reach: 200 },
+      {
+        name: "root",
+        parent: null,
+        x: width / 2,
+        y: height / 2,
+        rotation: 0,
+        length: 0,
+        wobble: 0,
+      },
+      {
+        name: "body",
+        parent: "root",
+        x: 1024,
+        y: 1500,
+        rotation: -90,
+        length: 600,
+        wobble: 0,
+        reach: 600,
+      },
+      {
+        name: "head",
+        parent: "root",
+        x: 1024,
+        y: 900,
+        rotation: -90,
+        length: 300,
+        wobble: 0.3,
+        reach: 300,
+      },
+      {
+        name: "arm",
+        parent: "root",
+        x: 1100,
+        y: 990,
+        rotation: 0,
+        length: 300,
+        wobble: 0.6,
+        reach: 200,
+      },
     ],
     binds: [],
     density: 48,

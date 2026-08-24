@@ -60,7 +60,9 @@ export function isSelectTool(tool: Tool): boolean {
 /** Why a layer-bound tool (paint / select) refuses. Bone does not consult this. */
 export type LayerEditBlock = "no-layer" | "hidden";
 
-export function whyNotEditable(layer: { visible: boolean } | null | undefined): LayerEditBlock | null {
+export function whyNotEditable(
+  layer: { visible: boolean } | null | undefined,
+): LayerEditBlock | null {
   if (layer == null) return "no-layer";
   if (!layer.visible) return "hidden";
   return null;

@@ -30,7 +30,11 @@ export function meshFromMask(mask: Mask, density: number): RigMesh {
   const vertices: Pt[] = [...hullPts, ...innerPts];
   if (vertices.length < 3) return { vertices: [], triangles: [], hull: 0 };
 
-  const d = Delaunator.from(vertices, (p) => p.x, (p) => p.y);
+  const d = Delaunator.from(
+    vertices,
+    (p) => p.x,
+    (p) => p.y,
+  );
   const triangles: [number, number, number][] = [];
   for (let i = 0; i < d.triangles.length; i += 3) {
     const [a, b, c] = [d.triangles[i], d.triangles[i + 1], d.triangles[i + 2]];

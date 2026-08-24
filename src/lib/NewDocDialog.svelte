@@ -57,7 +57,9 @@
       if (e.target === e.currentTarget) onCancel();
     }}
   >
-    <div class="flex w-80 flex-col gap-3 rounded-lg border border-border bg-surface p-4 text-sm text-text shadow-lg">
+    <div
+      class="flex w-80 flex-col gap-3 rounded-lg border border-border bg-surface p-4 text-sm text-text shadow-lg"
+    >
       <h2 class="font-semibold">New document</h2>
       <div class="flex flex-col gap-1">
         {#each PRESETS as p (p.label)}
@@ -96,10 +98,16 @@
         </label>
       </div>
       <div class="flex justify-end gap-2">
-        <button class="rounded px-2 py-1 text-text-secondary hover:bg-surface-hover" onclick={onCancel}>
+        <button
+          class="rounded px-2 py-1 text-text-secondary hover:bg-surface-hover"
+          onclick={onCancel}
+        >
           Cancel
         </button>
-        <button class="rounded bg-accent px-2 py-1 text-accent-text hover:opacity-90" onclick={confirm}>
+        <button
+          class="rounded bg-accent px-2 py-1 text-accent-text hover:opacity-90"
+          onclick={confirm}
+        >
           Create
         </button>
       </div>

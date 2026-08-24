@@ -81,13 +81,21 @@ import { overlayFlags } from "../ui.svelte";
 describe("overlayFlags", () => {
   it("shows faint bones and no mesh under a paint tool when meshes are off", () => {
     expect(overlayFlags("brush", true, false)).toEqual({
-      bones: true, faint: true, mesh: false, tint: false, capsule: false,
+      bones: true,
+      faint: true,
+      mesh: false,
+      tint: false,
+      capsule: false,
     });
   });
 
   it("shows mesh wireframes under a paint tool when meshes are on, but not tint or capsule", () => {
     expect(overlayFlags("brush", true, true)).toEqual({
-      bones: true, faint: true, mesh: true, tint: false, capsule: false,
+      bones: true,
+      faint: true,
+      mesh: true,
+      tint: false,
+      capsule: false,
     });
   });
 
@@ -98,7 +106,11 @@ describe("overlayFlags", () => {
 
   it("bone tool does not imply mesh — that is the meshes toggle", () => {
     expect(overlayFlags("bone", true, false)).toEqual({
-      bones: true, faint: false, mesh: false, tint: true, capsule: true,
+      bones: true,
+      faint: false,
+      mesh: false,
+      tint: true,
+      capsule: true,
     });
     expect(overlayFlags("bone", true, true).mesh).toBe(true);
   });
@@ -170,7 +182,10 @@ describe("applyPreferences / gatherPreferences", () => {
   });
 
   it("gather includes the curve and bumps when bumpCurve runs", () => {
-    applyPreferences({ brushSize: 8, pressureCurve: { cp1: { x: 0.2, y: 0.3 }, cp2: { x: 0.7, y: 0.6 } } });
+    applyPreferences({
+      brushSize: 8,
+      pressureCurve: { cp1: { x: 0.2, y: 0.3 }, cp2: { x: 0.7, y: 0.6 } },
+    });
     const before = ui.curveVersion;
     bumpCurve();
     expect(ui.curveVersion).toBe(before + 1);

@@ -203,7 +203,13 @@ export function createDrawDispatch(opts?: {
    *  restore with `putImageData` (replace, not composite — required to keep transparent areas
    *  transparent) then call `markLayerDirty`, so `deriveSlot`'s cache never serves a mesh derived
    *  from pixels an undo/redo just replaced. */
-  function pushPixelCommand(layer: Layer, ctx: CanvasRenderingContext2D, rect: Rect, before: ImageData, after: ImageData) {
+  function pushPixelCommand(
+    layer: Layer,
+    ctx: CanvasRenderingContext2D,
+    rect: Rect,
+    before: ImageData,
+    after: ImageData,
+  ) {
     const layerId = layer.id;
     history.push(
       pixelCommand(
@@ -324,7 +330,11 @@ export function createDrawDispatch(opts?: {
       paintStroke(points, true, tool);
       markLayerDirty(strokeLayer.id);
       if (scratchCtx) {
-        const rect = computeDirtyRect(points, strokeLayer, points[0]?.hasPressure ? pressFor(tool) : 1);
+        const rect = computeDirtyRect(
+          points,
+          strokeLayer,
+          points[0]?.hasPressure ? pressFor(tool) : 1,
+        );
         const before = scratchCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
         const after = strokeCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
         pushPixelCommand(strokeLayer, strokeCtx, rect, before, after);

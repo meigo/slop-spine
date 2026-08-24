@@ -71,9 +71,13 @@
   // trigger for the redraw below. Everything else rig-related reads doc.bones/doc.density/ui
   // directly, which are already reactive. `pivot` is the dragged bone's rest origin; `dtheta` is
   // 0 for a body-drag (translate) and the bearing change from a tip-drag (rotate). ---
-  let poseDrag = $state<{ bone: string; pivot: { x: number; y: number }; dtheta: number; dx: number; dy: number } | null>(
-    null,
-  );
+  let poseDrag = $state<{
+    bone: string;
+    pivot: { x: number; y: number };
+    dtheta: number;
+    dx: number;
+    dy: number;
+  } | null>(null);
 
   type PoseSimBone = {
     tipX: WobbleAxis;
@@ -172,8 +176,14 @@
         extraTheta: 0,
       };
       // Translation: the dragged bone follows the pointer; others snap unless wobbleMove.
-      const dx = follow || !move || wobble <= 0 ? { pos: target.dx, vel: 0 } : stepWobble(prev.dx, target.dx, wobble, dt);
-      const dy = follow || !move || wobble <= 0 ? { pos: target.dy, vel: 0 } : stepWobble(prev.dy, target.dy, wobble, dt);
+      const dx =
+        follow || !move || wobble <= 0
+          ? { pos: target.dx, vel: 0 }
+          : stepWobble(prev.dx, target.dx, wobble, dt);
+      const dy =
+        follow || !move || wobble <= 0
+          ? { pos: target.dy, vel: 0 }
+          : stepWobble(prev.dy, target.dy, wobble, dt);
       const delta = { pivot: poseDrag.pivot, dtheta: target.dtheta, dx: dx.pos, dy: dy.pos };
       const restO = bone ? { x: bone.x, y: bone.y } : { x: 0, y: 0 };
       const restT = bone ? boneRestTip(bone) : { x: 0, y: 0 };
@@ -252,7 +262,8 @@
         if (!layer.visible) continue;
         ctx.globalAlpha = layer.opacity;
         const warped = poseBones && poses && warpFor(layer.id);
-        const hasInfluence = warped && warped.weights.some((infs) => infs.some((i) => poseBoneSet!.has(i.bone)));
+        const hasInfluence =
+          warped && warped.weights.some((infs) => infs.some((i) => poseBoneSet!.has(i.bone)));
         if (warped && hasInfluence) {
           const deformed = poseDeform(warped.mesh, warped.weights, poses!);
           drawWarpedLayer(ctx, layer.canvas, warped.mesh, deformed);
@@ -292,7 +303,12 @@
           return pose ? posedOverlayBone(b, pose) : b;
         })
       : doc.bones;
-    drawRigOverlay(rigCtx, { bones: overlayBones, selectedBone: ui.selectedBone, slots }, viewport.zoom, flags);
+    drawRigOverlay(
+      rigCtx,
+      { bones: overlayBones, selectedBone: ui.selectedBone, slots },
+      viewport.zoom,
+      flags,
+    );
   }
 
   function redraw() {
@@ -615,7 +631,11 @@
    *  eye. `exclude` is the bone being dragged, so it can't snap to its own origin/tip. root is a
    *  legitimate target (origin and tip coincide there, at canvas centre). Returns `pt` unchanged
    *  when nothing is close enough. */
-  function snapToBoneEnd(pt: { x: number; y: number }, exclude: string, radius: number): { x: number; y: number } {
+  function snapToBoneEnd(
+    pt: { x: number; y: number },
+    exclude: string,
+    radius: number,
+  ): { x: number; y: number } {
     let best: { x: number; y: number } | null = null;
     let bestD = Infinity;
     for (const b of doc.bones) {
@@ -1071,13 +1091,13 @@
   class:cursor-not-allowed={toolBlocked && !panning && !spaceHeld}
 >
   <!-- No `style=` here: the Viewport owns this element's inline style (see the sizing $effect). -->
-  <div bind:this={paper} class="absolute left-0 top-0 will-change-transform">
+  <div bind:this={paper} class="absolute top-0 left-0 will-change-transform">
     <div
       class="pointer-events-none absolute inset-0 {ui.whiteBg ? 'paper-white' : 'paper-checker'}"
     ></div>
     <canvas
       bind:this={canvasEl}
-      class="absolute left-0 top-0"
+      class="absolute top-0 left-0"
       width={doc.canvas.width}
       height={doc.canvas.height}
       style="width: {doc.canvas.width}px; height: {doc.canvas.height}px"

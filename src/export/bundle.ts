@@ -18,7 +18,9 @@ export class ExportError extends Error {
  *  document (root, no real bones) would export a valid zip of an invisible character. */
 export function assertExportable(doc: RigDocument): void {
   if (!doc.bones.some((b) => b.name !== "root")) {
-    throw new ExportError("Add a bone before exporting. Spine collapses meshes with no bone weights.");
+    throw new ExportError(
+      "Add a bone before exporting. Spine collapses meshes with no bone weights.",
+    );
   }
 }
 
@@ -52,12 +54,23 @@ export async function exportBundle(doc: RigDocument): Promise<Blob> {
   for (const r of atlas.regions) {
     const slot = doc.slots.find((s) => s.name === r.name)!;
     const layer = doc.layers.find((l) => l.id === slot.layerId)!;
-    pctx.drawImage(layer.canvas, r.trim.x, r.trim.y, r.trim.width, r.trim.height,
-                   r.pageX, r.pageY, r.trim.width, r.trim.height);
+    pctx.drawImage(
+      layer.canvas,
+      r.trim.x,
+      r.trim.y,
+      r.trim.width,
+      r.trim.height,
+      r.pageX,
+      r.pageY,
+      r.trim.width,
+      r.trim.height,
+    );
   }
 
   const skeleton = writeSkeleton({
-    doc, meshes, weights,
+    doc,
+    meshes,
+    weights,
     regions: atlas.regions,
     page: { width: atlas.pageWidth, height: atlas.pageHeight },
   });

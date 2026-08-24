@@ -159,7 +159,7 @@
         title="Less detail"
         onpointerdown={tap(() => onDensify(-1))}>−</button
       >
-      <span class="tabular-nums text-xs text-text-secondary">{warp.rows}×{warp.cols}</span>
+      <span class="text-xs text-text-secondary tabular-nums">{warp.rows}×{warp.cols}</span>
       <button
         class="rounded border border-border bg-surface px-2 py-1 text-xs"
         title="More detail"

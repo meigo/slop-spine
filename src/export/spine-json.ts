@@ -18,7 +18,11 @@ export function toSkeletonSpace(canvas: { width: number; height: number }, x: nu
   return { x: x - canvas.width / 2, y: canvas.height / 2 - y };
 }
 
-export interface World { x: number; y: number; rotation: number }
+export interface World {
+  x: number;
+  y: number;
+  rotation: number;
+}
 
 /** A bone's setup-pose transform in skeleton space. Because bones are stored with ABSOLUTE canvas
  *  position and rotation, this is a straight conversion — no parent chain walk. Scale is always 1. */
@@ -120,7 +124,13 @@ export function writeSkeleton(input: SkeletonInput) {
     }));
 
   return {
-    skeleton: { spine: "4.2", x: -canvas.width / 2, y: -canvas.height / 2, width: canvas.width, height: canvas.height },
+    skeleton: {
+      spine: "4.2",
+      x: -canvas.width / 2,
+      y: -canvas.height / 2,
+      width: canvas.width,
+      height: canvas.height,
+    },
     bones: outBones,
     slots,
     ...(physics.length ? { physics } : {}),

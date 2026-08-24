@@ -52,7 +52,8 @@ export function drawRigOverlay(
   if (flags.tint) {
     if (selectedBone) {
       for (const slot of slots) {
-        if (slot.mesh.vertices.length > 0) drawWeightTint(ctx, slot.mesh, slot.weights, selectedBone, screenPx);
+        if (slot.mesh.vertices.length > 0)
+          drawWeightTint(ctx, slot.mesh, slot.weights, selectedBone, screenPx);
       }
     }
   }
@@ -82,7 +83,12 @@ export function drawRigOverlay(
 /** Capsule = the bone's segment offset by ±R, with semicircular caps at both ends. Standard
  *  two-arc capsule outline: walk one offset side out, cap around the far end, walk the other
  *  offset side back, cap around the near end. */
-function drawCapsule(ctx: CanvasRenderingContext2D, bone: Bone, R: number, screenPx: (px: number) => number) {
+function drawCapsule(
+  ctx: CanvasRenderingContext2D,
+  bone: Bone,
+  R: number,
+  screenPx: (px: number) => number,
+) {
   const rad = (bone.rotation * Math.PI) / 180;
   const x0 = bone.x;
   const y0 = bone.y;
@@ -120,7 +126,11 @@ export function reachHandlePosition(bone: Bone): Pt | null {
   return { x: midX + Math.cos(perp) * bone.reach, y: midY + Math.sin(perp) * bone.reach };
 }
 
-function drawReachHandle(ctx: CanvasRenderingContext2D, bone: Bone, screenPx: (px: number) => number) {
+function drawReachHandle(
+  ctx: CanvasRenderingContext2D,
+  bone: Bone,
+  screenPx: (px: number) => number,
+) {
   const pos = reachHandlePosition(bone);
   if (!pos) return;
   ctx.save();
@@ -178,7 +188,12 @@ function drawWeightTint(
   ctx.restore();
 }
 
-function drawBone(ctx: CanvasRenderingContext2D, bone: Bone, selected: boolean, screenPx: (px: number) => number) {
+function drawBone(
+  ctx: CanvasRenderingContext2D,
+  bone: Bone,
+  selected: boolean,
+  screenPx: (px: number) => number,
+) {
   const rad = (bone.rotation * Math.PI) / 180;
   const dx = Math.cos(rad);
   const dy = Math.sin(rad);
@@ -259,7 +274,11 @@ export function rotateAround(p: Pt, origin: Pt, theta: number): Pt {
 }
 
 /** `delta`, then each extra in parent-before-child order around that bone's posed origin. */
-export function posedPoint(v: Pt, delta: PoseDelta, extras: { origin: Pt; extraTheta: number }[]): Pt {
+export function posedPoint(
+  v: Pt,
+  delta: PoseDelta,
+  extras: { origin: Pt; extraTheta: number }[],
+): Pt {
   let p = applyDelta(v, delta);
   for (const e of extras) p = rotateAround(p, e.origin, e.extraTheta);
   return p;
