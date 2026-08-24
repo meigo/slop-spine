@@ -11,6 +11,7 @@ import {
   setSlotBone,
   reorderLayer,
   duplicateLayer,
+  newDocument,
   document,
 } from "../doc.svelte";
 import { history } from "../history.svelte";
@@ -151,6 +152,24 @@ describe("setSlotBone", () => {
     expect(document.slots.find((s) => s.name === "hang")?.bone).toBe(arm);
     document.slots = document.slots.filter((s) => s.name !== "hang");
     applyRig(saved);
+  });
+});
+
+describe("newDocument", () => {
+  it("replaces the live document at the requested size, root at centre", () => {
+    addBone("root", 10, 10);
+    newDocument(1024, 1920);
+    expect(document.canvas).toEqual({ width: 1024, height: 1920 });
+    expect(document.layers).toEqual([]);
+    expect(document.bones).toHaveLength(1);
+    expect(document.bones[0]).toMatchObject({ name: "root", x: 512, y: 960 });
+    newDocument(2048, 2048);
+  });
+
+  it("clamps size to 16..8192", () => {
+    newDocument(1, 99999);
+    expect(document.canvas).toEqual({ width: 16, height: 8192 });
+    newDocument(2048, 2048);
   });
 });
 

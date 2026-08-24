@@ -43,15 +43,17 @@
   import type { Bone } from "../rig/document";
 
   let stage: HTMLDivElement;
-  // Viewport needs a real element with a parent to transform; it stays invisible and its CSS
-  // transform is never used — the pan/zoom/rotation it tracks are read back into the 2D context
-  // transform below instead, since the canvas is sized to the viewport, not to the document.
-  let anchor: HTMLDivElement;
+  // Paper wrapper: document-sized, CSS-transformed by Viewport (same as slop-paint / animator).
+  // Pan/zoom/rotate stay on the GPU; we only re-blit layers when pixels or pose change.
+  let paper: HTMLDivElement;
   let canvasEl: HTMLCanvasElement;
+  let rigEl: HTMLCanvasElement;
   let overlayEl: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D | null = null;
+  let rigCtx: CanvasRenderingContext2D | null = null;
   let viewport: Viewport | null = null;
   let didInitialFit = false;
+  let compositeRaf = 0;
 
   // Bumped by the resize observer so the redraw $effect also reruns on container resize.
   let size = $state({ width: 0, height: 0 });
@@ -204,48 +206,8 @@
   // export trims each layer to its own alpha, so a checkerboard baked into a layer would trim to
   // the full 2048x2048 page and destroy the atlas. Built once from a small offscreen tile and
   // tiled via createPattern rather than looping fillRect at low zoom.
-  const CHECKER_SQUARE = 32; // document units per square
-  const CHECKER_LIGHT = "#f2f2f2";
-  const CHECKER_DARK = "#dcdcdc";
-  let checkerPattern: CanvasPattern | null = null;
-
-  function getCheckerPattern(context: CanvasRenderingContext2D): CanvasPattern {
-    if (checkerPattern) return checkerPattern;
-    const tile = document.createElement("canvas");
-    tile.width = CHECKER_SQUARE * 2;
-    tile.height = CHECKER_SQUARE * 2;
-    const tctx = tile.getContext("2d")!;
-    tctx.fillStyle = CHECKER_LIGHT;
-    tctx.fillRect(0, 0, tile.width, tile.height);
-    tctx.fillStyle = CHECKER_DARK;
-    tctx.fillRect(0, 0, CHECKER_SQUARE, CHECKER_SQUARE);
-    tctx.fillRect(CHECKER_SQUARE, CHECKER_SQUARE, CHECKER_SQUARE, CHECKER_SQUARE);
-    checkerPattern = context.createPattern(tile, "repeat")!;
-    return checkerPattern;
-  }
-
-  function redraw() {
-    if (!ctx || !viewport || !canvasEl) return;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-    ctx.translate(viewport.panX, viewport.panY);
-    ctx.rotate(viewport.rotation);
-    ctx.scale(viewport.zoom, viewport.zoom);
-    // Page bounds, screen-draw only (never fills a layer.canvas — export trims each layer to its
-    // own alpha, so an opaque layer would trim to the full page). Checkerboard, not flat white:
-    // this project's art is grayscale line work with a paintable white value, and a white stroke
-    // on a flat white page would be invisible. The border keeps the edge visible once the fill is
-    // too small on screen to read as a page.
-    ctx.fillStyle = getCheckerPattern(ctx);
-    ctx.fillRect(0, 0, doc.canvas.width, doc.canvas.height);
-    ctx.lineWidth = 2 / viewport.zoom;
-    ctx.strokeStyle = "#000";
-    ctx.strokeRect(0, 0, doc.canvas.width, doc.canvas.height);
-
-    // The dragged bone and every descendant pose about the dragged bone's pivot. Bones with
-    // wobble lag that target (poseSim); the rest follow it rigidly.
+  function currentPoses() {
     const poseBones = poseSim?.names ?? (poseDrag ? poseNamesFor(poseDrag.bone) : null);
-    const poseBoneSet = poseBones ? new Set(poseBones) : null;
     const poses =
       poseDrag && poseBones
         ? makeBonePoses(
@@ -268,14 +230,20 @@
             (name) => poseSim?.bones[name]?.extraTheta ?? 0,
           )
         : null;
+    return { poseBones, poseBoneSet: poseBones ? new Set(poseBones) : null, poses };
+  }
+
+  /** Composite layers onto the document-sized paper canvas. No pan/zoom — that's CSS. */
+  function compositeDisplay() {
+    if (!ctx || !canvasEl) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    const { poseBones, poseBoneSet, poses } = currentPoses();
     if (ui.showDrawings) {
       for (const layer of doc.layers) {
         if (!layer.visible) continue;
         ctx.globalAlpha = layer.opacity;
         const warped = poseBones && poses && warpFor(layer.id);
-        // Reach does the scoping now, so most layers have zero weight for the posed bones — skip
-        // the warp for those and draw normally, rather than clipping them to their mesh hull (which
-        // loses soft brush fringe outside the hull) for no visual difference.
         const hasInfluence = warped && warped.weights.some((infs) => infs.some((i) => poseBoneSet!.has(i.bone)));
         if (warped && hasInfluence) {
           const deformed = poseDeform(warped.mesh, warped.weights, poses!);
@@ -286,30 +254,50 @@
       }
     }
     ctx.globalAlpha = 1;
+  }
 
+  /** Bones/meshes on a stage-sized overlay so 1px strokes stay 1 screen px (not CSS-scaled). */
+  function redrawRig() {
+    if (!rigCtx || !rigEl || !viewport) return;
+    rigCtx.setTransform(1, 0, 0, 1, 0, 0);
+    rigCtx.clearRect(0, 0, rigEl.width, rigEl.height);
     const flags = overlayFlags(ui.tool, ui.showBones, ui.showMeshes);
-    if (flags.bones || flags.mesh || flags.tint || flags.capsule) {
-      // Only derive when something that needs a mesh is actually being drawn. Under a paint tool
-      // this list stays empty and deriveSlot never runs — bones alone need no mesh.
-      const slots =
-        flags.mesh || flags.tint
-          ? doc.layers
-              .filter((l) => l.visible)
-              .map((l) => doc.slots.find((s) => s.layerId === l.id))
-              .filter((s) => s !== undefined)
-              .map((slot) => {
-                const derived = deriveSlot(doc, slot.name);
-                return { ...derived, selected: slot.layerId === ui.selectedLayerId };
-              })
-          : [];
-      const overlayBones = poses
-        ? doc.bones.map((b) => {
-            const pose = poses.find((p) => p.bone === b.name);
-            return pose ? posedOverlayBone(b, pose) : b;
-          })
-        : doc.bones;
-      drawRigOverlay(ctx, { bones: overlayBones, selectedBone: ui.selectedBone, slots }, viewport.zoom, flags);
-    }
+    if (!(flags.bones || flags.mesh || flags.tint || flags.capsule)) return;
+    rigCtx.translate(viewport.panX, viewport.panY);
+    rigCtx.rotate(viewport.rotation);
+    rigCtx.scale(viewport.zoom, viewport.zoom);
+    const { poses } = currentPoses();
+    const slots =
+      flags.mesh || flags.tint
+        ? doc.layers
+            .filter((l) => l.visible)
+            .map((l) => doc.slots.find((s) => s.layerId === l.id))
+            .filter((s) => s !== undefined)
+            .map((slot) => {
+              const derived = deriveSlot(doc, slot.name);
+              return { ...derived, selected: slot.layerId === ui.selectedLayerId };
+            })
+        : [];
+    const overlayBones = poses
+      ? doc.bones.map((b) => {
+          const pose = poses.find((p) => p.bone === b.name);
+          return pose ? posedOverlayBone(b, pose) : b;
+        })
+      : doc.bones;
+    drawRigOverlay(rigCtx, { bones: overlayBones, selectedBone: ui.selectedBone, slots }, viewport.zoom, flags);
+  }
+
+  function redraw() {
+    compositeDisplay();
+    redrawRig();
+  }
+
+  function scheduleComposite() {
+    if (compositeRaf) return;
+    compositeRaf = requestAnimationFrame(() => {
+      compositeRaf = 0;
+      compositeDisplay();
+    });
   }
 
   /** The mesh/weights a live pose-drag needs to warp `layer`'s drawing, if it has a slot at all.
@@ -322,6 +310,19 @@
     if (!slot) return null;
     return deriveSlot(doc, slot.name);
   }
+
+  $effect(() => {
+    const w = doc.canvas.width;
+    const h = doc.canvas.height;
+    if (!canvasEl) return;
+    if (canvasEl.width !== w || canvasEl.height !== h) {
+      canvasEl.width = w;
+      canvasEl.height = h;
+      clearPose();
+      if (selection?.active) selection.cancel();
+      viewport?.fitView(w, h);
+    }
+  });
 
   $effect(() => {
     JSON.stringify(doc);
@@ -349,7 +350,7 @@
     }
   });
 
-  const drawDispatch = createDrawDispatch();
+  const drawDispatch = createDrawDispatch({ onPainted: scheduleComposite });
 
   function transformCoords(sx: number, sy: number): { x: number; y: number } {
     return viewport ? viewport.screenToCanvas(sx, sy) : { x: sx, y: sy };
@@ -474,7 +475,7 @@
     else viewport.panBy(-e.deltaX, -e.deltaY); // content follows the scroll
   }
 
-  // --- Bone-tool gestures. Runs alongside setupInput's own listeners on canvasEl (handleStroke
+  // --- Bone-tool gestures. Runs alongside setupInput's own listeners on stage (handleStroke
   // no-ops for any non-painting tool (see isPaintTool), so the two never fight over a stroke).
   // Raw PointerEvents rather than
   // input.ts's InputPoint pipeline, because bone dragging wants exact deltas and shift/alt, neither
@@ -706,7 +707,7 @@
     if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
     if (!viewport || !selection) return;
     e.preventDefault();
-    canvasEl.setPointerCapture(e.pointerId);
+    stage.setPointerCapture(e.pointerId);
     selection.mode = ui.tool === "lasso" ? "lasso" : "rect";
     const pt = viewport.screenToCanvas(e.clientX, e.clientY);
     const handle = selection.hitTest(pt.x, pt.y);
@@ -738,7 +739,7 @@
     selection.endDrag();
     selectionMode = null;
     try {
-      canvasEl.releasePointerCapture(e.pointerId);
+      stage.releasePointerCapture(e.pointerId);
     } catch {
       /* already released */
     }
@@ -749,7 +750,7 @@
     if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
     if (!viewport) return;
     e.preventDefault();
-    canvasEl.setPointerCapture(e.pointerId);
+    stage.setPointerCapture(e.pointerId);
     const pt = viewport.screenToCanvas(e.clientX, e.clientY);
     const hitRadius = RIG_HIT_RADIUS / viewport.zoom;
 
@@ -919,28 +920,34 @@
       setRigCursor(null);
     }
     try {
-      canvasEl.releasePointerCapture(e.pointerId);
+      stage.releasePointerCapture(e.pointerId);
     } catch {
       /* already released */
     }
   }
 
   onMount(() => {
+    canvasEl.width = doc.canvas.width;
+    canvasEl.height = doc.canvas.height;
     ctx = canvasEl.getContext("2d");
-    viewport = new Viewport(anchor);
+    rigCtx = rigEl.getContext("2d");
+    viewport = new Viewport(paper);
     viewport.onChange = () => {
-      redraw();
+      redrawRig();
       syncSelectionOverlay();
     };
     setupSelection();
 
     const resizeObserver = new ResizeObserver(() => {
       const rect = stage.getBoundingClientRect();
-      canvasEl.width = Math.max(1, Math.round(rect.width));
-      canvasEl.height = Math.max(1, Math.round(rect.height));
-      overlayEl.width = canvasEl.width;
-      overlayEl.height = canvasEl.height;
+      const w = Math.max(1, Math.round(rect.width));
+      const h = Math.max(1, Math.round(rect.height));
+      overlayEl.width = w;
+      overlayEl.height = h;
+      rigEl.width = w;
+      rigEl.height = h;
       syncSelectionOverlay();
+      redrawRig();
       if (!didInitialFit && rect.width > 0 && rect.height > 0 && viewport) {
         viewport.fitView(doc.canvas.width, doc.canvas.height);
         didInitialFit = true;
@@ -953,26 +960,26 @@
       onUndo: () => history.undo(),
       onRedo: () => history.redo(),
       onToggleEraser: () => toggleEraserGesture(),
-      onViewportChange: redraw,
+      onViewportChange: () => {},
     });
 
-    const cleanupInput = setupInput(canvasEl, drawDispatch.handleStroke, transformCoords);
+    const cleanupInput = setupInput(stage, drawDispatch.handleStroke, transformCoords);
 
-    // Capture-phase on `stage` so a pan preempts input.ts's bubble-phase listeners on `canvasEl`
+    // Capture-phase on `stage` so a pan preempts input.ts's bubble-phase listeners
     // (same precedence slop-animator's Canvas.svelte uses).
     stage.addEventListener("pointerdown", onStagePointerDown, { capture: true });
     stage.addEventListener("pointermove", onStagePointerMove, { capture: true });
     stage.addEventListener("pointerup", onStagePointerUp, { capture: true });
     stage.addEventListener("pointercancel", onStagePointerUp, { capture: true });
     stage.addEventListener("wheel", onWheel, { passive: false });
-    canvasEl.addEventListener("pointerdown", onSelPointerDown);
-    canvasEl.addEventListener("pointermove", onSelPointerMove);
-    canvasEl.addEventListener("pointerup", onSelPointerUp);
-    canvasEl.addEventListener("pointercancel", onSelPointerUp);
-    canvasEl.addEventListener("pointerdown", onRigPointerDown);
-    canvasEl.addEventListener("pointermove", onRigPointerMove);
-    canvasEl.addEventListener("pointerup", onRigPointerUp);
-    canvasEl.addEventListener("pointercancel", onRigPointerUp);
+    stage.addEventListener("pointerdown", onSelPointerDown);
+    stage.addEventListener("pointermove", onSelPointerMove);
+    stage.addEventListener("pointerup", onSelPointerUp);
+    stage.addEventListener("pointercancel", onSelPointerUp);
+    stage.addEventListener("pointerdown", onRigPointerDown);
+    stage.addEventListener("pointermove", onRigPointerMove);
+    stage.addEventListener("pointerup", onRigPointerUp);
+    stage.addEventListener("pointercancel", onRigPointerUp);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     // Bridge for Toolbar.svelte's "Fit View" button — the viewport instance is local to this
@@ -983,6 +990,7 @@
 
     return () => {
       stopPoseLoop();
+      if (compositeRaf) cancelAnimationFrame(compositeRaf);
       cleanupTouch();
       cleanupInput();
       resizeObserver.disconnect();
@@ -991,14 +999,14 @@
       stage.removeEventListener("pointerup", onStagePointerUp, { capture: true });
       stage.removeEventListener("pointercancel", onStagePointerUp, { capture: true });
       stage.removeEventListener("wheel", onWheel);
-      canvasEl.removeEventListener("pointerdown", onSelPointerDown);
-      canvasEl.removeEventListener("pointermove", onSelPointerMove);
-      canvasEl.removeEventListener("pointerup", onSelPointerUp);
-      canvasEl.removeEventListener("pointercancel", onSelPointerUp);
-      canvasEl.removeEventListener("pointerdown", onRigPointerDown);
-      canvasEl.removeEventListener("pointermove", onRigPointerMove);
-      canvasEl.removeEventListener("pointerup", onRigPointerUp);
-      canvasEl.removeEventListener("pointercancel", onRigPointerUp);
+      stage.removeEventListener("pointerdown", onSelPointerDown);
+      stage.removeEventListener("pointermove", onSelPointerMove);
+      stage.removeEventListener("pointerup", onSelPointerUp);
+      stage.removeEventListener("pointercancel", onSelPointerUp);
+      stage.removeEventListener("pointerdown", onRigPointerDown);
+      stage.removeEventListener("pointermove", onRigPointerMove);
+      stage.removeEventListener("pointerup", onRigPointerUp);
+      stage.removeEventListener("pointercancel", onRigPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("slop-spine:fit-view", onFitViewRequest);
@@ -1007,9 +1015,24 @@
 </script>
 
 <div bind:this={stage} class="relative h-full w-full touch-none overflow-hidden bg-canvas-bg">
-  <div bind:this={anchor} class="absolute h-0 w-0"></div>
-  <canvas bind:this={canvasEl} class="absolute left-0 top-0 h-full w-full"></canvas>
-  <canvas bind:this={overlayEl} class="pointer-events-none absolute left-0 top-0 z-10 h-full w-full"></canvas>
+  <div
+    bind:this={paper}
+    class="absolute left-0 top-0 will-change-transform"
+    style="width: {doc.canvas.width}px; height: {doc.canvas.height}px"
+  >
+    <div
+      class="pointer-events-none absolute inset-0 {ui.whiteBg ? 'paper-white' : 'paper-checker'}"
+    ></div>
+    <canvas
+      bind:this={canvasEl}
+      class="absolute left-0 top-0"
+      width={doc.canvas.width}
+      height={doc.canvas.height}
+      style="width: {doc.canvas.width}px; height: {doc.canvas.height}px"
+    ></canvas>
+  </div>
+  <canvas bind:this={rigEl} class="pointer-events-none absolute inset-0 z-[5]"></canvas>
+  <canvas bind:this={overlayEl} class="pointer-events-none absolute inset-0 z-10"></canvas>
   <SelectionActions
     getSelection={() => selection}
     getViewport={() => viewport}

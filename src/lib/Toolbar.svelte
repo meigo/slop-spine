@@ -1,12 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { ui, isPaintTool, type BoneMode } from "../state/ui.svelte";
-  import { document as doc, loadDocument } from "../state/doc.svelte";
+  import { document as doc, loadDocument, newDocument } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
+  import { importPsd } from "../persist/psd";
+  import { clearAutosave } from "../persist/autosave";
+  import NewDocDialog from "./NewDocDialog.svelte";
   import { exportBundle, ExportError } from "../export/bundle";
   import { history, historyState } from "../state/history.svelte";
-  import { pressureCurve } from "./draw-dispatch";
+  import { pressureCurve, fillAllEnclosed } from "./draw-dispatch";
+  import { MAX_GAP, clampGap } from "../core/fill-holes";
   import { createCurveEditor } from "../core/pressure-curve";
+  import { clickOutside } from "./click-outside";
+  import ToolbarMenu from "./ToolbarMenu.svelte";
   import {
     Paintbrush,
     Eraser,
@@ -16,38 +22,14 @@
     Bone,
     Plus,
     RotateCcw,
-    Image,
-    Grid3x3,
     Undo2,
     Redo2,
-    Save,
-    FolderOpen,
-    Download,
-    Maximize,
     Spline,
   } from "@lucide/svelte";
 
   let fileInput: HTMLInputElement | undefined = $state();
-
-  // Svelte action: close the pressure-curve popup on a pointerdown outside `node`. Inlined here
-  // rather than a shared module — Toolbar.svelte is the only place in this tree with a popup that
-  // needs it, and this task's file scope is this component. Capture phase so it still fires if an
-  // inner handler (e.g. the curve canvas's own pointerdown) stops propagation.
-  function clickOutside(node: HTMLElement, onOutside: () => void) {
-    let cb = onOutside;
-    function handler(e: PointerEvent) {
-      if (!node.contains(e.target as Node)) cb();
-    }
-    document.addEventListener("pointerdown", handler, true);
-    return {
-      update(next: () => void) {
-        cb = next;
-      },
-      destroy() {
-        document.removeEventListener("pointerdown", handler, true);
-      },
-    };
-  }
+  let psdInput: HTMLInputElement | undefined = $state();
+  let newDocOpen = $state(false);
 
   let curveOpen = $state(false);
   let curvePopupEl: HTMLDivElement | undefined = $state();
@@ -89,12 +71,12 @@
     }
   });
 
-  const BRUSH_VALUES = ["#000000", "#404040", "#808080", "#b0b0b0", "#e0e0e0", "#ffffff"];
-
   // Verbatim from slop-animator's Toolbar.svelte — the point of this task is that all three
   // apps agree on the button language.
   const toolBtn =
     "size-8 rounded flex items-center justify-center text-text-secondary hover:bg-surface-hover";
+  const menuItem =
+    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-text-secondary hover:bg-surface-hover";
 
   function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
@@ -103,6 +85,13 @@
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function onNewDocument(width: number, height: number) {
+    newDocOpen = false;
+    void clearAutosave();
+    newDocument(width, height);
+    window.dispatchEvent(new Event("slop-spine:fit-view"));
   }
 
   async function onSave() {
@@ -133,8 +122,26 @@
     if (!file) return;
     try {
       loadDocument(await loadProject(file));
+      window.dispatchEvent(new Event("slop-spine:fit-view"));
     } catch (err) {
       console.error("load failed", err);
+      alert(err instanceof Error ? err.message : "Load failed.");
+    }
+  }
+
+  async function onPsdChosen(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    try {
+      const imported = importPsd(await file.arrayBuffer());
+      loadDocument(imported);
+      if (imported.layers.length) ui.selectedLayerId = imported.layers[imported.layers.length - 1].id;
+      window.dispatchEvent(new Event("slop-spine:fit-view"));
+    } catch (err) {
+      console.error("psd import failed", err);
+      alert(err instanceof Error ? err.message : "PSD import failed.");
     }
   }
 
@@ -160,36 +167,10 @@
 </script>
 
 <input type="file" accept=".zip" class="hidden" bind:this={fileInput} onchange={onFileChosen} />
+<input type="file" accept=".psd" class="hidden" bind:this={psdInput} onchange={onPsdChosen} />
+<NewDocDialog open={newDocOpen} onConfirm={onNewDocument} onCancel={() => (newDocOpen = false)} />
 
-<div class="flex flex-wrap items-center gap-2 border-b border-border bg-surface p-2 text-sm text-text">
-  <div class="flex overflow-hidden rounded border border-border">
-    <button class={toolBtn} title="Save" onclick={onSave}><Save size={18} /></button>
-    <button class={toolBtn} title="Load" onclick={() => fileInput?.click()}
-      ><FolderOpen size={18} /></button
-    >
-    <button class={toolBtn} title="Export" onclick={onExport}><Download size={18} /></button>
-  </div>
-  <div class="flex overflow-hidden rounded border border-border">
-    <button
-      class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
-      title={historyState.canUndo ? "Undo" : "Undo — nothing to undo"}
-      disabled={!historyState.canUndo}
-      onclick={() => history.undo()}
-    >
-      <Undo2 size={18} />
-    </button>
-    <button
-      class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
-      title={historyState.canRedo ? "Redo" : "Redo — nothing to redo"}
-      disabled={!historyState.canRedo}
-      onclick={() => history.redo()}
-    >
-      <Redo2 size={18} />
-    </button>
-  </div>
-  <div class="flex overflow-hidden rounded border border-border">
-    <button class={toolBtn} title="Fit View" onclick={onFitView}><Maximize size={18} /></button>
-  </div>
+<div class="flex flex-wrap items-center gap-1 border-b border-border bg-surface p-2 text-sm text-text">
   <div class="flex overflow-hidden rounded border border-border">
     <button
       class={toolBtn}
@@ -209,6 +190,8 @@
       title="Fill (G)"
       onclick={() => (ui.tool = "fill")}><PaintBucket size={18} /></button
     >
+  </div>
+  <div class="flex overflow-hidden rounded border border-border">
     <button
       class={toolBtn}
       class:bg-surface-active={ui.tool === "select"}
@@ -221,6 +204,8 @@
       title="Lasso (L)"
       onclick={() => (ui.tool = "lasso")}><Lasso size={18} /></button
     >
+  </div>
+  <div class="flex overflow-hidden rounded border border-border">
     <button
       class={toolBtn}
       class:bg-surface-active={ui.tool === "bone"}
@@ -246,31 +231,66 @@
   {/if}
   <div class="flex overflow-hidden rounded border border-border">
     <button
-      class={toolBtn}
-      class:bg-surface-active={ui.showDrawings}
-      title={ui.showDrawings ? "Drawings visible — click to hide" : "Drawings hidden — click to show"}
-      onclick={() => (ui.showDrawings = !ui.showDrawings)}
+      class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
+      title={historyState.canUndo ? "Undo" : "Undo — nothing to undo"}
+      disabled={!historyState.canUndo}
+      onclick={() => history.undo()}
     >
-      <Image size={18} />
+      <Undo2 size={18} />
     </button>
     <button
-      class={toolBtn}
-      class:bg-surface-active={ui.showBones}
-      title={ui.showBones ? "Bones visible — click to hide" : "Bones hidden — click to show"}
-      onclick={() => (ui.showBones = !ui.showBones)}
+      class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
+      title={historyState.canRedo ? "Redo" : "Redo — nothing to redo"}
+      disabled={!historyState.canRedo}
+      onclick={() => history.redo()}
     >
-      <Bone size={18} />
-    </button>
-    <button
-      class={toolBtn}
-      class:bg-surface-active={ui.showMeshes}
-      title={ui.showMeshes ? "Meshes visible — click to hide" : "Meshes hidden — click to show"}
-      onclick={() => (ui.showMeshes = !ui.showMeshes)}
-    >
-      <Grid3x3 size={18} />
+      <Redo2 size={18} />
     </button>
   </div>
-  {#if isPaintTool(ui.tool)}
+  {#snippet colorPicker()}
+    <input type="color" class="color-well" title="Color" bind:value={ui.brushValue} />
+  {/snippet}
+
+  {#if ui.tool === "fill"}
+    {@render colorPicker()}
+    <label class="flex items-center gap-1 text-xs text-text-secondary" title="Fill color tolerance">
+      Tolerance
+      <input type="range" min="0" max="128" class="w-24" bind:value={ui.fillTolerance} />
+      <span class="w-6 text-right font-mono">{ui.fillTolerance}</span>
+    </label>
+    <label class="flex items-center gap-1 text-xs text-text-secondary" title="Grow the filled region (px)">
+      Expand
+      <input type="range" min="0" max="8" class="w-16" bind:value={ui.fillExpand} />
+      <span class="w-4 text-right font-mono">{ui.fillExpand}</span>
+    </label>
+    <label
+      class="flex items-center gap-1 text-xs text-text-secondary"
+      title="Bridge breaks in the outline before filling, up to about twice this many pixels"
+    >
+      Gap
+      <input
+        type="range"
+        min="0"
+        max={MAX_GAP}
+        class="w-16"
+        value={ui.fillGap}
+        oninput={(e) => (ui.fillGap = clampGap((e.currentTarget as HTMLInputElement).value))}
+      />
+      <span class="w-4 text-right font-mono">{ui.fillGap}</span>
+    </label>
+    <label class="flex items-center gap-1">
+      Opacity
+      <input type="range" min="1" max="100" bind:value={ui.brushOpacity} />
+      <span class="w-8 text-right font-mono text-xs">{ui.brushOpacity}</span>
+    </label>
+    <button
+      class="h-7 rounded border border-border px-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text"
+      title="Fill every area enclosed by the outline, behind the strokes"
+      onclick={() => fillAllEnclosed()}
+    >
+      Fill enclosed
+    </button>
+  {:else if isPaintTool(ui.tool)}
     <div class="flex overflow-hidden rounded border border-border">
       <button
         class="px-3 py-1 {ui.brushType === 'smooth' ? 'bg-surface-active' : 'hover:bg-surface-hover'}"
@@ -292,21 +312,33 @@
       </button>
     </div>
 
-    <div class="flex overflow-hidden rounded border border-border">
-      {#each BRUSH_VALUES as value (value)}
-        <button
-          class="h-6 w-6 {ui.brushValue === value ? 'ring-2 ring-inset ring-[var(--color-selection)]' : ''}"
-          style="background-color: {value};"
-          aria-label="Value {value}"
-          onclick={() => (ui.brushValue = value)}
-        ></button>
-      {/each}
-    </div>
+    {#if ui.tool !== "eraser"}
+      {@render colorPicker()}
+    {/if}
 
     <label class="flex items-center gap-1">
       Size
       <input type="range" min="1" max="64" bind:value={ui.brushSize} />
       <span class="w-6 text-right font-mono text-xs">{ui.brushSize}</span>
+    </label>
+
+    <label class="flex items-center gap-1" title="How much pen pressure widens the stroke">
+      Press
+      <input
+        type="range"
+        min="1"
+        max="8"
+        step="0.5"
+        value={ui.tool === "eraser" ? ui.eraserPress : ui.brushPress}
+        oninput={(e) => {
+          const v = Number((e.currentTarget as HTMLInputElement).value);
+          if (ui.tool === "eraser") ui.eraserPress = v;
+          else ui.brushPress = v;
+        }}
+      />
+      <span class="w-6 text-right font-mono text-xs"
+        >{ui.tool === "eraser" ? ui.eraserPress : ui.brushPress}×</span
+      >
     </label>
 
     <label class="flex items-center gap-1">
@@ -315,18 +347,97 @@
       <span class="w-8 text-right font-mono text-xs">{ui.brushOpacity}</span>
     </label>
 
-    {#if ui.tool !== "fill"}
-      <div class="relative" use:clickOutside={() => (curveOpen = false)}>
-        <button
-          class={toolBtn}
-          class:bg-surface-active={curveOpen}
-          title="Pressure curve"
-          onclick={() => (curveOpen = !curveOpen)}
-        >
-          <Spline size={18} />
-        </button>
-        <div class="curve-popup" class:open={curveOpen} bind:this={curvePopupEl}></div>
-      </div>
-    {/if}
+    <div class="relative" use:clickOutside={() => (curveOpen = false)}>
+      <button
+        class={toolBtn}
+        class:bg-surface-active={curveOpen}
+        title="Pressure curve"
+        onclick={() => (curveOpen = !curveOpen)}
+      >
+        <Spline size={18} />
+      </button>
+      <div class="curve-popup" class:open={curveOpen} bind:this={curvePopupEl}></div>
+    </div>
   {/if}
+
+  <div class="ml-auto flex max-w-full shrink-0 flex-wrap items-center gap-1">
+    <ToolbarMenu label="File">
+      {#snippet children(close)}
+        <button
+          class={menuItem}
+          onclick={() => {
+            newDocOpen = true;
+            close();
+          }}>New…</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            fileInput?.click();
+            close();
+          }}>Open…</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            psdInput?.click();
+            close();
+          }}>Import PSD…</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            void onSave();
+            close();
+          }}>Save</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            void onExport();
+            close();
+          }}>Export Spine…</button
+        >
+      {/snippet}
+    </ToolbarMenu>
+    <ToolbarMenu label="View">
+      {#snippet children(close)}
+        <button
+          class={menuItem}
+          onclick={() => {
+            onFitView();
+            close();
+          }}>Fit to view</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            ui.showDrawings = !ui.showDrawings;
+            close();
+          }}>{ui.showDrawings ? "Hide drawings" : "Show drawings"}</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            ui.showBones = !ui.showBones;
+            close();
+          }}>{ui.showBones ? "Hide bones" : "Show bones"}</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            ui.showMeshes = !ui.showMeshes;
+            close();
+          }}>{ui.showMeshes ? "Hide meshes" : "Show meshes"}</button
+        >
+        <button
+          class={menuItem}
+          onclick={() => {
+            ui.whiteBg = !ui.whiteBg;
+            close();
+          }}>{ui.whiteBg ? "Checkerboard page" : "White page"}</button
+        >
+      {/snippet}
+    </ToolbarMenu>
+  </div>
 </div>

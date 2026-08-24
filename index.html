@@ -1,5 +1,16 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="UTF-8" /><title>slop-spine</title></head>
-  <body><div id="app"></div><script type="module" src="/src/main.ts"></script></body>
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Same as slop-animator: device-width so iPad is not a 980px desktop page scaled up.
+         user-scalable=no is ignored by modern iOS; touch-action: manipulation on #app is what
+         actually kills double-tap-to-zoom. No viewport-fit=cover (home-indicator insets). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>slop-spine</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>
+

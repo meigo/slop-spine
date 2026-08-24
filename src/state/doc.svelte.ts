@@ -449,6 +449,14 @@ export function setSlotBone(slotName: string, boneName: string) {
  *  bindings stay wired, only its fields change — and fast-forwards the id counters past whatever
  *  is in `doc`. Without this, a reloaded document whose highest layer id (or slot order) exceeds
  *  the reset-to-1 counters would collide with restored ids on the next add. */
+/** Wipe the live document and start a blank one at `width`×`height`. History is cleared
+ *  (loadDocument). Not undoable — there is no previous document to restore. */
+export function newDocument(width: number, height: number) {
+  const w = Math.max(16, Math.min(8192, Math.round(width)));
+  const h = Math.max(16, Math.min(8192, Math.round(height)));
+  loadDocument(emptyDocument(w, h));
+}
+
 export function loadDocument(doc: RigDocument) {
   document.canvas = doc.canvas;
   document.density = doc.density;

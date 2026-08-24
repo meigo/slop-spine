@@ -62,12 +62,21 @@ export const ui = $state({
   brushSize: 12,
   brushOpacity: 100,
   brushValue: "#000000",
+  /** Pen pressure multiplier (animator `sizeRange`): light → size/press, full → size*press. */
+  brushPress: 3,
+  eraserPress: 3,
+  /** Fill tool. Same defaults as animator. */
+  fillTolerance: 32,
+  fillExpand: 2,
+  fillGap: 0,
   /** Draw bones on canvas regardless of the active tool. Faint under a paint tool (see
    *  RigOverlay's flags), full opacity under the bone tool. The bone tool still draws bones
    *  when this is false — you cannot edit what you cannot see. */
   showBones: true,
   /** Draw layer pixels. Per-layer eyes still apply when this is on. */
   showDrawings: true,
+  /** Opaque white page instead of the checkerboard. Editor only — export stays trimmed alpha. */
+  whiteBg: false,
   /** Draw mesh wireframes. Independent of the tool. Default off. */
   showMeshes: false,
   /** Bone-tool sub-gesture. Shift still creates, Alt still poses; this is the iPad / no-key path. */

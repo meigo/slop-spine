@@ -24,3 +24,11 @@ export async function restore(): Promise<RigDocument | null> {
   const blob = await idbDo<Blob | undefined>(KV_STORE, "readonly", (s) => s.get(KEY));
   return blob ? loadProject(blob) : null;
 }
+
+/** Drop the autosave slot and cancel a pending write. Used by New Document so a reload
+ *  before the next debounce cannot resurrect the discarded project. */
+export async function clearAutosave(): Promise<void> {
+  clearTimeout(timer);
+  timer = undefined;
+  await idbDo(KV_STORE, "readwrite", (s) => s.delete(KEY));
+}
