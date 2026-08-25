@@ -166,6 +166,8 @@
       : { dtheta: poseDrag.dtheta, dx: poseDrag.dx, dy: poseDrag.dy };
     const bones: Record<string, PoseSimBone> = {};
     const posed = new Map<string, { origin: { x: number; y: number }; extraTheta: number }>();
+    /** Resolved translation per bone, so a child can inherit its parent's instead of the target's. */
+    const moved = new Map<string, { dx: number; dy: number }>();
     let allSettled = poseSim.settling;
     const parentOf = (n: string) => doc.bones.find((b) => b.name === n)?.parent ?? null;
     for (const name of poseSim.names) {
@@ -180,15 +182,28 @@
         dy: zeroAxis(),
         extraTheta: 0,
       };
-      // Translation: the dragged bone follows the pointer; others snap unless wobbleMove.
+      // Translation is INHERITED from the parent, not read off the global target. Rotation already
+      // works this way — a child is rotated about each ancestor's posed origin by that ancestor's
+      // extraTheta (see posedPoint) — but translation had no equivalent, so every bone snapped to
+      // the full drag delta independently. A static child of a move-wobble parent therefore ran
+      // ahead of it: it rotated with the parent but did not move with it, because rotating about a
+      // moved origin by extraTheta 0 leaves the point exactly where it was.
+      // `names` is parent-before-child (poseNamesFor), so the parent's value is already resolved.
+      // The dragged bone's own parent is outside the sim, so it falls through to the target — which
+      // is what "the dragged bone follows the pointer" means.
+      const from = (parentOf(name) && moved.get(parentOf(name)!)) || {
+        dx: target.dx,
+        dy: target.dy,
+      };
       const dx =
         follow || !move || wobble <= 0
-          ? { pos: target.dx, vel: 0 }
-          : stepWobble(prev.dx, target.dx, wobble, dt);
+          ? { pos: from.dx, vel: 0 }
+          : stepWobble(prev.dx, from.dx, wobble, dt);
       const dy =
         follow || !move || wobble <= 0
-          ? { pos: target.dy, vel: 0 }
-          : stepWobble(prev.dy, target.dy, wobble, dt);
+          ? { pos: from.dy, vel: 0 }
+          : stepWobble(prev.dy, from.dy, wobble, dt);
+      moved.set(name, { dx: dx.pos, dy: dy.pos });
       const delta = { pivot: poseDrag.pivot, dtheta: target.dtheta, dx: dx.pos, dy: dy.pos };
       const restO = bone ? { x: bone.x, y: bone.y } : { x: 0, y: 0 };
       const restT = bone ? boneRestTip(bone) : { x: 0, y: 0 };
@@ -238,16 +253,21 @@
             (name) => doc.bones.find((x) => x.name === name),
             (name) => {
               const sim = poseSim?.bones[name];
-              const b = doc.bones.find((x) => x.name === name);
-              const move = !!b?.wobbleMove;
               const settling = !!poseSim?.settling;
               const targetDx = settling ? 0 : poseDrag!.dx;
               const targetDy = settling ? 0 : poseDrag!.dy;
               return {
                 pivot: poseDrag!.pivot,
                 dtheta: settling ? 0 : poseDrag!.dtheta,
-                dx: move ? (sim?.dx.pos ?? targetDx) : targetDx,
-                dy: move ? (sim?.dy.pos ?? targetDy) : targetDy,
+                // The sim's translation, whatever this bone's own wobbleMove is. It used to read
+                // the sim only for bones that wobble themselves and hand everything else the raw
+                // drag delta — so a static child of a move-wobble bone was drawn at the DRAGGED
+                // bone's translation, i.e. visually parented to its grandparent (body>head>ear:
+                // the ears stuck to the body while the head lagged). advancePoseSim now resolves
+                // every bone's translation by inheritance, so this is the value to use for all of
+                // them; the fallback covers the frames before the sim exists, where it is 0 anyway.
+                dx: sim?.dx.pos ?? targetDx,
+                dy: sim?.dy.pos ?? targetDy,
               };
             },
             (name) => poseSim?.bones[name]?.extraTheta ?? 0,
