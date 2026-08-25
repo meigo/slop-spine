@@ -7,6 +7,7 @@
     renameLayer,
     toggleVisible,
     duplicateLayer,
+    setLayerOpacity,
     markLayerDirty,
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
@@ -150,6 +151,29 @@
       onclick={onRemove}><Trash2 size={16} /></button
     >
   </div>
+  <!-- Opacity acts on the selected layer, which is the Photoshop/Procreate placement. Its own row
+       because the dock is 224px by default and a slider does not fit beside four buttons. Preview
+       only: export ignores layer opacity by design (see setLayerOpacity), which is exactly what
+       makes a dimmed reference layer safe to trace over — hide it before export to drop it. -->
+  <label
+    class="flex items-center gap-2 border-b border-border px-2 py-1 text-xs text-text-secondary"
+    title={selected
+      ? "Opacity of the selected layer — editor preview only, never exported"
+      : "Opacity — select a layer first"}
+  >
+    Opacity
+    <input
+      type="range"
+      min="0"
+      max="100"
+      step="1"
+      class="min-w-0 flex-1 disabled:opacity-40"
+      disabled={selected == null}
+      value={Math.round((selected?.opacity ?? 1) * 100)}
+      oninput={(e) => selected && setLayerOpacity(selected.id, Number(e.currentTarget.value) / 100)}
+    />
+    <span class="w-8 text-right font-mono">{Math.round((selected?.opacity ?? 1) * 100)}%</span>
+  </label>
   <ul bind:this={listEl} class="flex-1 overflow-y-auto">
     {#key dragNonce}
       {#each topFirst as layer (layer.id)}

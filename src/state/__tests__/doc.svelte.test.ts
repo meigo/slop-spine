@@ -11,6 +11,7 @@ import {
   setSlotBone,
   reorderLayer,
   duplicateLayer,
+  setLayerOpacity,
   newDocument,
   document,
 } from "../doc.svelte";
@@ -190,5 +191,26 @@ describe("reorderLayer", () => {
     expect(document.layers.map((l) => l.id)).toEqual([1, 2, 3]);
     document.layers = savedLayers;
     history.clear();
+  });
+});
+
+describe("setLayerOpacity", () => {
+  it("clamps into 0..1 and ignores an unknown id", () => {
+    const saved = document.layers;
+    // dummyLayer, not addLayer: createLayer needs a real DOM to make its canvas, and these tests
+    // run without one.
+    document.layers = [dummyLayer(1)];
+    const id = 1;
+
+    setLayerOpacity(id, 0.4);
+    expect(document.layers[0].opacity).toBe(0.4);
+    // The slider only ever sends 0..1, but the setter is the guard for project files and PSDs.
+    setLayerOpacity(id, 5);
+    expect(document.layers[0].opacity).toBe(1);
+    setLayerOpacity(id, -2);
+    expect(document.layers[0].opacity).toBe(0);
+    expect(() => setLayerOpacity(9999, 0.5)).not.toThrow();
+
+    document.layers = saved;
   });
 });
