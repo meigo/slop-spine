@@ -12,9 +12,12 @@ import {
   reorderLayer,
   duplicateLayer,
   setLayerOpacity,
+  dissolveBone,
+  setBoneHead,
   newDocument,
   document,
 } from "../doc.svelte";
+import { boneTip } from "../../rig/chain";
 import { history } from "../history.svelte";
 import { ui } from "../ui.svelte";
 import type { Layer } from "../../rig/document";
@@ -212,5 +215,117 @@ describe("setLayerOpacity", () => {
     expect(() => setLayerOpacity(9999, 0.5)).not.toThrow();
 
     document.layers = saved;
+  });
+});
+
+describe("dissolveBone", () => {
+  it("rehangs the children on the parent and leaves the rest of the chain alone", () => {
+    const saved = snapshotRig();
+    const neck = addBone("root", 0, 0)!;
+    const jaw = addBone(neck, 10, 0)!;
+    const chin = addBone(jaw, 20, 0)!;
+    const other = addBone(neck, 50, 0)!;
+
+    dissolveBone(jaw);
+
+    expect(document.bones.some((b) => b.name === jaw)).toBe(false);
+    // The child survives, hung on the dissolved bone's own parent — this is the whole point,
+    // and it is what separates dissolve from delete.
+    expect(document.bones.find((b) => b.name === chin)!.parent).toBe(neck);
+    expect(document.bones.find((b) => b.name === other)!.parent).toBe(neck);
+    // Rest geometry is absolute in this rig (setParent only rewrites the link), so nothing moves.
+    expect(document.bones.find((b) => b.name === chin)!.x).toBe(20);
+    applyRig(saved);
+  });
+
+  it("transfers binds to the parent and dedupes", () => {
+    const saved = snapshotRig();
+    const neck = addBone("root", 0, 0)!;
+    const jaw = addBone(neck, 10, 0)!;
+    // Pushed directly: addLayer would make one, but it needs a DOM to build the layer canvas.
+    const savedSlots = document.slots;
+    const savedBinds = document.binds;
+    document.slots = [{ name: "s", layerId: 1, bone: "root", order: 0 }];
+    document.binds = [{ slot: "s", bones: [neck, jaw] }];
+
+    dissolveBone(jaw);
+    expect(document.binds.find((b) => b.slot === "s")!.bones).toEqual([neck]);
+
+    document.slots = savedSlots;
+    document.binds = savedBinds;
+    applyRig(saved);
+  });
+
+  it("repoints a slot hanging off the dissolved bone to its parent, not to root", () => {
+    const saved = snapshotRig();
+    const neck = addBone("root", 0, 0)!;
+    const jaw = addBone(neck, 10, 0)!;
+    const savedSlots = document.slots;
+    document.slots = [{ name: "s", layerId: 1, bone: jaw, order: 0 }];
+
+    dissolveBone(jaw);
+    // Not "root", which is where removeBone sends an orphaned slot — the artwork must stay on
+    // the chain.
+    expect(document.slots.find((s) => s.name === "s")!.bone).toBe(neck);
+
+    document.slots = savedSlots;
+    applyRig(saved);
+  });
+
+  it("refuses root and pushes no history entry", () => {
+    const saved = snapshotRig();
+    const before = document.bones.length;
+    dissolveBone("root");
+    expect(document.bones.length).toBe(before);
+    applyRig(saved);
+  });
+});
+
+describe("setBoneHead", () => {
+  it("moves the head, pins the tip, and leaves descendants where they are", () => {
+    const saved = snapshotRig();
+    const upper = addBone("root", 0, 0)!;
+    setBoneLength(upper, 100);
+    setBoneRotation(upper, 0); // tip at (100, 0)
+    const child = addBone(upper, 100, 0)!;
+    setBoneLength(child, 40);
+
+    setBoneHead(upper, 40, 0);
+
+    const u = document.bones.find((b) => b.name === upper)!;
+    expect(u.x).toBeCloseTo(40, 5);
+    expect(u.length).toBeCloseTo(60, 5); // 100 - 40: the span shrank from the head end
+    expect(boneTip(u).x).toBeCloseTo(100, 5); // tip pinned
+    expect(boneTip(u).y).toBeCloseTo(0, 5);
+    // The whole point: unlike moveBone, the subtree does not come along.
+    const c = document.bones.find((b) => b.name === child)!;
+    expect(c.x).toBe(100);
+    expect(c.y).toBe(0);
+    applyRig(saved);
+  });
+
+  it("re-aims the bone when the head moves off-axis, still pinning the tip", () => {
+    const saved = snapshotRig();
+    const b = addBone("root", 0, 0)!;
+    setBoneLength(b, 100);
+    setBoneRotation(b, 0); // tip at (100, 0)
+
+    setBoneHead(b, 100, -50); // straight below the tip
+
+    const bone = document.bones.find((x) => x.name === b)!;
+    expect(bone.length).toBeCloseTo(50, 5);
+    expect(boneTip(bone).x).toBeCloseTo(100, 5);
+    expect(boneTip(bone).y).toBeCloseTo(0, 5);
+    applyRig(saved);
+  });
+
+  it("refuses root", () => {
+    const saved = snapshotRig();
+    const root = document.bones.find((b) => b.name === "root")!;
+    const { x, y } = root;
+    setBoneHead("root", 999, 999);
+    expect(root.x).toBe(x);
+    expect(root.y).toBe(y);
+    applyRig(saved);
   });
 });

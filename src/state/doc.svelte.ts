@@ -7,7 +7,7 @@ import {
   type Bind,
 } from "../rig/document";
 import { invalidate } from "../rig/derive";
-import { splitBoneAt } from "../rig/chain";
+import { splitBoneAt, boneTip } from "../rig/chain";
 import { ui } from "./ui.svelte";
 import { history } from "./history.svelte";
 
@@ -266,6 +266,28 @@ export function moveBone(name: string, x: number, y: number) {
   }
 }
 
+/** Moves a bone's HEAD to (x, y) while pinning its tip, re-deriving length and rotation from the
+ *  new span. The counterpart to the tip drag, which pins the head and moves the tip; between them
+ *  they edit the two ends of one bone's span.
+ *
+ *  Deliberately does NOT translate descendants the way moveBone does. Rest coordinates here are
+ *  absolute and only moveBone couples a subtree, so leaving them alone is what makes this usable
+ *  for closing the gap a dissolve leaves behind: drag the orphan's head onto its new parent's tip
+ *  and nothing downstream shifts. */
+export function setBoneHead(name: string, x: number, y: number) {
+  if (name === "root") return;
+  const bone = document.bones.find((b) => b.name === name);
+  if (!bone) return;
+  const tip = boneTip(bone);
+  const dx = tip.x - x;
+  const dy = tip.y - y;
+  bone.x = x;
+  bone.y = y;
+  bone.length = Math.hypot(dx, dy);
+  // A zero-length span has no direction to derive; keep the old rotation rather than snapping to 0.
+  if (bone.length > 0) bone.rotation = (Math.atan2(dy, dx) * 180) / Math.PI;
+}
+
 export function setBoneLength(name: string, len: number) {
   const bone = document.bones.find((b) => b.name === name);
   if (!bone) return;
@@ -283,6 +305,55 @@ export function setBoneRotation(name: string, deg: number) {
 /** Removes a bone and everything parented under it, directly or transitively — otherwise a
  *  surviving bone's `parent` would dangle. Refuses root. Also strips the removed names out of
  *  any bind list and resets any slot pointing at one back to root, so nothing is left dangling. */
+/** Undoable delete of `name` and its subtree. Wraps removeBone — the raw mutation — with the
+ *  snapshot/push bracket and selection clearing that all three call sites need: the Inspector
+ *  button, the bone-mode toolbar button and the Delete key. The root guard is here as well as in
+ *  removeBone so a click on root cannot push an empty undo entry. */
+export function deleteBone(name: string) {
+  if (name === "root") return;
+  if (!document.bones.some((b) => b.name === name)) return;
+  // Computed before the mutation: afterwards there is nothing left to walk. Only clears the
+  // selection when it actually pointed into the deleted subtree, so deleting some other bone
+  // leaves the selection alone.
+  const removed = new Set([name, ...descendantsOf(name).map((b) => b.name)]);
+  const before = snapshotRig();
+  removeBone(name);
+  if (ui.selectedBone && removed.has(ui.selectedBone)) ui.selectedBone = null;
+  pushRigCommand(before, snapshotRig());
+}
+
+/** Undoable "dissolve": removes `name` but KEEPS its subtree, rehanging its direct children on its
+ *  own parent — the counterpart to deleteBone, which takes the whole subtree with it. Rest geometry
+ *  is absolute in this rig (setParent only rewrites the link, it never moves anything), so no bone
+ *  needs repositioning; only the hierarchy links, the slots and the binds change. */
+export function dissolveBone(name: string) {
+  if (name === "root") return;
+  const bone = document.bones.find((b) => b.name === name);
+  if (!bone) return;
+  const parent = bone.parent ?? "root";
+  const before = snapshotRig();
+
+  for (const child of document.bones) {
+    if (child.parent === name) child.parent = parent;
+  }
+  // To the parent, NOT to root the way removeBone repoints a slot whose bone it deleted: keeping
+  // the artwork attached to the chain is the entire point of dissolving rather than deleting.
+  for (const slot of document.slots) {
+    if (slot.bone === name) slot.bone = parent;
+  }
+  // Binds keep deforming what they deformed — the entry becomes the parent, deduped when the
+  // parent is already listed. Reach differs between the two bones, so this is close but not
+  // pixel-identical.
+  for (const bind of document.binds) {
+    if (!bind.bones.includes(name)) continue;
+    bind.bones = [...new Set(bind.bones.map((n) => (n === name ? parent : n)))];
+  }
+
+  document.bones = sortBonesByHierarchy(document.bones.filter((b) => b.name !== name));
+  if (ui.selectedBone === name) ui.selectedBone = null;
+  pushRigCommand(before, snapshotRig());
+}
+
 export function removeBone(name: string) {
   if (name === "root") return;
   if (!document.bones.some((b) => b.name === name)) return;

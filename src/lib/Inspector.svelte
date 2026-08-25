@@ -6,7 +6,8 @@
     setSlotDensity,
     setSlotBone,
     renameBone,
-    removeBone,
+    deleteBone,
+    dissolveBone,
     setParent,
     descendantsOf,
     snapshotRig,
@@ -15,6 +16,7 @@
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
   import { bindListAfterToggle } from "../rig/derive";
+  import { Trash2, FoldVertical } from "@lucide/svelte";
 
   let selectedSlot = $derived(doc.slots.find((s) => s.layerId === ui.selectedLayerId) ?? null);
   let selectedLayer = $derived(doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null);
@@ -87,11 +89,7 @@
     pushRigCommand(before, snapshotRig());
   }
   function onDeleteBone() {
-    if (!selectedBone) return;
-    const before = snapshotRig();
-    removeBone(selectedBone.name);
-    ui.selectedBone = null;
-    pushRigCommand(before, snapshotRig());
+    if (selectedBone) deleteBone(selectedBone.name);
   }
   function onParentChange(e: Event) {
     if (selectedBone) {
@@ -108,7 +106,7 @@
   {#if selectedBone}
     <label class="flex flex-col gap-1">
       Bone name
-      <div class="flex items-center gap-1">
+      <div class="flex items-center gap-1 self-start">
         <input
           class="min-w-0 flex-1 bg-canvas-bg px-1 text-text"
           bind:value={nameDraft}
@@ -118,13 +116,32 @@
       </div>
     </label>
 
-    <button
-      class="self-start rounded border border-border px-2 py-0.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text"
-      onclick={onDeleteBone}
-      title="Delete bone and its children"
-    >
-      Delete
-    </button>
+    <!-- Disabled on root to match the toolbar's: removeBone/dissolveBone both refuse root, so
+         without this they look clickable and silently do nothing. -->
+    <div class="flex items-center gap-1">
+      <button
+        class="flex size-7 items-center justify-center rounded border border-border text-text-secondary hover:bg-surface-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent"
+        onclick={onDeleteBone}
+        disabled={selectedBone.name === "root"}
+        title={selectedBone.name === "root"
+          ? "The root bone cannot be deleted"
+          : "Delete bone and its children (Del)"}
+        aria-label="Delete bone and its children"
+      >
+        <Trash2 size={15} />
+      </button>
+      <button
+        class="flex size-7 items-center justify-center rounded border border-border text-text-secondary hover:bg-surface-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent"
+        onclick={() => selectedBone && dissolveBone(selectedBone.name)}
+        disabled={selectedBone.name === "root"}
+        title={selectedBone.name === "root"
+          ? "The root bone cannot be dissolved"
+          : "Dissolve — remove this bone but keep its children, hung on its parent"}
+        aria-label="Dissolve bone, keeping its children"
+      >
+        <FoldVertical size={15} />
+      </button>
+    </div>
 
     <label class="flex flex-col gap-1">
       Parent

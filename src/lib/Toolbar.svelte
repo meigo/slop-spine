@@ -7,9 +7,14 @@
     bumpCurve,
     whyNotEditable,
     editBlockLabel,
-    type BoneMode,
   } from "../state/ui.svelte";
-  import { document as doc, loadDocument, newDocument } from "../state/doc.svelte";
+  import {
+    document as doc,
+    loadDocument,
+    newDocument,
+    deleteBone,
+    dissolveBone,
+  } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
   import { importPsd } from "../persist/psd";
   import { clearAutosave } from "../persist/autosave";
@@ -35,6 +40,8 @@
     Grid3x3,
     Plus,
     RotateCcw,
+    MousePointer2,
+    FoldVertical,
     Undo2,
     Redo2,
     Spline,
@@ -134,10 +141,6 @@
       console.error("export failed", e);
       alert(e instanceof ExportError ? e.message : "Export failed.");
     }
-  }
-
-  function setBoneMode(mode: BoneMode) {
-    ui.boneMode = ui.boneMode === mode ? "edit" : mode;
   }
 
   async function onFileChosen(e: Event) {
@@ -418,19 +421,61 @@
        moving anything in row 1. -->
   <div class="flex flex-wrap items-center gap-1">
     {#if ui.tool === "bone"}
+      <!-- Radio, not toggles: edit is the default mode, and with only Create and Pose as on/off
+           buttons it was the state where NEITHER was lit — nothing on screen said which mode you
+           were in. One of the three is always active. Shift and Alt still override whichever is
+           selected (see onRigPointerDown), so these set the no-modifier default. -->
       <div class="flex overflow-hidden rounded border border-border">
         <button
           class={toolBtn}
+          class:bg-surface-active={ui.boneMode === "edit"}
+          title="Edit bones — drag the shaft to move, the tip to rotate, the handle to set reach"
+          onclick={() => (ui.boneMode = "edit")}><MousePointer2 size={18} /></button
+        >
+        <button
+          class={toolBtn}
           class:bg-surface-active={ui.boneMode === "create"}
-          title="Create bone (Shift-drag). Shift-click a shaft to insert a joint."
-          onclick={() => setBoneMode("create")}><Plus size={18} /></button
+          title="Create bone (or Shift-drag). Shift-click a shaft to insert a joint."
+          onclick={() => (ui.boneMode = "create")}><Plus size={18} /></button
         >
         <button
           class={toolBtn}
           class:bg-surface-active={ui.boneMode === "pose"}
-          title="Pose (Alt-drag). Tip rotates, shaft translates."
-          onclick={() => setBoneMode("pose")}><RotateCcw size={18} /></button
+          title="Pose (or Alt-drag). Tip rotates, shaft translates."
+          onclick={() => (ui.boneMode = "pose")}><RotateCcw size={18} /></button
         >
+      </div>
+      <!-- Its own group: the three above are a mode radio, this is an action. Deletes the bone and
+           its subtree — the same thing the Delete key and the Inspector button do, all three
+           through deleteBone. Root has no delete (removeBone refuses it), so the button says so
+           rather than looking clickable and doing nothing. -->
+      <div class="flex overflow-hidden rounded border border-border">
+        <button
+          class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
+          disabled={!ui.selectedBone || ui.selectedBone === "root"}
+          title={!ui.selectedBone
+            ? "Delete bone — select one first"
+            : ui.selectedBone === "root"
+              ? "The root bone cannot be deleted"
+              : `Delete "${ui.selectedBone}" and its children (Del)`}
+          aria-label="Delete selected bone and its children"
+          onclick={() => ui.selectedBone && deleteBone(ui.selectedBone)}
+        >
+          <Trash2 size={18} />
+        </button>
+        <button
+          class="{toolBtn} disabled:opacity-40 disabled:hover:bg-transparent"
+          disabled={!ui.selectedBone || ui.selectedBone === "root"}
+          title={!ui.selectedBone
+            ? "Dissolve bone — select one first"
+            : ui.selectedBone === "root"
+              ? "The root bone cannot be dissolved"
+              : `Dissolve "${ui.selectedBone}" — remove it but keep its children, hung on its parent`}
+          aria-label="Dissolve selected bone, keeping its children"
+          onclick={() => ui.selectedBone && dissolveBone(ui.selectedBone)}
+        >
+          <FoldVertical size={18} />
+        </button>
       </div>
     {/if}
     {#if isSelectTool(ui.tool)}

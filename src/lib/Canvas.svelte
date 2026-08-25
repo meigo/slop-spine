@@ -7,8 +7,9 @@
     moveBone,
     setBoneLength,
     setBoneRotation,
+    setBoneHead,
     setReach,
-    removeBone,
+    deleteBone,
     markLayerDirty,
     descendantsOf,
     snapshotRig,
@@ -554,10 +555,7 @@
       }
       if (ui.selectedBone) {
         e.preventDefault();
-        const before = snapshotRig();
-        removeBone(ui.selectedBone);
-        ui.selectedBone = null;
-        pushRigCommand(before, snapshotRig());
+        deleteBone(ui.selectedBone);
       }
     }
   }
@@ -663,7 +661,21 @@
     return best;
   }
 
-  type RigHover = { kind: "reach" | "rotate" | "move"; bone: Bone };
+  type RigHover = { kind: "reach" | "tip" | "head" | "move"; bone: Bone };
+
+  /** Bones whose HEAD is within `radius`. Mirrors tipHit at the other end of the span. */
+  function headHit(pt: { x: number; y: number }, radius: number): Bone | null {
+    let best: Bone | null = null;
+    let bestD = Infinity;
+    for (const b of nonRootBones()) {
+      const d = Math.hypot(b.x - pt.x, b.y - pt.y);
+      if (d < radius && d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  }
 
   function rigHover(pt: { x: number; y: number }): RigHover | null {
     if (!viewport) return null;
@@ -676,16 +688,37 @@
         return { kind: "reach", bone: selected };
       }
     }
+    // The SELECTED bone's own ends win any tie. A connected joint puts a child's head exactly on
+    // its parent's tip, and without this the parent always took it — so the bone you had selected
+    // and were working on could not be grabbed at that end at all.
+    if (ui.selectedBone && ui.selectedBone !== "root") {
+      const sel = doc.bones.find((b) => b.name === ui.selectedBone);
+      if (sel) {
+        const st = boneTip(sel);
+        if (sel.length > 0 && Math.hypot(st.x - pt.x, st.y - pt.y) < handleR)
+          return { kind: "tip", bone: sel };
+        if (Math.hypot(sel.x - pt.x, sel.y - pt.y) < handleR) return { kind: "head", bone: sel };
+      }
+    }
     const tip = tipHit(pt, handleR);
-    if (tip) return { kind: "rotate", bone: tip };
+    if (tip) return { kind: "tip", bone: tip };
+    // Before the shaft: the head sits inside the shaft's hit region, so this takes a handle-sized
+    // bite out of grab-anywhere-to-move at the near end — the same trade the tip already makes at
+    // the far end. Only reachable in edit mode; create and pose return before rigHover is called.
+    const head = headHit(pt, handleR);
+    if (head) return { kind: "head", bone: head };
     const shaft = shaftHit(pt, bodyR);
     if (shaft) return { kind: "move", bone: shaft };
     return null;
   }
 
-  function setRigCursor(kind: RigHover["kind"] | "grabbing" | null) {
+  function setRigCursor(kind: RigHover["kind"] | "grabbing" | "rotate" | null) {
     if (!canvasEl) return;
+    // Edit mode drags an ENDPOINT at either end of the span (setBoneHead / setBoneLength+
+    // setBoneRotation), so both get the crossed-arrow move cursor. "rotate" is pose mode's, where
+    // the drag really does swing the bone about a pivot — that is the one place the dial fits.
     if (kind === "rotate") canvasEl.style.cursor = ROTATE_CURSOR;
+    else if (kind === "tip" || kind === "head") canvasEl.style.cursor = "move";
     else if (kind === "reach") canvasEl.style.cursor = "ew-resize";
     else if (kind === "move") canvasEl.style.cursor = "grab";
     else if (kind === "grabbing") canvasEl.style.cursor = "grabbing";
@@ -723,6 +756,7 @@
     // was held — pose-mode translate already works from a delta (see poseDrag.dx), this matches it.
     | { type: "move"; bone: string; grabDX: number; grabDY: number }
     | { type: "length"; bone: string; created?: true }
+    | { type: "head"; bone: string }
     | { type: "pose"; bone: string }
     | { type: "reach"; bone: string };
   let dragState: DragState | null = null;
@@ -1141,9 +1175,12 @@
     if (hover.kind === "reach") {
       dragState = { type: "reach", bone: hover.bone.name };
       setRigCursor("reach");
-    } else if (hover.kind === "rotate") {
+    } else if (hover.kind === "tip") {
       dragState = { type: "length", bone: hover.bone.name };
-      setRigCursor("rotate");
+      setRigCursor("tip");
+    } else if (hover.kind === "head") {
+      dragState = { type: "head", bone: hover.bone.name };
+      setRigCursor("head");
     } else {
       dragState = {
         type: "move",
@@ -1184,6 +1221,12 @@
         setBoneLength(dragState.bone, Math.hypot(dx, dy));
         setBoneRotation(dragState.bone, (Math.atan2(dy, dx) * 180) / Math.PI);
       }
+    } else if (dragState.type === "head") {
+      // Same snap as the other end, so a head lands exactly on a neighbouring bone's tip — which
+      // is how you close the gap a dissolve leaves. setBoneHead pins the tip, so nothing
+      // downstream moves.
+      const snapped = snapToBoneEnd(pt, dragState.bone, hitRadius);
+      setBoneHead(dragState.bone, snapped.x, snapped.y);
     } else if (dragState.type === "reach") {
       // Reuses distanceToBone's own point-to-segment projection (src/rig/weights.ts) rather than
       // a second copy of that maths, which would drift from the one computeWeights actually uses.

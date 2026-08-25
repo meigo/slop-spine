@@ -227,8 +227,10 @@ function drawBone(
     ctx.stroke();
   }
 
+  // Head grows when selected exactly as the tip does below: both ends are draggable handles that
+  // edit this bone's span (setBoneHead / setBoneLength+setBoneRotation), so they should look alike.
   ctx.beginPath();
-  ctx.arc(bone.x, bone.y, screenPx(6), 0, Math.PI * 2);
+  ctx.arc(bone.x, bone.y, screenPx(selected ? 8 : 6), 0, Math.PI * 2);
   ctx.globalAlpha = base;
   ctx.fill();
   if (bone.length > 0) {
