@@ -36,6 +36,7 @@
     SquareDashed,
     Lasso,
     Bone,
+    PersonStanding,
     Image,
     Grid3x3,
     Plus,
@@ -219,8 +220,11 @@
        keep the same place on screen no matter the tool or the width. They used to share one
        wrapping row with the contextual options below, which on a narrow screen (iPad) pushed the
        menus onto a second row where `ml-auto` parked them somewhere else entirely. A wrapping
-       flex container cannot pin an item to the first row, so the rows are explicit. -->
-  <div class="flex flex-wrap items-center gap-1">
+       flex container cannot pin an item to the first row, so the rows are explicit.
+       gap-3 here against the gap-1 inside each control: with both at gap-1 the boundary BETWEEN
+       two controls carried no more weight than the gap between two buttons, so the groups melted
+       into one strip — at this contrast the border does not separate them on its own. -->
+  <div class="flex flex-wrap items-center gap-3">
     <div class="flex overflow-hidden rounded border border-border">
       <button
         class={toolBtn}
@@ -243,8 +247,9 @@
         title={pixelTitle("Fill (G)")}
         onclick={() => (ui.tool = "fill")}><PaintBucket size={18} /></button
       >
-    </div>
-    <div class="flex overflow-hidden rounded border border-border">
+      <!-- Divider, not a separate control: the six buttons stay one radio, but paint / select /
+           rig still read as families. Same 1px rule the selection bar uses. -->
+      <div class="mx-1 h-6 w-px self-center bg-border"></div>
       <button
         class={toolBtn}
         class:opacity-40={toolsDimmed}
@@ -259,13 +264,20 @@
         title={pixelTitle("Lasso (L)")}
         onclick={() => (ui.tool = "lasso")}><Lasso size={18} /></button
       >
-    </div>
-    <div class="flex overflow-hidden rounded border border-border">
+      <div class="mx-1 h-6 w-px self-center bg-border"></div>
+      <!-- Bone lives in the SAME control as the paint and select tools, not in a group of its own.
+           ui.tool has always been a strict radio, but a lone bordered button sitting next to the
+           visibility toggles read as an on/off switch — so it was not obvious that picking a brush
+           is what leaves rigging. One control, one lit button, picking any tool releases the last.
+           It keeps no opacity-40: unlike the pixel tools, bone needs no editable layer.
+           A figure, not a bone glyph: "show bones" in the visibility toggles a few pixels away is
+           a bone, and two identical lit bone icons side by side was the real reason this strip read
+           as one undifferentiated block. The figure also says "the thing you are rigging". -->
       <button
         class={toolBtn}
         class:bg-surface-active={ui.tool === "bone"}
-        title="Bone (R)"
-        onclick={() => (ui.tool = "bone")}><Bone size={18} /></button
+        title="Rig (R) — edit the skeleton"
+        onclick={() => (ui.tool = "bone")}><PersonStanding size={18} /></button
       >
     </div>
     <!-- Visibility toggles. These live in the toolbar rather than only under View because they are
