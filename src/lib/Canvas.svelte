@@ -698,7 +698,10 @@
   }
 
   type DragState =
-    | { type: "move"; bone: string }
+    // grabDX/grabDY: where the bone's origin sat relative to the pointer when the drag started.
+    // Without it a shaft grab teleports the head to the cursor instead of dragging from where it
+    // was held — pose-mode translate already works from a delta (see poseDrag.dx), this matches it.
+    | { type: "move"; bone: string; grabDX: number; grabDY: number }
     | { type: "length"; bone: string; created?: true }
     | { type: "pose"; bone: string }
     | { type: "reach"; bone: string };
@@ -1122,7 +1125,12 @@
       dragState = { type: "length", bone: hover.bone.name };
       setRigCursor("rotate");
     } else {
-      dragState = { type: "move", bone: hover.bone.name };
+      dragState = {
+        type: "move",
+        bone: hover.bone.name,
+        grabDX: hover.bone.x - pt.x,
+        grabDY: hover.bone.y - pt.y,
+      };
       setRigCursor("grabbing");
     }
   }
@@ -1142,7 +1150,10 @@
     if (dragState.type === "move") {
       // moveBone re-derives the delta it drags descendants by from (snapped x/y) - (bone's
       // current x/y), so snapping here is enough to keep the subtree attached to the snap too.
-      const snapped = snapToBoneEnd(pt, dragState.bone, hitRadius);
+      // Snap the ORIGIN the drag is steering, not the raw pointer: joining this bone's head to
+      // another bone's end is the point of the snap, and with a grab offset the two differ.
+      const head = { x: pt.x + dragState.grabDX, y: pt.y + dragState.grabDY };
+      const snapped = snapToBoneEnd(head, dragState.bone, hitRadius);
       moveBone(dragState.bone, snapped.x, snapped.y);
     } else if (dragState.type === "length") {
       const bone = doc.bones.find((b) => b.name === dragState!.bone);
