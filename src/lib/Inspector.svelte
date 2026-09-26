@@ -101,165 +101,180 @@
   }
 </script>
 
-<!-- Restyled on the family tokens (fields as slop-paint's dialogs: 28px, raised, rounded). -->
-<div class="flex flex-col gap-3 px-2.5 pt-2.5 pb-3 text-xs text-text-secondary">
-  <span class="font-semibold">Inspector</span>
+<!-- As slop-vector-editor's side panels: a RAISED header band, so the boundary with the layer list
+     above is a change of colour rather than a 1px line one step off the background; the panel's
+     own actions sit at its right. Fields in one two-column grid, labels left, controls right. -->
+<div class="flex h-full min-h-0 flex-col text-xs text-text-secondary">
+  <div class="flex h-10 shrink-0 items-center gap-1 bg-surface-raised pr-1.5 pl-2.5">
+    <span class="text-[11px] font-medium tracking-wide text-text-secondary uppercase"
+      >{selectedBone ? "Bone" : selectedSlot ? "Layer" : "Inspector"}</span
+    >
+    {#if selectedBone}
+      <!-- root can't be removed or dissolved (removeBone/dissolveBone refuse it), so the buttons
+           say so rather than look clickable and do nothing. -->
+      {@const isRoot = selectedBone.name === "root"}
+      <div class="ml-auto flex items-center gap-1">
+        <button
+          class="flex size-7 items-center justify-center rounded text-text-secondary hover:bg-surface-hover hover:text-text aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
+          onclick={() => {
+            if (!isRoot) onDeleteBone();
+          }}
+          aria-disabled={isRoot}
+          title={isRoot ? "The root bone cannot be deleted" : "Delete bone and its children (Del)"}
+          aria-label="Delete bone and its children"
+        >
+          <Trash2 size={16} />
+        </button>
+        <button
+          class="flex size-7 items-center justify-center rounded text-text-secondary hover:bg-surface-hover hover:text-text aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
+          onclick={() => {
+            if (!isRoot) dissolveBone(selectedBone.name);
+          }}
+          aria-disabled={isRoot}
+          title={isRoot
+            ? "The root bone cannot be dissolved"
+            : "Dissolve — remove this bone but keep its children, hung on its parent"}
+          aria-label="Dissolve bone, keeping its children"
+        >
+          <FoldVertical size={16} />
+        </button>
+      </div>
+    {/if}
+  </div>
 
-  {#if selectedBone}
-    <label class="flex flex-col gap-1">
-      Bone name
-      <div class="flex items-center gap-1 self-start">
+  <div class="min-h-0 flex-1 overflow-y-auto px-2.5 py-3">
+    {#if selectedBone}
+      <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
+        <label for="inspector-bone-name">Name</label>
         <input
-          class="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
+          id="inspector-bone-name"
+          class="h-7 min-w-0 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
           bind:value={nameDraft}
           onblur={commitName}
           onkeydown={(e) => e.key === "Enter" && commitName()}
         />
-      </div>
-    </label>
 
-    <!-- Disabled on root to match the toolbar's: removeBone/dissolveBone both refuse root, so
-         without this they look clickable and silently do nothing. -->
-    <div class="flex items-center gap-1">
-      <button
-        class="flex size-7 items-center justify-center rounded-md border border-border bg-surface text-text-secondary transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-40 disabled:hover:bg-surface"
-        onclick={onDeleteBone}
-        disabled={selectedBone.name === "root"}
-        title={selectedBone.name === "root"
-          ? "The root bone cannot be deleted"
-          : "Delete bone and its children (Del)"}
-        aria-label="Delete bone and its children"
-      >
-        <Trash2 size={15} />
-      </button>
-      <button
-        class="flex size-7 items-center justify-center rounded-md border border-border bg-surface text-text-secondary transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-40 disabled:hover:bg-surface"
-        onclick={() => selectedBone && dissolveBone(selectedBone.name)}
-        disabled={selectedBone.name === "root"}
-        title={selectedBone.name === "root"
-          ? "The root bone cannot be dissolved"
-          : "Dissolve — remove this bone but keep its children, hung on its parent"}
-        aria-label="Dissolve bone, keeping its children"
-      >
-        <FoldVertical size={15} />
-      </button>
-    </div>
-
-    <label class="flex flex-col gap-1">
-      Parent
-      <select
-        class="h-7 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
-        value={selectedBone.parent}
-        onchange={onParentChange}
-      >
-        {#each parentOptions as bone (bone.name)}
-          <option value={bone.name}>{bone.name}</option>
-        {/each}
-      </select>
-    </label>
-
-    <label class="flex flex-col gap-1">
-      Wobble
-      <div class="flex items-center gap-1">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          class="min-w-0 flex-1"
-          style={sliderFill(selectedBone.wobble, 0, 1)}
-          value={selectedBone.wobble}
-          onpointerdown={onWobblePointerDown}
-          onpointerup={onWobblePointerUp}
-          oninput={onWobbleInput}
-        />
-        <span class="w-8 text-right text-[11px] text-text-muted"
-          >{selectedBone.wobble.toFixed(2)}</span
+        <label for="inspector-bone-parent">Parent</label>
+        <select
+          id="inspector-bone-parent"
+          class="h-7 min-w-0 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
+          value={selectedBone.parent}
+          onchange={onParentChange}
         >
-      </div>
-      <label
-        class="flex items-center gap-1 text-xs text-text-secondary"
-        title="Off: rotation only (default). On: also lag position."
-      >
-        <input
-          type="checkbox"
-          checked={!!selectedBone.wobbleMove}
-          onchange={(e) => {
-            const before = snapshotRig();
-            setWobbleMove(selectedBone.name, (e.target as HTMLInputElement).checked);
-            pushRigCommand(before, snapshotRig());
-          }}
-        />
-        Also move
-      </label>
-    </label>
-  {:else if selectedSlot}
-    <label class="flex flex-col gap-1">
-      Hangs from
-      <select
-        class="h-7 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
-        value={selectedSlot.bone}
-        onchange={onHangFrom}
-      >
-        {#each doc.bones as bone (bone.name)}
-          <option value={bone.name}>{bone.name}</option>
-        {/each}
-      </select>
-    </label>
+          {#each parentOptions as bone (bone.name)}
+            <option value={bone.name}>{bone.name}</option>
+          {/each}
+        </select>
 
-    <label class="flex flex-col gap-1">
-      Density — {selectedLayer?.name ?? selectedSlot.name}
-      <div class="flex items-center gap-1">
-        <input
-          type="range"
-          min="8"
-          max="96"
-          class="min-w-0 flex-1"
-          style={sliderFill(effectiveDensity, 8, 96)}
-          value={effectiveDensity}
-          oninput={onDensityInput}
-        />
-        <span class="w-6 text-right text-[11px] text-text-muted">{effectiveDensity}</span>
-        {#if hasDensityOverride}
-          <button
-            class="shrink-0 text-text-muted hover:text-text"
-            onclick={resetDensity}
-            title="Reset to document default"
+        <span>Wobble</span>
+        <div class="flex min-w-0 items-center gap-2">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            class="min-w-0 flex-1"
+            aria-label="Wobble"
+            style={sliderFill(selectedBone.wobble, 0, 1)}
+            value={selectedBone.wobble}
+            onpointerdown={onWobblePointerDown}
+            onpointerup={onWobblePointerUp}
+            oninput={onWobbleInput}
+          />
+          <span class="w-8 text-right text-[11px] text-text-muted"
+            >{selectedBone.wobble.toFixed(2)}</span
           >
-            ↺
-          </button>
+        </div>
+
+        <span></span>
+        <label
+          class="flex items-center gap-1.5"
+          title="Off: rotation only (default). On: also lag position."
+        >
+          <input
+            type="checkbox"
+            checked={!!selectedBone.wobbleMove}
+            onchange={(e) => {
+              const before = snapshotRig();
+              setWobbleMove(selectedBone.name, (e.target as HTMLInputElement).checked);
+              pushRigCommand(before, snapshotRig());
+            }}
+          />
+          Also move
+        </label>
+      </div>
+    {:else if selectedSlot}
+      <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
+        <span class="col-span-2 truncate text-text">{selectedLayer?.name ?? selectedSlot.name}</span
+        >
+
+        <label for="inspector-hangs-from">Hangs from</label>
+        <select
+          id="inspector-hangs-from"
+          class="h-7 min-w-0 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
+          value={selectedSlot.bone}
+          onchange={onHangFrom}
+        >
+          {#each doc.bones as bone (bone.name)}
+            <option value={bone.name}>{bone.name}</option>
+          {/each}
+        </select>
+
+        <span>Density</span>
+        <div class="flex min-w-0 items-center gap-2">
+          <input
+            type="range"
+            min="8"
+            max="96"
+            class="min-w-0 flex-1"
+            aria-label="Mesh density"
+            style={sliderFill(effectiveDensity, 8, 96)}
+            value={effectiveDensity}
+            oninput={onDensityInput}
+          />
+          <span class="w-6 text-right text-[11px] text-text-muted">{effectiveDensity}</span>
+          {#if hasDensityOverride}
+            <button
+              class="shrink-0 text-text-muted hover:text-text"
+              onclick={resetDensity}
+              title="Reset to document default"
+            >
+              ↺
+            </button>
+          {/if}
+        </div>
+
+        <!-- Full-width divider row, as vector-editor's section headings inside its field grid. -->
+        <span
+          class="col-span-2 mt-1 border-t border-border pt-2.5 text-[11px] font-medium tracking-wide uppercase"
+          >Deformers</span
+        >
+        <p class="col-span-2 text-text-muted">
+          Uncheck a bone to exclude it from this layer. Reach still limits how far each included
+          bone reaches.
+        </p>
+        {#if bindableBones.length === 0}
+          <p class="col-span-2 text-text-muted">No bones yet.</p>
+        {:else}
+          <ul class="col-span-2 flex flex-col gap-1">
+            {#each bindableBones as bone (bone.name)}
+              <li>
+                <label class="flex items-center gap-1.5 text-text">
+                  <input
+                    type="checkbox"
+                    checked={bindIncluded.has(bone.name)}
+                    onchange={(e) =>
+                      onBindToggle(bone.name, (e.target as HTMLInputElement).checked)}
+                  />
+                  {bone.name}
+                </label>
+              </li>
+            {/each}
+          </ul>
         {/if}
       </div>
-    </label>
-
-    <div class="flex flex-col gap-1">
-      <span class="text-xs text-text-secondary"
-        >Deformers — {selectedLayer?.name ?? selectedSlot.name}</span
-      >
-      <p class="text-xs text-text-muted">
-        Uncheck a bone to exclude it from this layer. Reach still limits how far each included bone
-        reaches.
-      </p>
-      {#if bindableBones.length === 0}
-        <p class="text-xs text-text-muted">No bones yet.</p>
-      {:else}
-        <ul class="flex flex-col gap-0.5">
-          {#each bindableBones as bone (bone.name)}
-            <li>
-              <label class="flex items-center gap-1.5 text-text">
-                <input
-                  type="checkbox"
-                  checked={bindIncluded.has(bone.name)}
-                  onchange={(e) => onBindToggle(bone.name, (e.target as HTMLInputElement).checked)}
-                />
-                {bone.name}
-              </label>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </div>
-  {:else}
-    <p class="text-xs text-text-muted">Select a layer or a bone.</p>
-  {/if}
+    {:else}
+      <p class="text-text-muted">Select a layer or a bone.</p>
+    {/if}
+  </div>
 </div>
