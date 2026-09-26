@@ -101,21 +101,32 @@
   }
 </script>
 
-<!-- As slop-vector-editor's side panels: a RAISED header band, so the boundary with the layer list
-     above is a change of colour rather than a 1px line one step off the background; the panel's
-     own actions sit at its right. Fields in one two-column grid, labels left, controls right. -->
+<!-- The header is the Layers header's twin (flat 40px bar, same type, border below, actions at the
+     right), so the dock's two panels speak one language. What separates them is the raised grip
+     band above this panel (App.svelte), as slop-vector-editor's divider. The title names what is
+     being inspected, so the body doesn't repeat it. Fields in one two-column grid. -->
 <div class="flex h-full min-h-0 flex-col text-xs text-text-secondary">
-  <div class="flex h-10 shrink-0 items-center gap-1 bg-surface-raised pr-1.5 pl-2.5">
-    <span class="text-[11px] font-medium tracking-wide text-text-secondary uppercase"
-      >{selectedBone ? "Bone" : selectedSlot ? "Layer" : "Inspector"}</span
-    >
+  <div
+    class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-2.5 text-xs font-semibold text-text-secondary"
+  >
+    <span class="min-w-0 truncate">
+      {#if selectedBone}
+        {selectedBone.name}<span class="font-normal text-text-muted"> · bone</span>
+      {:else if selectedSlot}
+        {selectedLayer?.name ?? selectedSlot.name}<span class="font-normal text-text-muted">
+          · layer</span
+        >
+      {:else}
+        Inspector
+      {/if}
+    </span>
     {#if selectedBone}
       <!-- root can't be removed or dissolved (removeBone/dissolveBone refuse it), so the buttons
            say so rather than look clickable and do nothing. -->
       {@const isRoot = selectedBone.name === "root"}
-      <div class="ml-auto flex items-center gap-1">
+      <div class="flex shrink-0 items-center gap-1">
         <button
-          class="flex size-7 items-center justify-center rounded text-text-secondary hover:bg-surface-hover hover:text-text aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
+          class="flex size-7 cursor-pointer items-center justify-center rounded text-text-secondary hover:bg-surface-hover aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
           onclick={() => {
             if (!isRoot) onDeleteBone();
           }}
@@ -126,7 +137,7 @@
           <Trash2 size={16} />
         </button>
         <button
-          class="flex size-7 items-center justify-center rounded text-text-secondary hover:bg-surface-hover hover:text-text aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
+          class="flex size-7 cursor-pointer items-center justify-center rounded text-text-secondary hover:bg-surface-hover aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
           onclick={() => {
             if (!isRoot) dissolveBone(selectedBone.name);
           }}

@@ -175,11 +175,12 @@
         <LayerPanel />
       </div>
       <div class="flex shrink-0 flex-col" style:height="{ui.inspectorHeight}px">
-        <!-- A 12px band with a grip pill, as slop-vector-editor's divider between its panels: it
+        <!-- A 12px RAISED band with a grip pill: the boundary between the layer list and the
+             Inspector is a change of colour (as slop-vector-editor's raised panel headers), and it
              reads as the place to drag, where the old 1px border did not. `touch-action: none` or
              iPad treats the drag as a scroll and cancels the pointer stream. -->
         <div
-          class="group flex h-3 shrink-0 cursor-row-resize items-center justify-center border-t border-border bg-surface"
+          class="group flex h-3 shrink-0 cursor-row-resize items-center justify-center bg-surface-raised"
           style="touch-action: none"
           role="separator"
           aria-orientation="horizontal"
@@ -190,7 +191,7 @@
           onpointerup={heightUp}
           onpointercancel={heightUp}
         >
-          <div class="h-0.5 w-8 rounded-full bg-text-muted/40 group-hover:bg-text-muted"></div>
+          <div class="h-0.5 w-8 rounded-full bg-text-muted/50 group-hover:bg-text-muted"></div>
         </div>
         <div class="min-h-0 flex-1">
           <Inspector />
