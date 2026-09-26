@@ -117,6 +117,15 @@ describe("overlayFlags", () => {
     expect(overlayFlags("bone", true, true).mesh).toBe(true);
   });
 
+  it("hides the weight tint while a pose drag is live — it is drawn at rest, not posed", () => {
+    const posing = overlayFlags("bone", true, false, true);
+    expect(posing.tint).toBe(false);
+    // Everything else stays as the bone tool shows it.
+    expect(posing.bones).toBe(true);
+    expect(posing.capsule).toBe(true);
+    expect(overlayFlags("bone", true, false, false).tint).toBe(true);
+  });
+
   it("tint and capsule are bone-tool chrome, independent of the meshes toggle", () => {
     for (const meshes of [true, false]) {
       const paint = overlayFlags("fill", true, meshes);

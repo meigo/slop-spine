@@ -311,7 +311,7 @@
     if (!rigCtx || !rigEl || !viewport) return;
     rigCtx.setTransform(1, 0, 0, 1, 0, 0);
     rigCtx.clearRect(0, 0, rigEl.width, rigEl.height);
-    const flags = overlayFlags(ui.tool, ui.showBones, ui.showMeshes);
+    const flags = overlayFlags(ui.tool, ui.showBones, ui.showMeshes, poseDrag !== null);
     if (!(flags.bones || flags.mesh || flags.tint || flags.capsule)) return;
     rigCtx.translate(viewport.panX, viewport.panY);
     rigCtx.rotate(viewport.rotation);

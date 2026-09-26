@@ -415,14 +415,22 @@ export interface OverlayFlags {
   capsule: boolean;
 }
 
-/** What the rig overlay draws, given the active tool and the visibility toggles. Pure. */
-export function overlayFlags(tool: Tool, showBones: boolean, showMeshes = false): OverlayFlags {
+/** What the rig overlay draws, given the active tool and the visibility toggles. Pure.
+ *  `posing`: a pose drag (or its wobble settling) is live. The weight tint is drawn at the mesh's
+ *  REST vertices, so while the art deforms under it the dots would sit where the drawing no longer
+ *  is — and they hide the pose you are judging. It comes back when the pose ends. */
+export function overlayFlags(
+  tool: Tool,
+  showBones: boolean,
+  showMeshes = false,
+  posing = false,
+): OverlayFlags {
   const rigging = tool === "bone";
   return {
     bones: rigging || showBones,
     faint: !rigging,
     mesh: showMeshes,
-    tint: rigging,
+    tint: rigging && !posing,
     capsule: rigging,
   };
 }
