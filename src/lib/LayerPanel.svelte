@@ -157,7 +157,7 @@
   <!-- h-10: the tool-options row's height, as slop-paint's header. Grouped create │ clear │
        destroy, so a mis-tap on Clear can't delete. -->
   <div
-    class="flex h-10 shrink-0 items-center justify-between border-b border-border px-2.5 text-xs font-semibold text-text-secondary"
+    class="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface-bar px-2.5 text-xs font-semibold text-text-secondary"
   >
     <span>Layers</span>
     <div class="flex items-center gap-1">

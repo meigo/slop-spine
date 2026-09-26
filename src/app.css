@@ -8,6 +8,9 @@
   --color-surface-hover: #2d2d33;
   --color-surface-active: #2d2d33;
   --color-surface-raised: #2d2d33; /* family `raised` */
+  /* Secondary bars — the tool-options row and the dock's panel headers — one step lighter than
+     the panel so they read as bars, but short of `raised` (buttons, the grip band). Spine only. */
+  --color-surface-bar: #26262b;
   --color-border: #2e2e35; /* family `line` */
   --color-border-light: #26262b;
   --color-text: #f4f4f5;
