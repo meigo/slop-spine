@@ -62,6 +62,83 @@
     -3px 0;
 }
 
+/* Document-space checker, CSS-transformed with the paper so pan/zoom is GPU. Light, with 8px
+ * squares — slop-paint's canvas checkerboard, so dark strokes show on transparency. */
+.paper-checker {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  box-shadow: 0 0 0 1px #000;
+}
+.paper-white/.paper-checker below,
+not these tokens. */ @theme {
+  --color-surface: #1e1e22; /* family `panel` */
+  --color-surface-hover: #2d2d33;
+  --color-surface-active: #2d2d33;
+  --color-surface-raised: #2d2d33; /* family `raised` */
+  --color-border: #2e2e35; /* family `line` */
+  --color-border-light: #26262b;
+  --color-text: #f4f4f5;
+  --color-text-secondary: #a1a1aa; /* family `muted` */
+  --color-text-muted: #8a8a93;
+  --color-canvas-bg: #101013; /* family `ground` */
+  /* THE accent: active tool/toggle, selection, focus. Near-black text on it (5.92:1). */
+  --color-accent: #5b8cff;
+  --color-accent-hover: #7aa3ff;
+  --color-accent-text: #121212;
+  --color-selection: #5b8cff;
+  /* Caution: why something won't behave as you expect (hidden layer, a marquee limiting paint). */
+  --color-warn: #d5b75d;
+}
+
+/* Native controls (checkbox, spinners, the colour picker, scrollbars) follow the dark scheme. */
+:root {
+  color-scheme: dark;
+  accent-color: var(--color-accent);
+}
+
+/* On-states, defined once (SLOP-TIMELINE-UI.md §6), as slop-paint. `.ui-on` = a tool or toggle that
+   is on; `.ui-selected` = the current row, a faint tint plus a 2px left edge. Unlayered, so they
+   beat any Tailwind colour utility on the same element. */
+.ui-on {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.ui-on:hover {
+  background-color: var(--color-accent-hover);
+}
+.ui-selected {
+  background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  color: var(--color-text);
+}
+
+/* Layer thumbnail checkerboard, as slop-paint's: light like the page, so dark strokes show. */
+.thumb-checkerboard {
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-color: #fff;
+  background-size: 6px 6px;
+  background-position:
+    0 0,
+    0 3px,
+    3px -3px,
+    -3px 0;
+}
+
 /* Document-space checker, CSS-transformed with the paper so pan/zoom is GPU. 32px squares
  * match the old canvas-pattern CHECKER_SQUARE. */
 .paper-checker {
