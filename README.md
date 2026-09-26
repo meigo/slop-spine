@@ -10,7 +10,12 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 
 ## What it does
 
-- Draw and rig in one document (brush / eraser / fill, layers, bones)
+- Draw and rig in one document (brush / eraser / fill / eyedropper, layers, bones)
+- slop-paint's brushes: Smooth, Ink (with pooling), Calligraphy, Pencil, Charcoal, Airbrush; brush
+  and eraser each keep their own size, opacity, Press and pressure curve; draw behind; per-layer
+  alpha lock
+- The slop family look (dark, File / Edit / View menus, tool-options row, status bar) shared with
+  slop-paint and slop-animator
 - PSD import (flattened pixel layers) and zip project save/load
 - Select / transform / warp on pixels
 - Pose preview with rotation wobble (optional translation)

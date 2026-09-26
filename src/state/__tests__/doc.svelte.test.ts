@@ -12,6 +12,7 @@ import {
   reorderLayer,
   duplicateLayer,
   setLayerOpacity,
+  toggleAlphaLock,
   dissolveBone,
   setBoneHead,
   newDocument,
@@ -214,6 +215,20 @@ describe("setLayerOpacity", () => {
     expect(document.layers[0].opacity).toBe(0);
     expect(() => setLayerOpacity(9999, 0.5)).not.toThrow();
 
+    document.layers = saved;
+  });
+});
+
+describe("toggleAlphaLock", () => {
+  it("flips a layer that predates the field (undefined) on, then off", () => {
+    const saved = document.layers;
+    document.layers = [dummyLayer(1)];
+    expect(document.layers[0].alphaLock).toBeUndefined();
+    toggleAlphaLock(1);
+    expect(document.layers[0].alphaLock).toBe(true);
+    toggleAlphaLock(1);
+    expect(document.layers[0].alphaLock).toBe(false);
+    expect(() => toggleAlphaLock(9999)).not.toThrow();
     document.layers = saved;
   });
 });

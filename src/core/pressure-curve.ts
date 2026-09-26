@@ -80,9 +80,6 @@ export class PressureCurve {
   }
 }
 
-/** Shared instance: the toolbar editor mutates this, draw-dispatch evaluates it. */
-export const pressureCurve = new PressureCurve();
-
 /**
  * Creates the curve editor UI element.
  * Returns the container element and the PressureCurve instance.
@@ -184,7 +181,7 @@ export function createCurveEditor(
     c.stroke();
 
     // Bezier curve
-    c.strokeStyle = "#4af";
+    c.strokeStyle = "#5b8cff";
     c.lineWidth = 2;
     c.beginPath();
     c.moveTo(PAD, PAD + SIZE);
@@ -197,7 +194,7 @@ export function createCurveEditor(
       c.beginPath();
       c.arc(pt.cx, pt.cy, 5, 0, Math.PI * 2);
       c.fill();
-      c.strokeStyle = "#4af";
+      c.strokeStyle = "#5b8cff";
       c.lineWidth = 1.5;
       c.stroke();
     }

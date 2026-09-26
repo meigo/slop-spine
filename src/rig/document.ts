@@ -3,6 +3,9 @@ export interface Layer {
   name: string;
   visible: boolean;
   opacity: number;
+  /** Lock transparency: brushes paint only over pixels already there, the bucket recolours them.
+   *  Optional so documents and PSD imports from before it read as unlocked. */
+  alphaLock?: boolean;
   /** Full-canvas RGBA. Trimmed only at export. */
   canvas: HTMLCanvasElement;
   /** Bumped on every stroke. Task 10's derivation cache keys on it. */

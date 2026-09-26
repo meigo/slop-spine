@@ -27,6 +27,9 @@
     whyNotEditable,
     editBlockLabel,
     needsEditableLayer,
+    setTool,
+    flashStatus,
+    slotFor,
   } from "../state/ui.svelte";
   import { setClipboardPixels, getClipboardPixels } from "../state/clipboard.svelte";
   import { selectionCommands } from "../state/selection-commands";
@@ -40,7 +43,9 @@
   import { history } from "../state/history.svelte";
   import { pixelCommand } from "../core/history";
   import { Selection } from "../core/selection";
-  import SelectionActions from "./SelectionActions.svelte";
+  import { nibSemiAxes } from "../core/calligraphy-brush";
+  import { rgbToHex } from "../core/fill";
+  import type { InputPoint } from "../core/input";
   import { deriveSlot } from "../rig/derive";
   import { distanceToBone } from "../rig/weights";
   import {
@@ -436,6 +441,122 @@
     getSelection: () => selection,
   });
 
+  // --- Eyedropper, as slop-paint's: drag to slide the sample point out from under the pen tip (a
+  // swatch above-left of it previews the colour), release to pick. It reads the drawings composite
+  // on canvasEl — bones and meshes live on other canvases, so they can never be picked. Picks into
+  // the colour of the tool it was armed from (setTool) and hands back to that tool. ---
+  let eyedropperSwatchEl: HTMLDivElement;
+  // Latched per gesture, like draw-dispatch's strokeTool, so a key that changes the tool mid-drag
+  // can't hand half a gesture to the brush.
+  let eyedropperGesture: boolean | null = null;
+
+  /** Colour of the drawings composite at document coords, or null off the page or on transparency. */
+  function sampleColor(x: number, y: number): string | null {
+    const px = Math.floor(x);
+    const py = Math.floor(y);
+    if (!ctx || px < 0 || py < 0 || px >= canvasEl.width || py >= canvasEl.height) return null;
+    const [r, g, b, a] = ctx.getImageData(px, py, 1, 1).data;
+    return a === 0 ? null : rgbToHex(r, g, b);
+  }
+
+  function showEyedropperSwatch(x: number, y: number, color: string | null) {
+    if (!color || !viewport) {
+      eyedropperSwatchEl.style.display = "none";
+      return;
+    }
+    const s = viewport.canvasToScreen(x, y);
+    const rect = stage.getBoundingClientRect();
+    eyedropperSwatchEl.style.left = s.x - rect.left - 48 + "px";
+    eyedropperSwatchEl.style.top = s.y - rect.top - 48 + "px";
+    eyedropperSwatchEl.style.background = color;
+    eyedropperSwatchEl.style.display = "block";
+  }
+
+  function eyedropperStroke(points: InputPoint[], done: boolean) {
+    const p = points[points.length - 1];
+    if (!p) return;
+    const color = sampleColor(p.x, p.y);
+    if (!done) {
+      showEyedropperSwatch(p.x, p.y, color);
+      return;
+    }
+    eyedropperSwatchEl.style.display = "none";
+    if (!color) {
+      flashStatus("Nothing to pick there — the drawing is transparent at that point");
+      return;
+    }
+    if (ui.eyedropperTarget === "fill") ui.fillValue = color;
+    else ui.brushValue = color;
+    setTool(ui.toolBeforeEyedropper);
+  }
+
+  function handleStroke(points: InputPoint[], done: boolean) {
+    if (eyedropperGesture === null) eyedropperGesture = ui.tool === "eyedropper";
+    const eye = eyedropperGesture;
+    if (done) eyedropperGesture = null;
+    if (eye) eyedropperStroke(points, done);
+    else drawDispatch.handleStroke(points, done);
+  }
+
+  // --- Brush nib cursor, as slop-paint's (from slop-animator's BrushCursor): the nominal stroke
+  // width at the current zoom, drawn as the actual nib for Calligraphy (flattened, turned by the
+  // nib angle plus the view's rotation), dashed for the eraser, with a dot on the exact point.
+  // Mouse and pen hover only; hidden while drawing or panning, and where no stroke can land. ---
+  let brushCursorEl: HTMLDivElement;
+  let brushDotEl: HTMLDivElement;
+  let brushCursorVisible = false;
+
+  function updateBrushCursor(e: PointerEvent) {
+    if (!brushCursorEl || !brushDotEl || !viewport) return;
+    const isBrushTool = ui.tool === "brush" || ui.tool === "eraser";
+    if (
+      e.pointerType === "touch" ||
+      !isBrushTool ||
+      spaceHeld ||
+      panning ||
+      e.buttons !== 0 ||
+      editBlock
+    ) {
+      hideBrushCursor();
+      return;
+    }
+    const slot = ui.stroke[slotFor(ui.tool)];
+    const rect = stage.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const diameter = slot.size * viewport.zoom;
+    let height = diameter;
+    let turn = 0;
+    if (slot.brushType === "calligraphy") {
+      height = nibSemiAxes(diameter / 2, ui.nibFlatness).b * 2;
+      turn = ui.nibAngle + (viewport.rotation * 180) / Math.PI;
+    }
+    const at = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    brushCursorEl.style.width = diameter + "px";
+    brushCursorEl.style.height = height + "px";
+    brushCursorEl.style.transform = `${at} rotate(${turn}deg)`;
+    brushCursorEl.style.borderStyle = ui.tool === "eraser" ? "dashed" : "solid";
+    brushDotEl.style.transform = at;
+    brushCursorEl.style.display = "block";
+    brushDotEl.style.display = "block";
+    stage.style.cursor = "none";
+    brushCursorVisible = true;
+  }
+
+  function hideBrushCursor() {
+    if (!brushCursorVisible) return;
+    brushCursorEl.style.display = "none";
+    brushDotEl.style.display = "none";
+    stage.style.cursor = "";
+    brushCursorVisible = false;
+  }
+
+  // A tool switch by key leaves the pointer where it was: drop the nib until the next move.
+  $effect(() => {
+    void ui.tool;
+    hideBrushCursor();
+  });
+
   function transformCoords(sx: number, sy: number): { x: number; y: number } {
     return viewport ? viewport.screenToCanvas(sx, sy) : { x: sx, y: sy };
   }
@@ -534,7 +655,7 @@
     }
     if (!(e.metaKey || e.ctrlKey)) {
       const tool = toolFromKey(e.key);
-      if (tool) ui.tool = tool;
+      if (tool) setTool(tool);
     }
     // Hold X for temporary eraser, matching slop-paint's App.svelte. e.repeat is checked so an
     // auto-repeated keydown doesn't re-remember "eraser" as the tool to restore on keyup.
@@ -927,12 +1048,27 @@
       w: r.w,
       h: r.h,
     });
+    // The float's Apply/Cancel live on the select row, and switching tools applies a float — so a
+    // paste under another tool lands on Select, as slop-paint's does.
+    if (!isSelectTool(ui.tool)) setTool("select");
     redraw();
     return true;
   }
 
   function deselectSelection() {
-    selection?.cancel();
+    if (selection?.state === "selected") selection.cancel();
+  }
+
+  function selectAll() {
+    if (!selection) return;
+    if (selection.hasFloating) selection.commit(); // as starting a new marquee does
+    selection.selectRect({ x: 0, y: 0, w: doc.canvas.width, h: doc.canvas.height });
+  }
+
+  function densify(delta: number) {
+    if (!selection || selection.state !== "warping") return;
+    const n = Math.max(2, selection.warpRows + delta);
+    selection.densifyWarp(n, n);
   }
 
   // --- Image import: an external image becomes its own layer, never a float. addLayer already
@@ -944,7 +1080,7 @@
       bitmap = await createImageBitmap(blob);
     } catch (e) {
       console.error("paste image failed", e);
-      alert("Couldn't read that image.");
+      flashStatus("Couldn't read that image.");
       return;
     }
     const id = addLayer("pasted");
@@ -972,7 +1108,7 @@
    *  with a bare permission error. Same message slop-animator shows. */
   async function pasteImageFromSystemClipboard() {
     if (!navigator.clipboard?.read) {
-      alert(
+      flashStatus(
         "Clipboard paste needs HTTPS. On iPad, open the app over https, or use Cmd+V with a keyboard.",
       );
       return;
@@ -985,9 +1121,9 @@
           return;
         }
       }
-      alert("No image found in the clipboard.");
+      flashStatus("No image found in the clipboard.");
     } catch {
-      alert("Couldn't read the clipboard (permission denied or unsupported).");
+      flashStatus("Couldn't read the clipboard (permission denied or unsupported).");
     }
   }
 
@@ -1005,8 +1141,22 @@
       redraw();
       syncSelectionOverlay();
     };
+    // Mirror what the toolbar's select row needs (state, warp grid, deform mode) into `ui`. Also
+    // run on every change: densify and the FFD/Rigid switch don't all go through onStateChange.
+    const mirror = () => {
+      if (!selection) return;
+      ui.selectionState = selection.state;
+      ui.warpRows = selection.warpRows;
+      ui.warpCols = selection.warpCols;
+      ui.deformMode = selection.deformMode;
+    };
+    const onChange = selection.onChange;
+    selection.onChange = () => {
+      onChange();
+      mirror();
+    };
     selection.onStateChange = () => {
-      ui.selectionActive = selection?.state === "selected";
+      mirror();
       syncSelectionOverlay();
     };
     selection.onCommit = () => {
@@ -1303,7 +1453,12 @@
     viewport.onChange = () => {
       redrawRig();
       syncSelectionOverlay();
+      if (viewport) ui.zoomText = `${Math.round(viewport.zoom * 100)}%`;
     };
+    // Base look of the nib cursor, set here rather than with a `style=` attribute: Svelte's
+    // set_style assigns cssText wholesale, which would wipe the transform updateBrushCursor writes.
+    brushCursorEl.style.border = "1.5px solid rgba(0,0,0,0.7)";
+    brushCursorEl.style.boxShadow = "0 0 0 1.5px rgba(255,255,255,0.6)";
     setupSelection();
 
     const resizeObserver = new ResizeObserver(() => {
@@ -1331,7 +1486,20 @@
       onViewportChange: () => {},
     });
 
-    const cleanupInput = setupInput(stage, drawDispatch.handleStroke, transformCoords);
+    // Streamline is a brush preference: on the other tools it would make a marquee or the
+    // eyedropper trail the pen (as slop-paint).
+    const cleanupInput = setupInput(stage, handleStroke, transformCoords, {
+      streamline: () =>
+        ui.tool === "brush" || ui.tool === "eraser"
+          ? ui.stroke[slotFor(ui.tool)].streamline / 100
+          : 0,
+    });
+    const onCursorMove = (e: PointerEvent) => updateBrushCursor(e);
+    const onCursorLeave = () => hideBrushCursor();
+    stage.addEventListener("pointermove", onCursorMove);
+    stage.addEventListener("pointerdown", onCursorMove);
+    stage.addEventListener("pointerup", onCursorMove);
+    stage.addEventListener("pointerleave", onCursorLeave);
 
     // Capture-phase on `stage` so a pan preempts input.ts's bubble-phase listeners
     // (same precedence slop-animator's Canvas.svelte uses).
@@ -1363,6 +1531,14 @@
     selectionCommands.paste = pasteSelection;
     selectionCommands.del = deleteSelection;
     selectionCommands.deselect = deselectSelection;
+    selectionCommands.selectAll = selectAll;
+    selectionCommands.transform = enterTransform;
+    selectionCommands.warp = enterWarp;
+    selectionCommands.densify = densify;
+    selectionCommands.setDeformMode = (m) => selection?.setDeformMode(m);
+    selectionCommands.resetPins = () => selection?.resetPins();
+    selectionCommands.apply = () => selection?.commit();
+    selectionCommands.cancel = () => selection?.cancel();
 
     // Image import. Precedence is read straight off the clipboard rather than latched from the
     // keydown: a flag set by Cmd/Ctrl+V is only cleared by a FOLLOWING paste event, so a keystroke
@@ -1394,6 +1570,10 @@
       if (compositeRaf) cancelAnimationFrame(compositeRaf);
       cleanupTouch();
       cleanupInput();
+      stage.removeEventListener("pointermove", onCursorMove);
+      stage.removeEventListener("pointerdown", onCursorMove);
+      stage.removeEventListener("pointerup", onCursorMove);
+      stage.removeEventListener("pointerleave", onCursorLeave);
       resizeObserver.disconnect();
       stage.removeEventListener("pointerdown", onStagePointerDown, { capture: true });
       stage.removeEventListener("pointermove", onStagePointerMove, { capture: true });
@@ -1415,11 +1595,9 @@
       window.removeEventListener("paste", onWindowPaste);
       window.removeEventListener("slop-spine:paste-image", onPasteImageRequest);
       // Leaving these bound would let the toolbar drive a destroyed canvas's marquee.
-      selectionCommands.copy = null;
-      selectionCommands.cut = null;
-      selectionCommands.paste = null;
-      selectionCommands.del = null;
-      selectionCommands.deselect = null;
+      for (const k of Object.keys(selectionCommands) as (keyof typeof selectionCommands)[]) {
+        selectionCommands[k] = null;
+      }
     };
   });
 </script>
@@ -1446,26 +1624,22 @@
   <canvas bind:this={overlayEl} class="pointer-events-none absolute inset-0 z-10"></canvas>
   {#if editBlockCaption}
     <div
-      class="pointer-events-none absolute top-2 left-2 z-10 rounded bg-surface/70 px-1.5 py-0.5 text-xs text-amber-500"
+      class="pointer-events-none absolute top-2 left-2 z-10 rounded bg-surface/70 px-1.5 py-0.5 text-xs text-warn"
     >
       {editBlockCaption}
     </div>
   {/if}
-  <SelectionActions
-    getSelection={() => selection}
-    getViewport={() => viewport}
-    getContainer={() => stage}
-    onTransform={enterTransform}
-    onDistort={() => enterWarp(2, 2)}
-    onMesh={() => enterWarp(3, 3)}
-    onCommit={() => selection?.commit()}
-    onCancel={() => selection?.cancel()}
-    onDensify={(d) => {
-      if (!selection || selection.state !== "warping") return;
-      const n = Math.max(2, selection.warpRows + d);
-      selection.densifyWarp(n, n);
-    }}
-    onSetDeformMode={(m) => selection?.setDeformMode(m)}
-    onResetPins={() => selection?.resetPins()}
-  />
+  <!-- Brush nib under the pointer (see updateBrushCursor), and the eyedropper's preview swatch. -->
+  <div
+    bind:this={brushCursorEl}
+    class="pointer-events-none absolute top-0 left-0 z-20 hidden rounded-full"
+  ></div>
+  <div
+    bind:this={brushDotEl}
+    class="pointer-events-none absolute top-0 left-0 z-20 hidden size-[3px] rounded-full bg-black/80 shadow-[0_0_0_1px_rgba(255,255,255,0.7)]"
+  ></div>
+  <div
+    bind:this={eyedropperSwatchEl}
+    class="pointer-events-none absolute top-0 left-0 z-20 hidden size-10 rounded-full border-2 border-white shadow-lg"
+  ></div>
 </div>

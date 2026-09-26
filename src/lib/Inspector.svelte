@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sliderFill } from "./slider-fill";
   import {
     document as doc,
     setWobble,
@@ -100,15 +101,16 @@
   }
 </script>
 
-<div class="flex flex-col gap-3 p-2 text-sm text-text">
-  <span class="font-mono text-xs text-text-secondary uppercase">Inspector</span>
+<!-- Restyled on the family tokens (fields as slop-paint's dialogs: 28px, raised, rounded). -->
+<div class="flex flex-col gap-3 px-2.5 pt-2.5 pb-3 text-xs text-text-secondary">
+  <span class="font-semibold">Inspector</span>
 
   {#if selectedBone}
     <label class="flex flex-col gap-1">
       Bone name
       <div class="flex items-center gap-1 self-start">
         <input
-          class="min-w-0 flex-1 bg-canvas-bg px-1 text-text"
+          class="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
           bind:value={nameDraft}
           onblur={commitName}
           onkeydown={(e) => e.key === "Enter" && commitName()}
@@ -120,7 +122,7 @@
          without this they look clickable and silently do nothing. -->
     <div class="flex items-center gap-1">
       <button
-        class="flex size-7 items-center justify-center rounded border border-border text-text-secondary hover:bg-surface-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent"
+        class="flex size-7 items-center justify-center rounded-md border border-border bg-surface text-text-secondary transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-40 disabled:hover:bg-surface"
         onclick={onDeleteBone}
         disabled={selectedBone.name === "root"}
         title={selectedBone.name === "root"
@@ -131,7 +133,7 @@
         <Trash2 size={15} />
       </button>
       <button
-        class="flex size-7 items-center justify-center rounded border border-border text-text-secondary hover:bg-surface-hover hover:text-text disabled:opacity-40 disabled:hover:bg-transparent"
+        class="flex size-7 items-center justify-center rounded-md border border-border bg-surface text-text-secondary transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-40 disabled:hover:bg-surface"
         onclick={() => selectedBone && dissolveBone(selectedBone.name)}
         disabled={selectedBone.name === "root"}
         title={selectedBone.name === "root"
@@ -146,7 +148,7 @@
     <label class="flex flex-col gap-1">
       Parent
       <select
-        class="bg-canvas-bg px-1 text-text"
+        class="h-7 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
         value={selectedBone.parent}
         onchange={onParentChange}
       >
@@ -164,12 +166,16 @@
           min="0"
           max="1"
           step="0.01"
+          class="min-w-0 flex-1"
+          style={sliderFill(selectedBone.wobble, 0, 1)}
           value={selectedBone.wobble}
           onpointerdown={onWobblePointerDown}
           onpointerup={onWobblePointerUp}
           oninput={onWobbleInput}
         />
-        <span class="w-8 text-right font-mono text-xs">{selectedBone.wobble.toFixed(2)}</span>
+        <span class="w-8 text-right text-[11px] text-text-muted"
+          >{selectedBone.wobble.toFixed(2)}</span
+        >
       </div>
       <label
         class="flex items-center gap-1 text-xs text-text-secondary"
@@ -190,7 +196,11 @@
   {:else if selectedSlot}
     <label class="flex flex-col gap-1">
       Hangs from
-      <select class="bg-canvas-bg px-1 text-text" value={selectedSlot.bone} onchange={onHangFrom}>
+      <select
+        class="h-7 rounded-md border border-border bg-surface-raised px-2 text-xs text-text"
+        value={selectedSlot.bone}
+        onchange={onHangFrom}
+      >
         {#each doc.bones as bone (bone.name)}
           <option value={bone.name}>{bone.name}</option>
         {/each}
@@ -200,8 +210,16 @@
     <label class="flex flex-col gap-1">
       Density — {selectedLayer?.name ?? selectedSlot.name}
       <div class="flex items-center gap-1">
-        <input type="range" min="8" max="96" value={effectiveDensity} oninput={onDensityInput} />
-        <span class="w-6 text-right font-mono text-xs">{effectiveDensity}</span>
+        <input
+          type="range"
+          min="8"
+          max="96"
+          class="min-w-0 flex-1"
+          style={sliderFill(effectiveDensity, 8, 96)}
+          value={effectiveDensity}
+          oninput={onDensityInput}
+        />
+        <span class="w-6 text-right text-[11px] text-text-muted">{effectiveDensity}</span>
         {#if hasDensityOverride}
           <button
             class="shrink-0 text-text-muted hover:text-text"
@@ -228,7 +246,7 @@
         <ul class="flex flex-col gap-0.5">
           {#each bindableBones as bone (bone.name)}
             <li>
-              <label class="flex items-center gap-1">
+              <label class="flex items-center gap-1.5 text-text">
                 <input
                   type="checkbox"
                   checked={bindIncluded.has(bone.name)}

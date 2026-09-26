@@ -46,13 +46,18 @@ describe("parsePreferences", () => {
 
 const sample: Preferences = {
   tool: "eraser",
-  brushType: "ink",
-  brushSize: 20,
-  brushOpacity: 80,
+  stroke: {
+    brush: { brushType: "ink", size: 20, opacity: 80, smoothing: 40, streamline: 10, press: 4 },
+    eraser: { brushType: "smooth", size: 30, opacity: 100, smoothing: 50, streamline: 0, press: 2 },
+  },
   brushValue: "#ff00aa",
+  drawBehind: true,
+  taper: true,
+  nibAngle: 30,
+  nibFlatness: 0.5,
+  dwellPool: 20,
   fillValue: "#00ff88",
-  brushPress: 4,
-  eraserPress: 2,
+  fillOpacity: 90,
   fillTolerance: 16,
   fillExpand: 1,
   fillGap: 3,
@@ -62,7 +67,10 @@ const sample: Preferences = {
   whiteBg: true,
   dockWidth: 260,
   inspectorHeight: 180,
-  pressureCurve: { cp1: { x: 0.1, y: 0.2 }, cp2: { x: 0.8, y: 0.9 } },
+  curves: {
+    brush: { cp1: { x: 0.1, y: 0.2 }, cp2: { x: 0.8, y: 0.9 } },
+    eraser: { cp1: { x: 0.25, y: 0.25 }, cp2: { x: 0.75, y: 0.75 } },
+  },
 };
 
 describe("loadPreferences / savePreferences", () => {

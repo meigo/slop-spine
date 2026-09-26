@@ -12,6 +12,22 @@ export interface StampBrushSettings extends BrushSettings {
   brushType: BrushType;
 }
 
+/**
+ * Below this box size a 64px tip downsamples to alpha 0 (Chrome samples a couple of texels in the
+ * transparent corner), so the stamp draws nothing at all. Measured in slop-animator.
+ */
+export const MIN_STAMP_PX = 2;
+
+/**
+ * The box to stamp into, and how far to fade it. A width under the floor is drawn AT the floor
+ * with alpha scaled down in proportion, so a thin stroke fades instead of disappearing.
+ */
+export function stampFootprint(width: number): { drawSize: number; alphaScale: number } {
+  const w = Math.max(0, width);
+  if (w >= MIN_STAMP_PX) return { drawSize: w, alphaScale: 1 };
+  return { drawSize: MIN_STAMP_PX, alphaScale: w / MIN_STAMP_PX };
+}
+
 // Track how many points we've already drawn for incremental stamping
 let lastStampCount = 0;
 let tintedTip: HTMLCanvasElement | null = null;
@@ -55,7 +71,6 @@ export function drawStampStrokeIncremental(
 ) {
   if (points.length === 0) return;
 
-  // Model 2 range (see widthRange in brush.ts): pressure thins below / widens above nominal.
   const { min: minSize, max: maxSize } = widthRange(settings.size, sizeRange);
   const tip = getTintedTip(settings.brushType, settings.color);
 
@@ -82,9 +97,8 @@ export function drawStampStrokeIncremental(
   // If first stroke point, stamp it
   if (lastStampCount === 0 && newPoints.length > 0) {
     const p = newPoints[0];
-    const size = minSize + p.pressure * (maxSize - minSize);
-    const drawSize = Math.max(1, size);
-    ctx.globalAlpha = (settings.opacity / 100) * (0.5 + p.pressure * 0.5);
+    const { drawSize, alphaScale } = stampFootprint(minSize + p.pressure * (maxSize - minSize));
+    ctx.globalAlpha = (settings.opacity / 100) * (0.5 + p.pressure * 0.5) * alphaScale;
     ctx.drawImage(tip, p.x - drawSize / 2, p.y - drawSize / 2, drawSize, drawSize);
   }
 
@@ -108,10 +122,9 @@ export function drawStampStrokeIncremental(
         const x = prev.x + dx * t;
         const y = prev.y + dy * t;
         const p = prev.pressure + (curr.pressure - prev.pressure) * t;
-        const size = minSize + p * (maxSize - minSize);
-        const drawSize = Math.max(1, size);
+        const { drawSize, alphaScale } = stampFootprint(minSize + p * (maxSize - minSize));
 
-        ctx.globalAlpha = (settings.opacity / 100) * (0.5 + p * 0.5);
+        ctx.globalAlpha = (settings.opacity / 100) * (0.5 + p * 0.5) * alphaScale;
         ctx.drawImage(tip, x - drawSize / 2, y - drawSize / 2, drawSize, drawSize);
       }
       pos += stepSize;

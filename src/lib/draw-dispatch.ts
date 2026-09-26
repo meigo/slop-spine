@@ -4,14 +4,22 @@
 // own canvas, resolved by id (layer array order is a display concern, not identity). Mild
 // pressure-response curve, applied uniformly regardless of brush engine.
 import { document as doc, markLayerDirty } from "../state/doc.svelte";
-import { ui, isPaintTool, whyNotEditable, type Tool } from "../state/ui.svelte";
+import {
+  ui,
+  isPaintTool,
+  whyNotEditable,
+  slotFor,
+  pressureCurves,
+  flashStatus,
+  type Tool,
+} from "../state/ui.svelte";
 import type { InputPoint } from "../core/input";
 import { drawStroke, type BrushSettings } from "../core/brush";
-import { drawInkStrokeIncremental, resetInkState } from "../core/ink-brush";
+import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
+import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
 import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../core/fill";
 import { clampGap } from "../core/fill-holes";
-import { pressureCurve } from "../core/pressure-curve";
 import type { Layer } from "../rig/document";
 import type { Selection } from "../core/selection";
 import { pixelCommand } from "../core/history";
@@ -32,13 +40,16 @@ function withClip(ctx: CanvasRenderingContext2D, draw: () => void) {
   }
 }
 
-/** Flood/enclosed fill writes unconstrained ImageData, so paint on a copy then composite through the clip. */
+/** Flood/enclosed fill writes unconstrained ImageData, so paint on a copy then composite through
+ *  the clip, and through the layer's alpha lock (`source-atop`: only where pixels already are). */
 function fillThroughClip(
   ctx: CanvasRenderingContext2D,
   paint: (target: CanvasRenderingContext2D) => void,
+  alphaLock = false,
 ) {
   const sel = getSelection();
-  if (sel?.state === "selected") {
+  const clipSel = sel?.state === "selected" ? sel : null;
+  if (clipSel || alphaLock) {
     const tmp = document.createElement("canvas");
     tmp.width = ctx.canvas.width;
     tmp.height = ctx.canvas.height;
@@ -48,13 +59,13 @@ function fillThroughClip(
     paint(tctx);
     ctx.save();
     try {
-      sel.applyClip(ctx);
+      clipSel?.applyClip(ctx);
       // `copy`, not the default source-over: tmp starts as a copy of this very layer, so blending it
       // back would composite every pixel inside the clip with itself — a stroke edge at alpha 0.5
       // becomes 0.75, darkening again on each fill. `copy` replaces instead, and the clip limits it
       // to the marquee. Cost: on an anti-aliased lasso edge the boundary pixels become src*coverage
       // rather than a blend, leaving a hairline seam. A rect marquee is pixel-exact.
-      ctx.globalCompositeOperation = "copy";
+      ctx.globalCompositeOperation = alphaLock ? "source-atop" : "copy";
       ctx.drawImage(tmp, 0, 0);
     } finally {
       // Leaking `copy` onto the layer's persistent context would make every later draw erase.
@@ -68,7 +79,7 @@ function fillThroughClip(
 // Pressure widens/thins the nominal size by this factor; mouse (no pressure) always draws at
 // constant nominal width (see widthRange in brush.ts).
 function pressFor(tool: Tool): number {
-  return tool === "eraser" ? ui.eraserPress : ui.brushPress;
+  return ui.stroke[slotFor(tool)].press;
 }
 
 /** Fill every ink-enclosed region on the selected layer, behind the strokes. */
@@ -76,19 +87,25 @@ export function fillAllEnclosed() {
   const layer = doc.layers.find((l) => l.id === ui.selectedLayerId);
   const ctx = layer?.canvas.getContext("2d");
   if (!layer || !ctx || whyNotEditable(layer)) return;
+  // Fill enclosed paints BEHIND the strokes, into transparent pixels — exactly what a locked
+  // transparency refuses — so say so rather than run and change nothing.
+  if (layer.alphaLock) {
+    flashStatus("Fill enclosed — the layer's transparency is locked");
+    return;
+  }
   const { region, area } = enclosedFillRegion(layer.canvas, {
     gap: clampGap(ui.fillGap),
     expand: Math.max(0, Math.floor(ui.fillExpand)),
   });
   if (area === 0) {
-    alert("Nothing enclosed — the outline isn't closed, or is already filled");
+    flashStatus("Nothing enclosed — the outline isn't closed, or is already filled");
     return;
   }
   const cw = layer.canvas.width;
   const ch = layer.canvas.height;
   const before = ctx.getImageData(0, 0, cw, ch);
   fillThroughClip(ctx, (target) => {
-    fillRegionBehind(target, region, hexToRgba(ui.fillValue, ui.brushOpacity));
+    fillRegionBehind(target, region, hexToRgba(ui.fillValue, ui.fillOpacity));
   });
   markLayerDirty(layer.id);
   const after = ctx.getImageData(0, 0, cw, ch);
@@ -120,15 +137,22 @@ export function createDrawDispatch(opts?: {
     return whyNotEditable(layer) ? null : layer;
   }
 
-  function buildBrushSettings(isEraser: boolean): BrushSettings {
+  function buildBrushSettings(tool: Tool, layer: Layer): BrushSettings {
+    const slot = ui.stroke[slotFor(tool)];
+    const isEraser = tool === "eraser";
     return {
-      size: ui.brushSize,
+      size: slot.size,
       color: ui.brushValue,
-      opacity: ui.brushOpacity,
-      smoothing: 0,
+      opacity: slot.opacity,
+      smoothing: slot.smoothing,
       isEraser,
-      drawBehind: false,
-      alphaLock: false,
+      // Brush only, as slop-paint: the eraser ignores draw-behind.
+      drawBehind: !isEraser && ui.drawBehind,
+      alphaLock: layer.alphaLock ?? false,
+      nibAngle: ui.nibAngle,
+      nibFlatness: ui.nibFlatness,
+      dwellPool: ui.dwellPool,
+      taper: ui.taper,
     };
   }
 
@@ -191,8 +215,14 @@ export function createDrawDispatch(opts?: {
    *  whole accumulated points array on every call, so the final call already has them all —
    *  no need to track the box incrementally), padded by the brush radius and clamped to the
    *  layer's bounds. */
-  function computeDirtyRect(points: InputPoint[], layer: Layer, sizeRange: number): Rect {
-    const pad = (ui.brushSize * sizeRange) / 2 + 2;
+  function computeDirtyRect(
+    points: InputPoint[],
+    layer: Layer,
+    size: number,
+    sizeRange: number,
+  ): Rect {
+    // Ink's pooling can swell the mark past its widest pressure width, by up to MAX_DWELL_SWELL.
+    const pad = (size * sizeRange * (1 + MAX_DWELL_SWELL)) / 2 + 2;
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -269,16 +299,23 @@ export function createDrawDispatch(opts?: {
   function paintStroke(points: InputPoint[], done: boolean, tool: Tool) {
     if (!strokeLayer || !strokeCtx) return;
     const ctx = strokeCtx;
-    const curved = points.map((p) => ({ ...p, pressure: pressureCurve.evaluate(p.pressure) }));
+    const curve = pressureCurves[slotFor(tool)];
+    const curved = points.map((p) => ({ ...p, pressure: curve.evaluate(p.pressure) }));
     const sizeRange = curved[0]?.hasPressure ? pressFor(tool) : 1;
-    const settings = buildBrushSettings(tool === "eraser");
-    const brushType = ui.brushType;
+    const settings = buildBrushSettings(tool, strokeLayer);
+    const brushType = ui.stroke[slotFor(tool)].brushType;
 
-    if (brushType === "smooth") {
+    // Smooth, ink and calligraphy redraw the WHOLE stroke each frame from the pre-stroke copy: a
+    // per-segment redraw re-composites each overlap and hardens the antialiased edge (see
+    // ink-brush.ts). The stamp tips draw incrementally.
+    if (brushType === "smooth" || brushType === "ink" || brushType === "calligraphy") {
       restorePreStroke(ctx, strokeLayer);
-      withClip(ctx, () => drawStroke(ctx, curved, settings, done, sizeRange));
-    } else if (brushType === "ink") {
-      withClip(ctx, () => drawInkStrokeIncremental(ctx, curved, settings, sizeRange));
+      withClip(ctx, () => {
+        if (brushType === "ink") drawInkStroke(ctx, curved, settings, sizeRange);
+        else if (brushType === "calligraphy")
+          drawCalligraphyStroke(ctx, curved, settings, sizeRange);
+        else drawStroke(ctx, curved, settings, done, sizeRange);
+      });
     } else {
       withClip(ctx, () =>
         drawStampStrokeIncremental(ctx, curved, { ...settings, brushType }, sizeRange),
@@ -309,13 +346,19 @@ export function createDrawDispatch(opts?: {
           const cw = layer.canvas.width;
           const ch = layer.canvas.height;
           const before = fctx.getImageData(0, 0, cw, ch);
-          fillThroughClip(fctx, (target) => {
-            floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.brushOpacity), {
-              alphaThreshold: 128,
-              tolerance: ui.fillTolerance,
-              expand: ui.fillExpand,
-            });
-          });
+          fillThroughClip(
+            fctx,
+            (target) => {
+              floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.fillOpacity), {
+                alphaThreshold: 128,
+                tolerance: ui.fillTolerance,
+                // Expand grows the fill BEHIND existing content, which alpha lock refuses outright;
+                // without it the fill recolours the region and source-atop keeps it on the pixels.
+                expand: layer.alphaLock ? 0 : ui.fillExpand,
+              });
+            },
+            layer.alphaLock,
+          );
           markLayerDirty(layer.id);
           const after = fctx.getImageData(0, 0, cw, ch);
           pushPixelCommand(layer, fctx, { x: 0, y: 0, w: cw, h: ch }, before, after);
@@ -329,7 +372,6 @@ export function createDrawDispatch(opts?: {
     if (!strokeLayer) {
       strokeLayer = resolveSelectedLayer();
       strokeCtx = strokeLayer ? strokeLayer.canvas.getContext("2d") : null;
-      resetInkState();
       resetStampState();
       if (strokeLayer) captureScratch(strokeLayer);
     }
@@ -350,6 +392,7 @@ export function createDrawDispatch(opts?: {
         const rect = computeDirtyRect(
           points,
           strokeLayer,
+          ui.stroke[slotFor(tool)].size,
           points[0]?.hasPressure ? pressFor(tool) : 1,
         );
         const before = scratchCtx.getImageData(rect.x, rect.y, rect.w, rect.h);

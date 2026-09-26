@@ -12,4 +12,31 @@ export const selectionCommands: {
   paste: (() => boolean) | null;
   del: (() => void) | null;
   deselect: (() => void) | null;
-} = { copy: null, cut: null, paste: null, del: null, deselect: null };
+  selectAll: (() => void) | null;
+  /** Lift the marquee into a free-transform float. */
+  transform: (() => void) | null;
+  /** Lift (if needed) and warp on a rows×cols grid: 2×2 is Distort, 3×3 Mesh. */
+  warp: ((rows: number, cols: number) => void) | null;
+  /** Warp grid one step denser (+1) or coarser (−1). */
+  densify: ((delta: number) => void) | null;
+  setDeformMode: ((m: "ffd" | "rigid") => void) | null;
+  resetPins: (() => void) | null;
+  /** Bake the float into the layer (Enter). */
+  apply: (() => void) | null;
+  /** Drop the float, restoring the layer (Esc). */
+  cancel: (() => void) | null;
+} = {
+  copy: null,
+  cut: null,
+  paste: null,
+  del: null,
+  deselect: null,
+  selectAll: null,
+  transform: null,
+  warp: null,
+  densify: null,
+  setDeformMode: null,
+  resetPins: null,
+  apply: null,
+  cancel: null,
+};

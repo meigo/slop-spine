@@ -6,17 +6,29 @@
     reorderLayer,
     renameLayer,
     toggleVisible,
+    toggleAlphaLock,
     duplicateLayer,
     setLayerOpacity,
-    markLayerDirty,
+    clearLayerPixels,
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
   import type { Layer } from "../rig/document";
-  import { pixelCommand } from "../core/history";
-  import { history } from "../state/history.svelte";
   import { onMount } from "svelte";
   import Sortable from "sortablejs";
-  import { Plus, Trash2, Eye, EyeOff, GripVertical, Copy, Eraser } from "@lucide/svelte";
+  import { isDoubleTap, type Tap } from "./double-tap";
+  import { sliderFill } from "./slider-fill";
+  import {
+    Plus,
+    Trash2,
+    Eye,
+    EyeOff,
+    GripVertical,
+    Copy,
+    Eraser,
+    Grid2x2,
+    Blend,
+    Pencil,
+  } from "@lucide/svelte";
 
   // Panel shows the topmost layer first; the document array is bottom-to-top (index 0 = bottom).
   let topFirst = $derived([...doc.layers].reverse());
@@ -29,8 +41,12 @@
   // evt.item in the DOM; without this the {#each} teardown can leave a duplicate row.
   let dragNonce = $state(0);
 
+  // 28px list actions, borderless, as slop-paint's header. aria-disabled (not `disabled`) so the
+  // status bar can still read the reason off the title.
   const headerBtn =
-    "size-7 rounded flex items-center justify-center text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:hover:bg-transparent";
+    "flex size-7 cursor-pointer items-center justify-center rounded text-text-secondary hover:bg-surface-hover aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent";
+  // Every row toggle gets a real 20px box, as slop-paint's.
+  const rowBtn = "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded";
 
   function onAdd() {
     const id = addLayer(`Layer ${doc.layers.length + 1}`);
@@ -64,12 +80,49 @@
     draftName = layer.name;
   }
   function commitRename() {
-    if (editingId !== null) renameLayer(editingId, draftName || "Layer");
+    if (editingId !== null) renameLayer(editingId, draftName.trim() || "Layer");
     editingId = null;
   }
   function onRenameKey(e: KeyboardEvent) {
     if (e.key === "Enter") commitRename();
     else if (e.key === "Escape") editingId = null;
+    e.stopPropagation();
+  }
+
+  // Double-tap renames too: iPad doesn't fire dblclick reliably (lib/double-tap.ts).
+  let lastTap: Tap | null = null;
+  function onNamePointerDown(e: PointerEvent, layer: Layer) {
+    const tap: Tap = { target: `layer:${layer.id}`, t: e.timeStamp, x: e.clientX, y: e.clientY };
+    if (isDoubleTap(lastTap, tap)) {
+      e.preventDefault();
+      lastTap = null;
+      startRename(layer);
+      return;
+    }
+    lastTap = tap;
+  }
+
+  /** Svelte action: draw a layer's pixels into its thumbnail. Re-runs when the revision (bumped on
+   *  every pixel change) moves. */
+  function thumbnail(node: HTMLCanvasElement, arg: { canvas: HTMLCanvasElement; rev: number }) {
+    let src = arg.canvas;
+    const draw = () => {
+      const ctx = node.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, node.width, node.height);
+      // Letterboxed, so a wide page doesn't squash into the square.
+      const k = Math.min(node.width / src.width, node.height / src.height);
+      const w = src.width * k;
+      const h = src.height * k;
+      ctx.drawImage(src, (node.width - w) / 2, (node.height - h) / 2, w, h);
+    };
+    draw();
+    return {
+      update(next: { canvas: HTMLCanvasElement; rev: number }) {
+        src = next.canvas;
+        draw();
+      },
+    };
   }
 
   onMount(() => {
@@ -95,124 +148,151 @@
     return () => sortable.destroy();
   });
 
-  /** Clears the selected layer to fully transparent (`clearRect`, never a white fill — export
-   *  trims a layer to its opaque bounding box, so an opaque "clear" would trim to the full page
-   *  and destroy the atlas). */
   function onClear() {
-    if (ui.selectedLayerId == null) return;
-    const id = ui.selectedLayerId;
-    const layer = doc.layers.find((l) => l.id === id);
-    if (!layer) return;
-    const ctx = layer.canvas.getContext("2d");
-    if (!ctx) return;
-    const w = layer.canvas.width;
-    const h = layer.canvas.height;
-    const before = ctx.getImageData(0, 0, w, h);
-    ctx.clearRect(0, 0, w, h);
-    markLayerDirty(id);
-    const after = ctx.getImageData(0, 0, w, h);
-    history.push(
-      pixelCommand(
-        () => {
-          ctx.putImageData(before, 0, 0);
-          markLayerDirty(id);
-        },
-        () => {
-          ctx.putImageData(after, 0, 0);
-          markLayerDirty(id);
-        },
-        before,
-        after,
-      ),
-    );
+    if (ui.selectedLayerId != null) clearLayerPixels(ui.selectedLayerId);
   }
 </script>
 
 <div class="flex h-full flex-col bg-surface text-sm text-text">
-  <div class="flex items-center gap-1 border-b border-border p-1">
-    <span class="flex-1 px-1 font-mono text-xs text-text-secondary uppercase">Layers</span>
-    <button class={headerBtn} title="Add layer" onclick={onAdd}><Plus size={16} /></button>
-    <button
-      class={headerBtn}
-      title="Duplicate selected layer"
-      disabled={selected == null}
-      onclick={onDuplicate}><Copy size={16} /></button
-    >
-    <button
-      class={headerBtn}
-      title="Clear selected layer"
-      disabled={selected == null}
-      onclick={onClear}><Eraser size={16} /></button
-    >
-    <button
-      class={headerBtn}
-      title="Delete selected layer"
-      disabled={selected == null}
-      onclick={onRemove}><Trash2 size={16} /></button
-    >
-  </div>
-  <!-- Opacity acts on the selected layer, which is the Photoshop/Procreate placement. Its own row
-       because the dock is 224px by default and a slider does not fit beside four buttons. Preview
-       only: export ignores layer opacity by design (see setLayerOpacity), which is exactly what
-       makes a dimmed reference layer safe to trace over — hide it before export to drop it. -->
-  <label
-    class="flex items-center gap-2 border-b border-border px-2 py-1 text-xs text-text-secondary"
-    title={selected
-      ? "Opacity of the selected layer — editor preview only, never exported"
-      : "Opacity — select a layer first"}
+  <!-- h-10: the tool-options row's height, as slop-paint's header. Grouped create │ clear │
+       destroy, so a mis-tap on Clear can't delete. -->
+  <div
+    class="flex h-10 shrink-0 items-center justify-between border-b border-border px-2.5 text-xs font-semibold text-text-secondary"
   >
-    Opacity
-    <input
-      type="range"
-      min="0"
-      max="100"
-      step="1"
-      class="min-w-0 flex-1 disabled:opacity-40"
-      disabled={selected == null}
-      value={Math.round((selected?.opacity ?? 1) * 100)}
-      oninput={(e) => selected && setLayerOpacity(selected.id, Number(e.currentTarget.value) / 100)}
-    />
-    <span class="w-8 text-right font-mono">{Math.round((selected?.opacity ?? 1) * 100)}%</span>
-  </label>
+    <span>Layers</span>
+    <div class="flex items-center gap-1">
+      <button class={headerBtn} title="Add layer" onclick={onAdd}><Plus size={16} /></button>
+      <button
+        class={headerBtn}
+        title={selected ? "Duplicate layer" : "Duplicate — select a layer first"}
+        aria-disabled={selected == null}
+        onclick={onDuplicate}><Copy size={16} /></button
+      >
+      <span class="-mx-0.5 h-5 w-px shrink-0 bg-border" role="presentation"></span>
+      <button
+        class={headerBtn}
+        title={selected ? "Clear layer" : "Clear — select a layer first"}
+        aria-disabled={selected == null}
+        onclick={onClear}><Eraser size={16} /></button
+      >
+      <span class="-mx-0.5 h-5 w-px shrink-0 bg-border" role="presentation"></span>
+      <button
+        class={headerBtn}
+        title={selected ? "Delete layer" : "Delete — select a layer first"}
+        aria-disabled={selected == null}
+        onclick={onRemove}><Trash2 size={16} /></button
+      >
+    </div>
+  </div>
+  <!-- Properties strip for the selected layer, as slop-paint's: ONE compact row, fixed height so
+       the list never shifts. Opacity is a preview only: export ignores it by design (see
+       setLayerOpacity), which is what makes a dimmed tracing layer safe — hide it before export. -->
+  <div
+    class="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-surface pr-[6px] pl-2.5 text-text-secondary"
+  >
+    {#if selected}
+      {@const pct = Math.round(selected.opacity * 100)}
+      <span
+        class="flex shrink-0 items-center gap-1"
+        title="Opacity of the selected layer — editor preview only, never exported"
+      >
+        <Blend size={13} class="shrink-0" />
+        <input
+          type="range"
+          class="w-20"
+          min="0"
+          max="100"
+          style={sliderFill(pct, 0, 100)}
+          value={pct}
+          oninput={(e) => setLayerOpacity(selected.id, Number(e.currentTarget.value) / 100)}
+        />
+        <span class="w-6 text-[11px] text-text-muted">{pct}</span>
+      </span>
+      <span class="flex-1"></span>
+      <button
+        class="{rowBtn} text-text-secondary hover:text-text"
+        title="Rename the selected layer"
+        onclick={() => startRename(selected)}><Pencil size={13} /></button
+      >
+    {:else}
+      <span class="text-[11px] text-text-muted">No layer selected</span>
+    {/if}
+  </div>
   <ul bind:this={listEl} class="flex-1 overflow-y-auto">
     {#key dragNonce}
       {#each topFirst as layer (layer.id)}
+        <!-- ONE line, as slop-paint's: identity on the left (grip, thumbnail, name), state on the
+             right in fixed 20px columns (alpha lock, eye) so it lines up across rows. -->
         <li
           data-layer-id={layer.id}
-          class="flex items-center gap-1 border-b border-border-light px-2 py-1 {ui.selectedLayerId ===
+          class="flex min-w-0 cursor-pointer items-center gap-1 border-b border-border-light py-1 pr-[6px] pl-2 text-sm transition-colors hover:bg-surface-hover {ui.selectedLayerId ===
           layer.id
-            ? 'bg-surface-active'
-            : 'hover:bg-surface-hover'}"
+            ? 'ui-selected text-text'
+            : 'text-text-secondary'}"
+          title="Tap to draw on this layer · double-tap the name to rename"
+          onclick={() => onSelect(layer)}
+          role="presentation"
         >
           <span
-            class="layer-drag-handle shrink-0 cursor-grab text-text-muted"
+            class="layer-drag-handle shrink-0 cursor-grab text-text-muted hover:text-text-secondary"
             title="Drag to reorder"
           >
             <GripVertical size={14} />
           </span>
+          <!-- 20px, drawn at 40 so it stays sharp on a retina screen. -->
+          <canvas
+            class="thumb-checkerboard size-5 shrink-0 rounded-sm border border-border"
+            width="40"
+            height="40"
+            use:thumbnail={{ canvas: layer.canvas, rev: layer.revision }}
+          ></canvas>
+          {#if editingId === layer.id}
+            <!-- svelte-ignore a11y_autofocus -->
+            <input
+              class="layer-rename-input"
+              bind:value={draftName}
+              autofocus
+              onblur={commitRename}
+              onkeydown={onRenameKey}
+              onclick={(e) => e.stopPropagation()}
+              onpointerdown={(e) => e.stopPropagation()}
+            />
+          {:else}
+            <span
+              class="min-w-0 flex-1 truncate"
+              ondblclick={(e) => {
+                e.stopPropagation();
+                startRename(layer);
+              }}
+              onpointerdown={(e) => onNamePointerDown(e, layer)}
+              role="presentation">{layer.name}</span
+            >
+          {/if}
+          <!-- Alpha lock ("lock transparency") is the checkerboard glyph, fainter when off, as
+               slop-paint and slop-animator. -->
           <button
-            class="flex w-5 shrink-0 items-center justify-center text-text-secondary hover:text-text"
-            onclick={() => toggleVisible(layer.id)}
+            class="{rowBtn} {layer.alphaLock
+              ? 'text-accent'
+              : 'text-text-muted/50 hover:text-text'}"
+            aria-pressed={!!layer.alphaLock}
+            title={layer.alphaLock
+              ? "Alpha lock on — paint lands only on existing pixels; click to turn off"
+              : "Alpha lock off — click to paint only over existing pixels"}
+            onclick={(e) => {
+              e.stopPropagation();
+              toggleAlphaLock(layer.id);
+            }}><Grid2x2 size={15} /></button
+          >
+          <button
+            class="{rowBtn} {layer.visible ? 'text-text-muted hover:text-text' : 'text-warn'}"
             title={layer.visible ? "Visible — click to hide" : "Hidden — click to show"}
+            onclick={(e) => {
+              e.stopPropagation();
+              toggleVisible(layer.id);
+            }}
           >
             {#if layer.visible}<Eye size={15} />{:else}<EyeOff size={15} />{/if}
           </button>
-          {#if editingId === layer.id}
-            <input
-              class="min-w-0 flex-1 bg-canvas-bg px-1 text-text"
-              bind:value={draftName}
-              onblur={commitRename}
-              onkeydown={onRenameKey}
-            />
-          {:else}
-            <button
-              class="min-w-0 flex-1 truncate text-left"
-              onclick={() => onSelect(layer)}
-              ondblclick={() => startRename(layer)}
-            >
-              {layer.name}
-            </button>
-          {/if}
         </li>
       {/each}
     {/key}

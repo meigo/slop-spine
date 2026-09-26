@@ -10,6 +10,7 @@ import { invalidate } from "../rig/derive";
 import { splitBoneAt, boneTip } from "../rig/chain";
 import { ui } from "./ui.svelte";
 import { history } from "./history.svelte";
+import { pixelCommand } from "../core/history";
 
 /** The single open document. Mutated in place (push/splice/property writes) so the
  *  exported binding never needs reassigning — see the mutations below. */
@@ -155,6 +156,40 @@ export function toggleVisible(id: number) {
   if (layer) layer.visible = !layer.visible;
 }
 
+/** Clears a layer to fully transparent, undoably (`clearRect`, never a white fill — export trims a
+ *  layer to its opaque bounding box, so an opaque "clear" would trim to the full page and destroy
+ *  the atlas). */
+export function clearLayerPixels(id: number) {
+  const layer = document.layers.find((l) => l.id === id);
+  const ctx = layer?.canvas.getContext("2d");
+  if (!layer || !ctx) return;
+  const w = layer.canvas.width;
+  const h = layer.canvas.height;
+  const before = ctx.getImageData(0, 0, w, h);
+  ctx.clearRect(0, 0, w, h);
+  markLayerDirty(id);
+  const after = ctx.getImageData(0, 0, w, h);
+  history.push(
+    pixelCommand(
+      () => {
+        ctx.putImageData(before, 0, 0);
+        markLayerDirty(id);
+      },
+      () => {
+        ctx.putImageData(after, 0, 0);
+        markLayerDirty(id);
+      },
+      before,
+      after,
+    ),
+  );
+}
+
+export function toggleAlphaLock(id: number) {
+  const layer = document.layers.find((l) => l.id === id);
+  if (layer) layer.alphaLock = !layer.alphaLock;
+}
+
 /** Sets a layer's opacity (0-1, clamped). Editor preview only (`ctx.globalAlpha`); export
  *  ignores it so a fade in the editor cannot change the Spine slot. */
 export function setLayerOpacity(id: number, opacity: number) {
@@ -173,6 +208,7 @@ export function duplicateLayer(id: number): number | null {
   const layer = createLayer(`${src.name} copy`);
   layer.visible = src.visible;
   layer.opacity = src.opacity;
+  layer.alphaLock = src.alphaLock;
   const ctx = layer.canvas.getContext("2d");
   if (ctx) ctx.drawImage(src.canvas, 0, 0);
   document.layers.splice(index + 1, 0, layer);

@@ -4,6 +4,7 @@
   import Canvas from "./lib/Canvas.svelte";
   import LayerPanel from "./lib/LayerPanel.svelte";
   import Inspector from "./lib/Inspector.svelte";
+  import StatusBar from "./lib/StatusBar.svelte";
   import { document as doc, loadDocument } from "./state/doc.svelte";
   import { ui, applyPreferences, gatherPreferences } from "./state/ui.svelte";
   import { armAutosave, restore } from "./persist/autosave";
@@ -85,6 +86,18 @@
     ready = true;
   });
 
+  // iPad shows no tooltips, so a control's `title` goes to the status bar: on hover (desktop) and
+  // on press (touch), read from the nearest ancestor that has one. A `pointerover` resolving to the
+  // SAME element as the last write is ignored: pointer capture fires boundary `pointerover`s that
+  // would otherwise clear a message the press's own action just wrote. (As slop-paint/animator.)
+  let hintSource: Element | null = null;
+  function onPointerHint(e: PointerEvent) {
+    const el = (e.target as Element | null)?.closest("[title]") ?? null;
+    if (e.type === "pointerover" && el === hintSource) return;
+    hintSource = el;
+    ui.statusHint = el?.getAttribute("title") ?? "";
+  }
+
   let prefsTimer: ReturnType<typeof setTimeout>;
   $effect(() => {
     const prefs = gatherPreferences();
@@ -109,7 +122,11 @@
 
 <svelte:window onresize={applyPanelPrefs} />
 
-<main class="flex h-dvh w-dvw flex-col bg-surface text-text">
+<main
+  class="flex h-dvh w-dvw flex-col bg-surface text-text"
+  onpointerovercapture={onPointerHint}
+  onpointerdowncapture={onPointerHint}
+>
   <Toolbar />
   <div class="flex min-h-0 flex-1">
     <div class="min-w-0 flex-1">
@@ -161,4 +178,5 @@
       </div>
     </div>
   </div>
+  <StatusBar />
 </main>

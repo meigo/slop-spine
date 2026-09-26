@@ -1,42 +1,65 @@
 @import "tailwindcss";
 
+/* Dark only, on the shared slop palette (../SLOP-TIMELINE-UI.md §1), the same hexes as slop-paint
+   and slop-animator. The artwork is unaffected: the page behind it is .paper-white/.paper-checker
+   below, not these tokens. */
 @theme {
-  --color-surface: #ffffff;
-  --color-surface-hover: #f5f5f5;
-  --color-surface-active: #ebebeb;
-  --color-border: #e0e0e0;
-  --color-border-light: #f0f0f0;
-  --color-text: #222222;
-  --color-text-secondary: #666666;
-  --color-text-muted: #6b6b6b; /* 5.3:1 on white — #999 was 2.85:1, unreadable */
-  --color-canvas-bg: #f5f5f5;
-  --color-accent: #222222;
-  --color-accent-text: #ffffff;
-  --color-selection: #6688cc;
+  --color-surface: #1e1e22; /* family `panel` */
+  --color-surface-hover: #2d2d33;
+  --color-surface-active: #2d2d33;
+  --color-surface-raised: #2d2d33; /* family `raised` */
+  --color-border: #2e2e35; /* family `line` */
+  --color-border-light: #26262b;
+  --color-text: #f4f4f5;
+  --color-text-secondary: #a1a1aa; /* family `muted` */
+  --color-text-muted: #8a8a93;
+  --color-canvas-bg: #101013; /* family `ground` */
+  /* THE accent: active tool/toggle, selection, focus. Near-black text on it (5.92:1). */
+  --color-accent: #5b8cff;
+  --color-accent-hover: #7aa3ff;
+  --color-accent-text: #121212;
+  --color-selection: #5b8cff;
+  /* Caution: why something won't behave as you expect (hidden layer, a marquee limiting paint). */
+  --color-warn: #d5b75d;
 }
 
-/* Native controls (checkbox, number spinners, the color swatch, scrollbars) are drawn by the
-   BROWSER, not by our CSS — without color-scheme they stay in the light palette even in dark mode.
-   accent-color tints checkboxes/radios to the app's selection blue instead of the OS default. */
+/* Native controls (checkbox, spinners, the colour picker, scrollbars) follow the dark scheme. */
 :root {
-  color-scheme: light;
-  accent-color: var(--color-selection);
+  color-scheme: dark;
+  accent-color: var(--color-accent);
 }
 
-.dark {
-  color-scheme: dark;
-  --color-surface: #1e1e1e;
-  --color-surface-hover: #282828;
-  --color-surface-active: #333333;
-  --color-border: #383838;
-  --color-border-light: #2a2a2a;
-  --color-text: #e0e0e0;
-  --color-text-secondary: #999999;
-  --color-text-muted: #8a8a8a; /* 4.7:1 on #1e1e1e — #666 was 2.8:1, unreadable */
-  --color-canvas-bg: #121212;
-  --color-accent: #e0e0e0;
-  --color-accent-text: #1e1e1e;
-  --color-selection: #6688cc;
+/* On-states, defined once (SLOP-TIMELINE-UI.md §6), as slop-paint. `.ui-on` = a tool or toggle that
+   is on; `.ui-selected` = the current row, a faint tint plus a 2px left edge. Unlayered, so they
+   beat any Tailwind colour utility on the same element. */
+.ui-on {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.ui-on:hover {
+  background-color: var(--color-accent-hover);
+}
+.ui-selected {
+  background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  color: var(--color-text);
+}
+
+/* Layer thumbnail checkerboard, as slop-paint's. */
+.thumb-checkerboard {
+  background-image:
+    linear-gradient(45deg, #333 25%, transparent 25%),
+    linear-gradient(-45deg, #333 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #333 75%),
+    linear-gradient(-45deg, transparent 75%, #333 75%);
+  background-color: #222;
+  background-size: 6px 6px;
+  background-position:
+    0 0,
+    0 3px,
+    3px -3px,
+    -3px 0;
 }
 
 /* Document-space checker, CSS-transformed with the paper so pan/zoom is GPU. 32px squares
@@ -104,6 +127,8 @@ body {
 body {
   overscroll-behavior: none;
   font-family: system-ui, sans-serif;
+  /* Digits stay fixed-width so readouts don't jitter. */
+  font-variant-numeric: tabular-nums;
   color: var(--color-text);
   background: var(--color-surface);
 }
@@ -125,44 +150,24 @@ textarea,
   user-select: text;
 }
 
-/* Native color wells are a rounded-rect chrome on Safari; strip that so it's a square swatch. */
-input[type="color"].color-well {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  background: transparent;
-  cursor: pointer;
-}
-input[type="color"].color-well::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
-input[type="color"].color-well::-webkit-color-swatch {
-  border: none;
-  border-radius: 1px;
-}
-
-/* Range input — thin track, small round thumb */
+/* Range input, as slop-paint (SLOP-TIMELINE-UI.md §6): 4px track with the filled portion drawn as
+   a gradient, 12px round thumb. `appearance: none` is the only way to size the thumb and costs the
+   filled track the browser drew for free, so each slider reports its fill as --fill-from/--fill-to
+   (lib/slider-fill.ts). The fill is the accent mixed 50% into the track so it doesn't compete with
+   the thumb. */
 input[type="range"] {
+  --slider-fill: color-mix(in srgb, var(--color-accent) 50%, var(--color-surface-hover));
   -webkit-appearance: none;
   appearance: none;
-  height: 18px;
-  background: transparent;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--color-surface-hover) 0 var(--fill-from, 0%),
+    var(--slider-fill) var(--fill-from, 0%) var(--fill-to, 0%),
+    var(--color-surface-hover) var(--fill-to, 0%) 100%
+  );
   cursor: pointer;
-}
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 1.5px;
-  background: var(--color-border);
-}
-input[type="range"]::-moz-range-track {
-  height: 3px;
-  border-radius: 1.5px;
-  background: var(--color-border);
-  border: none;
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -170,37 +175,47 @@ input[type="range"]::-webkit-slider-thumb {
   height: 12px;
   border-radius: 50%;
   background: var(--color-accent);
-  border: 2px solid var(--color-surface);
-  margin-top: -4.5px;
-  box-shadow: 0 0 0 1px var(--color-border);
+  border: none;
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: transparent;
+  border: none;
 }
 input[type="range"]::-moz-range-thumb {
   width: 12px;
   height: 12px;
   border-radius: 50%;
   background: var(--color-accent);
-  border: 2px solid var(--color-surface);
-  box-shadow: 0 0 0 1px var(--color-border);
+  border: none;
 }
 
-/* Pressure curve popup — position:fixed so it escapes the ToolOptions bar's overflow clip;
-   its top/left are set from the trigger by positionPopup() when it opens. */
-.curve-popup {
-  position: fixed;
-  z-index: 30;
+/* The native picker inside the colour popover. */
+input[type="color"] {
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 2px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  display: none;
 }
-.curve-popup.open {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+
+/* Layer rename input, as slop-paint's. */
+.layer-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 1px 4px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
 }
-.curve-popup canvas {
+
+/* Pressure curve editor (inside the brush settings popover). */
+.curve-editor canvas {
   border-radius: 4px;
 }
 
@@ -214,6 +229,6 @@ input[type="range"]::-moz-range-thumb {
 
 /* One consistent, theme-aware keyboard ring instead of each browser's default. */
 :focus-visible {
-  outline: 2px solid var(--color-selection);
+  outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }

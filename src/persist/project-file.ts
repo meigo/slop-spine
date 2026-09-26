@@ -8,6 +8,7 @@ interface LayerJson {
   name: string;
   visible: boolean;
   opacity: number;
+  alphaLock?: boolean;
   revision: number;
 }
 
@@ -63,6 +64,7 @@ export async function saveProject(doc: RigDocument): Promise<Blob> {
       name: l.name,
       visible: l.visible,
       opacity: l.opacity,
+      alphaLock: l.alphaLock ?? false,
       revision: l.revision,
     })),
     slots: doc.slots,
@@ -101,6 +103,7 @@ export async function loadProject(file: Blob): Promise<RigDocument> {
       name: lj.name,
       visible: lj.visible,
       opacity: lj.opacity,
+      alphaLock: lj.alphaLock === true,
       canvas,
       revision: lj.revision,
     });

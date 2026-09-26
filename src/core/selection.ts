@@ -204,6 +204,18 @@ export class Selection {
     ];
   }
 
+  /** Make `rect` the marquee outright (Select all), as slop-paint's Selection does. */
+  selectRect(rect: SelectionRect) {
+    this.cancel();
+    this.rect = { ...rect };
+    this.lassoPoints = [];
+    this.lassoPath = null;
+    this.matrix = identity();
+    this.state = "selected";
+    this.onStateChange?.();
+    this.drawOverlay();
+  }
+
   /** Begin creating a new selection (clears any existing one). */
   startCreate(x: number, y: number) {
     this.cancel();
