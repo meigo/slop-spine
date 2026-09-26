@@ -11,8 +11,11 @@ import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const BG = [0xff, 0xff, 0xff]; // white plate — the mark is black, and a white square reads on any tab bar
-const INK = [0x00, 0x00, 0x00];
+// The slop family mark (copied from slop-animator), colour-coded per app: the family blue #667fff
+// turned to yellow (hue 50°) at the same saturation and lightness — #ffe566, the fill in
+// public/favicon.svg — on this app's own dark background (`theme_color` in manifest.webmanifest).
+const BG = [0x1e, 0x1e, 0x22];
+const INK = [0xff, 0xe5, 0x66];
 /** Supersampling factor per axis. 4 → 16 coverage samples per output pixel. */
 const SS = 4;
 
@@ -164,7 +167,7 @@ function bounds(polys) {
 }
 
 /**
- * Rasterize the polygons into a size×size RGBA icon: black ink on a full-bleed white plate.
+ * Rasterize the polygons into a size×size RGBA icon: yellow ink on a full-bleed dark plate.
  * `fill` (0..1) is the fraction of the square the MARK occupies — the plate is always full-bleed,
  * so a smaller value only insets the art (0.55 keeps it inside Android's maskable safe zone).
  *
@@ -230,21 +233,21 @@ function render(polys, size, fill) {
 const outDir = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 mkdirSync(outDir, { recursive: true });
 
-/** Read one SVG's path data and flatten it. Everything this repo generates from lives in `public/`;
- *  animator's copy takes a `dir` here so it can also read dormant art out of `tools/`. */
-function load(file) {
-  const svg = readFileSync(join(outDir, file), "utf8");
+/** Read one SVG's path data and flatten it. */
+function load(file, dir = outDir) {
+  const svg = readFileSync(join(dir, file), "utf8");
   const d = svg.match(/\sd="([^"]+)"/)?.[1];
-  if (!d) throw new Error(`no path data found in public/${file}`);
+  if (!d) throw new Error(`no path data found in ${join(dir, file)}`);
   return flattenPath(d);
 }
 
-// Every output is the same shared slop mark, tab and Home Screen alike, so the slop-* apps look
-// like one family at every size. Adapted from slop-animator's tools/make-icons.mjs, which is where
-// the hand-lettered "slop" logotype still lives (in its tools/, dormant) if a larger size ever
-// wants it back — it reads well above ~180px and only blurs around 32, which is why the tab never
-// used it. Nothing here generates from it, so it is deliberately not copied into this repo.
-const favicon = load("favicon.svg");
+// Two marks on purpose. The full "slop" logotype is four letters of hand lettering: it reads at
+// 180px and up, and turns to mush at 32. The tab icon therefore gets the star alone — the same
+// glyph, simplified — so favicon.svg (which modern browsers render at ANY size) and its PNG
+// fallback agree. Keep them in sync if the art changes.
+const favicon = load("favicon.svg"); // the shared slop mark
+// EVERY output is the mark, tab and Home Screen alike, so the slop-* apps look like one family at
+// every size (slop-animator keeps the hand-lettered logotype as dormant art in its tools/).
 const logotype = favicon;
 
 for (const [name, size, fill, polys] of [
