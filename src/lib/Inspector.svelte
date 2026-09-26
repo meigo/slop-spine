@@ -20,7 +20,6 @@
   import { Trash2, FoldVertical } from "@lucide/svelte";
 
   let selectedSlot = $derived(doc.slots.find((s) => s.layerId === ui.selectedLayerId) ?? null);
-  let selectedLayer = $derived(doc.layers.find((l) => l.id === ui.selectedLayerId) ?? null);
   let effectiveDensity = $derived(
     selectedSlot ? (selectedSlot.density ?? doc.density) : doc.density,
   );
@@ -103,23 +102,15 @@
 
 <!-- The header is the Layers header's twin (flat 40px bar, same type, border below, actions at the
      right), so the dock's two panels speak one language. What separates them is the raised grip
-     band above this panel (App.svelte), as slop-vector-editor's divider. The title names what is
-     being inspected, so the body doesn't repeat it. Fields in one two-column grid. -->
+     band above this panel (App.svelte), as slop-vector-editor's divider. The title names the
+     kind being inspected, not its name (which the list row or the Name field already shows). Fields in one two-column grid. -->
 <div class="flex h-full min-h-0 flex-col text-xs text-text-secondary">
   <div
     class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-2.5 text-xs font-semibold text-text-secondary"
   >
-    <span class="min-w-0 truncate">
-      {#if selectedBone}
-        {selectedBone.name}<span class="font-normal text-text-muted"> · bone</span>
-      {:else if selectedSlot}
-        {selectedLayer?.name ?? selectedSlot.name}<span class="font-normal text-text-muted">
-          · layer</span
-        >
-      {:else}
-        Inspector
-      {/if}
-    </span>
+    <!-- The kind only: the layer's name is on its selected row just above, and the bone's is in
+         the Name field below, so repeating it here said it three times. -->
+    <span>{selectedBone ? "Bone" : selectedSlot ? "Layer" : "Inspector"}</span>
     {#if selectedBone}
       <!-- root can't be removed or dissolved (removeBone/dissolveBone refuse it), so the buttons
            say so rather than look clickable and do nothing. -->
@@ -216,9 +207,6 @@
       </div>
     {:else if selectedSlot}
       <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
-        <span class="col-span-2 truncate text-text">{selectedLayer?.name ?? selectedSlot.name}</span
-        >
-
         <label for="inspector-hangs-from">Hangs from</label>
         <select
           id="inspector-hangs-from"
