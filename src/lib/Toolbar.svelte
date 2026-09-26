@@ -330,7 +330,11 @@
 
 <!-- Row 1: tools, visibility, history, zoom readout, menus. Fixed 48px, as slop-paint's. No
      `overflow` here: it would clip the menus. -->
-<div class="z-20 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-4">
+<!-- grid-area: App.svelte lays the two rows out in its grid (row 1 always full width). -->
+<div
+  class="z-20 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-4"
+  style:grid-area="row1"
+>
   {#each toolGroups as group, gi (gi)}
     {#if gi > 0}<div class="mx-1 {divider}"></div>{/if}
     <div class="flex shrink-0 items-center gap-1">
@@ -620,6 +624,7 @@
      aren't clipped. -->
 <div
   class="z-10 flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-4 py-1 *:shrink-0"
+  style:grid-area="row2"
 >
   {#if ui.tool === "brush" || ui.tool === "eraser"}
     <select

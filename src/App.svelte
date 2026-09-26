@@ -9,7 +9,11 @@
   import { ui, applyPreferences, gatherPreferences } from "./state/ui.svelte";
   import { armAutosave, restore } from "./persist/autosave";
   import { loadPreferences, savePreferences } from "./persist/preferences";
-  import { clampDockWidth, clampInspectorHeight } from "./core/panel-layout";
+  import {
+    clampDockWidth,
+    clampInspectorHeight,
+    panelBesideToolOptions,
+  } from "./core/panel-layout";
 
   // Gate autosave until the startup restore has settled — `doc` is a blank document until then,
   // and arming on that blank state (see the $effect below) would overwrite a real autosave with
@@ -21,6 +25,11 @@
   let restoreFailed = false;
 
   let dockEl: HTMLDivElement | undefined = $state();
+  let viewportW = $state(window.innerWidth);
+  // One grid, two arrangements (as slop-paint and slop-animator), so switching never re-mounts the
+  // toolbar, canvas or dock: where the options row fits beside the dock, the dock starts right under
+  // the top toolbar; otherwise (iPad at the default width) it starts below the row.
+  const panelBeside = $derived(panelBesideToolOptions(viewportW, ui.dockWidth));
   let prefsReady = false;
 
   function columnH() {
@@ -120,22 +129,33 @@
   });
 </script>
 
-<svelte:window onresize={applyPanelPrefs} />
+<svelte:window onresize={applyPanelPrefs} bind:innerWidth={viewportW} />
 
 <main
   class="flex h-dvh w-dvw flex-col bg-surface text-text"
   onpointerovercapture={onPointerHint}
   onpointerdowncapture={onPointerHint}
 >
-  <Toolbar />
-  <div class="flex min-h-0 flex-1">
-    <div class="min-w-0 flex-1">
+  <div
+    class="grid min-h-0 flex-1 overflow-hidden"
+    style:grid-template-columns="minmax(0, 1fr) auto"
+    style:grid-template-rows="auto auto minmax(0, 1fr)"
+    style:grid-template-areas={panelBeside
+      ? '"row1 row1" "row2 panel" "canvas panel"'
+      : '"row1 row1" "row2 row2" "canvas panel"'}
+  >
+    <!-- `contents`: the Toolbar's two rows are grid items themselves (areas row1 / row2). -->
+    <div class="contents">
+      <Toolbar />
+    </div>
+    <div class="min-h-0 min-w-0" style:grid-area="canvas">
       <Canvas />
     </div>
     <div
       bind:this={dockEl}
-      class="relative flex shrink-0 flex-col border-l border-border bg-surface"
-      style="width: {ui.dockWidth}px"
+      class="relative z-2 flex min-h-0 shrink-0 flex-col border-l border-border bg-surface"
+      style:grid-area="panel"
+      style:width="{ui.dockWidth}px"
     >
       <div
         class="group absolute inset-y-0 left-0 z-30 w-2 cursor-col-resize"

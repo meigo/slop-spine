@@ -506,18 +506,27 @@
   let brushDotEl: HTMLDivElement;
   let brushCursorVisible = false;
 
+  /** The canvas cursor for every tool but Rig (which sets its own on the paper canvas), as
+   *  slop-paint's: the nib for brush/eraser, a crosshair for the others, and over a selection's
+   *  handles the cursor for what that handle does. A blocked layer leaves the stage's own
+   *  not-allowed class showing. */
   function updateBrushCursor(e: PointerEvent) {
     if (!brushCursorEl || !brushDotEl || !viewport) return;
+    if (e.pointerType === "touch") return;
     const isBrushTool = ui.tool === "brush" || ui.tool === "eraser";
-    if (
-      e.pointerType === "touch" ||
-      !isBrushTool ||
-      spaceHeld ||
-      panning ||
-      e.buttons !== 0 ||
-      editBlock
-    ) {
+    if (!isBrushTool || spaceHeld || panning || e.buttons !== 0 || editBlock) {
       hideBrushCursor();
+      if (spaceHeld || panning) stage.style.cursor = panning ? "grabbing" : "grab";
+      else if (toolBlocked || ui.tool === "bone") stage.style.cursor = "";
+      // Mid-stroke: no nib, no arrow (as slop-paint) — the mark itself is the feedback.
+      else if (isBrushTool) stage.style.cursor = "none";
+      else if (isSelectTool(ui.tool) && selection?.active) {
+        // Mid-drag the handle under the pen can change; keep the one the drag started with.
+        if (e.buttons === 0) {
+          const p = viewport.screenToCanvas(e.clientX, e.clientY);
+          stage.style.cursor = selection.getCursor(selection.hitTest(p.x, p.y));
+        }
+      } else stage.style.cursor = "crosshair";
       return;
     }
     const slot = ui.stroke[slotFor(ui.tool)];
@@ -1493,6 +1502,9 @@
         ui.tool === "brush" || ui.tool === "eraser"
           ? ui.stroke[slotFor(ui.tool)].streamline / 100
           : 0,
+      // Apple Pencil double-tap toggles the eraser, as slop-paint — the same sticky toggle as the
+      // one-finger double-tap.
+      onPencilDoubleTap: () => toggleEraserGesture(),
     });
     const onCursorMove = (e: PointerEvent) => updateBrushCursor(e);
     const onCursorLeave = () => hideBrushCursor();
