@@ -106,7 +106,7 @@
      kind being inspected, not its name (which the list row or the Name field already shows). Fields in one two-column grid. -->
 <div class="flex h-full min-h-0 flex-col text-xs text-text-secondary">
   <div
-    class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-bar px-2.5 text-xs font-semibold text-text-secondary"
+    class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-2.5 text-xs font-semibold text-text-secondary"
   >
     <!-- The kind only: the layer's name is on its selected row just above, and the bone's is in
          the Name field below, so repeating it here said it three times. -->

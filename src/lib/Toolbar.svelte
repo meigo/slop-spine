@@ -623,7 +623,7 @@
      doesn't move the canvas; controls stay ≤ 28px tall. Wraps rather than scrolls, so popovers
      aren't clipped. -->
 <div
-  class="z-10 flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface-bar px-4 py-1 *:shrink-0"
+  class="z-10 flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-4 py-1 *:shrink-0"
   style:grid-area="row2"
 >
   {#if ui.tool === "brush" || ui.tool === "eraser"}
