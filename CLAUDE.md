@@ -16,10 +16,7 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
 
 ### Bugs here now — fix first
 
-1. **Pencil TIP double-tap still toggles the eraser** (`src/lib/Canvas.svelte:1507`, detection in
-   `input.ts:21-27,172-186`) beside the one-finger double-tap (`:1494`); both taps draw dots first,
-   a blob at large sizes. slop-paint `907b20b` removed the tip version. Delete it.
-2. **Save and Export do nothing in the iPad Home Screen app**, and download in the browser
+1. **Save and Export do nothing in the iPad Home Screen app**, and download in the browser
    (`src/lib/Toolbar.svelte:148-176`): iOS can't download from a standalone web app. Port
    slop-paint's `share.ts` (`saveToFilesAvailable`, `isStandalone`, `canShareFile`, `shareFile`),
    `download.ts` and `lib/ShareReadyDialog.svelte` (`af06e1d`, and the Save to Files commits before
