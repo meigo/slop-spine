@@ -21,6 +21,8 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 - Pose preview with rotation wobble (optional translation)
 - Derived mesh + Euclidean weights, reach capsules, per-layer bone excludes
 - Spine 4.2 export for programmatic animation (runtime pokes bones; no baked clips)
+- On iPad, Export goes to the share sheet (Save to Files), and so does Save in the Home Screen
+  app, where iOS can't download
 
 ## What it does not do
 

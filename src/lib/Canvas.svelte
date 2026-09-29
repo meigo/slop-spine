@@ -1502,9 +1502,6 @@
         ui.tool === "brush" || ui.tool === "eraser"
           ? ui.stroke[slotFor(ui.tool)].streamline / 100
           : 0,
-      // Apple Pencil double-tap toggles the eraser, as slop-paint — the same sticky toggle as the
-      // one-finger double-tap.
-      onPencilDoubleTap: () => toggleEraserGesture(),
     });
     const onCursorMove = (e: PointerEvent) => updateBrushCursor(e);
     const onCursorLeave = () => hideBrushCursor();

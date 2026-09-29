@@ -350,7 +350,6 @@ export function createDrawDispatch(opts?: {
             fctx,
             (target) => {
               floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.fillOpacity), {
-                alphaThreshold: 128,
                 tolerance: ui.fillTolerance,
                 // Expand grows the fill BEHIND existing content, which alpha lock refuses outright;
                 // without it the fill recolours the region and source-atop keeps it on the pixels.

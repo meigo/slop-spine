@@ -16,13 +16,8 @@ export interface InputOptions {
   transformCoords?: CoordTransform;
   /** Streamline factor 0-1, or a getter for dynamic values. Smooths input points (0 = none, 1 = max) */
   streamline?: number | (() => number);
-  /** Called when a pencil double-tap is detected (two quick taps with minimal movement) */
-  onPencilDoubleTap?: () => void;
 }
 
-const DOUBLE_TAP_INTERVAL = 300; // ms between taps
-const TAP_MAX_DURATION = 200; // ms — a tap must be shorter than this
-const TAP_MAX_DISTANCE = 8; // px — must not move more than this
 /** Max distance (canvas px) between consecutive points before we interpolate */
 const INTERPOLATION_THRESHOLD = 4;
 
@@ -44,6 +39,7 @@ export function setupInput(
   options?: Omit<InputOptions, "onStroke" | "transformCoords">,
 ) {
   let isDrawing = false;
+  let drawPointer = -1;
   let currentPoints: InputPoint[] = [];
 
   // Streamline: interpolate toward raw input with factor t.
@@ -54,13 +50,6 @@ export function setupInput(
     return 1 - v * 0.88;
   }
   let lastStreamlined: InputPoint | null = null;
-
-  // Pencil double-tap detection
-  let lastPenTapTime = 0;
-  let penDownTime = 0;
-  let penDownX = 0;
-  let penDownY = 0;
-  let penMoved = false;
 
   function getPoint(e: PointerEvent): InputPoint {
     let x: number, y: number;
@@ -94,35 +83,23 @@ export function setupInput(
   function onPointerDown(e: PointerEvent) {
     if (e.button !== 0 || !shouldDraw(e)) return;
     if (isStageChromeTarget(e.target)) return;
+    // A second pen or mouse contact must not restart the stroke the first one owns.
+    if (isDrawing) return;
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
     isDrawing = true;
+    drawPointer = e.pointerId;
     const first = getPoint(e);
     lastStreamlined = first;
     currentPoints = [first];
     onStroke(currentPoints, false);
-
-    // Track pen tap start
-    if (e.pointerType === "pen") {
-      penDownTime = e.timeStamp;
-      penDownX = e.clientX;
-      penDownY = e.clientY;
-      penMoved = false;
-    }
   }
 
   function onPointerMove(e: PointerEvent) {
-    if (!isDrawing) return;
+    // Finger contacts share this element with the Pencil. Only the pointer that started the
+    // stroke may extend it — a resting finger otherwise spikes the stroke and ends it.
+    if (!isDrawing || e.pointerId !== drawPointer) return;
     e.preventDefault();
-
-    // Track pen movement for tap detection
-    if (e.pointerType === "pen" && !penMoved) {
-      const dx = e.clientX - penDownX;
-      const dy = e.clientY - penDownY;
-      if (Math.abs(dx) > TAP_MAX_DISTANCE || Math.abs(dy) > TAP_MAX_DISTANCE) {
-        penMoved = true;
-      }
-    }
 
     // Collect coalesced events (Safari may return empty array — fall back to event itself)
     const coalesced = e.getCoalescedEvents?.();
@@ -172,33 +149,27 @@ export function setupInput(
   }
 
   function onPointerUp(e: PointerEvent) {
-    if (!isDrawing) return;
+    if (!isDrawing || e.pointerId !== drawPointer) return;
     e.preventDefault();
     isDrawing = false;
+    drawPointer = -1;
     lastStreamlined = null;
-    currentPoints.push(getPoint(e));
+    // Pen pointerup reports pressure 0; keep the last move's pressure so the stroke doesn't taper
+    const up = getPoint(e);
+    const last = currentPoints[currentPoints.length - 1];
+    if (last) up.pressure = last.pressure;
+    currentPoints.push(up);
     onStroke(currentPoints, true);
     currentPoints = [];
-
-    // Detect pencil double-tap
-    if (e.pointerType === "pen" && !penMoved && options?.onPencilDoubleTap) {
-      const duration = e.timeStamp - penDownTime;
-      if (duration < TAP_MAX_DURATION) {
-        // This was a quick tap — check if it's a double-tap
-        if (penDownTime - lastPenTapTime < DOUBLE_TAP_INTERVAL) {
-          options.onPencilDoubleTap();
-          lastPenTapTime = 0; // reset so triple-tap doesn't fire again
-        } else {
-          lastPenTapTime = e.timeStamp;
-        }
-      }
-    }
   }
 
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", onPointerUp);
+  // Capture lost without an up (the element or capture went away) must still end the stroke, or
+  // the `isDrawing` guard in onPointerDown refuses every later press. After a normal up it no-ops.
+  canvas.addEventListener("lostpointercapture", onPointerUp);
   const onContextMenu = (e: Event) => e.preventDefault();
   canvas.addEventListener("contextmenu", onContextMenu);
 
@@ -207,6 +178,7 @@ export function setupInput(
     canvas.removeEventListener("pointermove", onPointerMove);
     canvas.removeEventListener("pointerup", onPointerUp);
     canvas.removeEventListener("pointercancel", onPointerUp);
+    canvas.removeEventListener("lostpointercapture", onPointerUp);
     canvas.removeEventListener("contextmenu", onContextMenu);
   };
 }
