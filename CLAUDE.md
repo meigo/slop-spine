@@ -16,20 +16,14 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
 
 ### Bugs here now — fix first
 
-1. **The bucket can't fill a painted area.** `src/lib/draw-dispatch.ts:353` passes
-   `alphaThreshold: 128`, and `src/core/fill.ts:45` returns when the tapped pixel's alpha is ≥ that,
-   so a tap on anything already painted does nothing — including the alpha-lock recolour that
-   `src/rig/document.ts:6` promises. slop-paint removed that option (`ccd6bd1`, "Gap close"): above
-   the tolerance (32) it did nothing, and above 0 it refused a tap on colour. Minimal fix: drop the
-   option. Full port: item "Bridge for the bucket" below.
-2. **A finger can extend or end a Pencil stroke.** `src/core/input.ts:125` (`onPointerMove`) and
+1. **A finger can extend or end a Pencil stroke.** `src/core/input.ts:125` (`onPointerMove`) and
    `onPointerUp` don't check `pointerId`, so a resting finger's moves add points and its lift ends
    the stroke. Also no `lostpointercapture` listener (`:198-201`), and the lift point takes
    `pointerup`'s pressure, which a pen reports as 0 (`:175`). slop-paint: `e61dc5a`, `c242e3e`.
-3. **Pencil TIP double-tap still toggles the eraser** (`src/lib/Canvas.svelte:1507`, detection in
+2. **Pencil TIP double-tap still toggles the eraser** (`src/lib/Canvas.svelte:1507`, detection in
    `input.ts:21-27,172-186`) beside the one-finger double-tap (`:1494`); both taps draw dots first,
    a blob at large sizes. slop-paint `907b20b` removed the tip version. Delete it.
-4. **Save and Export do nothing in the iPad Home Screen app**, and download in the browser
+3. **Save and Export do nothing in the iPad Home Screen app**, and download in the browser
    (`src/lib/Toolbar.svelte:148-176`): iOS can't download from a standalone web app. Port
    slop-paint's `share.ts` (`saveToFilesAvailable`, `isStandalone`, `canShareFile`, `shareFile`),
    `download.ts` and `lib/ShareReadyDialog.svelte` (`af06e1d`, and the Save to Files commits before

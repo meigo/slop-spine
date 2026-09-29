@@ -9,8 +9,6 @@ import { enclosedRegion } from "./fill-holes";
 export interface FillOptions {
   /** Color tolerance for matching the clicked pixel's color (0-255) */
   tolerance?: number;
-  /** Alpha threshold (0-255): pixels with alpha >= this are treated as walls */
-  alphaThreshold?: number;
   /** Expand fill by this many pixels to cover antialiased edges. Fill draws behind existing content. */
   expand?: number;
 }
@@ -23,7 +21,6 @@ export function floodFill(
   options: FillOptions = {},
 ) {
   const tolerance = options.tolerance ?? 32;
-  const alphaThreshold = options.alphaThreshold ?? 0;
   const expand = options.expand ?? 0;
 
   const w = ctx.canvas.width;
@@ -41,9 +38,6 @@ export function floodFill(
   const targetB = data[startIdx + 2];
   const targetA = data[startIdx + 3];
 
-  // Don't fill if clicking on a wall pixel
-  if (alphaThreshold > 0 && targetA >= alphaThreshold) return;
-
   // Don't fill if clicking on the same color
   if (
     Math.abs(targetR - fillColor.r) <= tolerance &&
@@ -57,17 +51,9 @@ export function floodFill(
   // --- Pass 1: Scanline flood fill to build a fill mask ---
   const mask = new Uint8Array(w * h); // 1 = fill, 0 = no fill
 
-  function isWall(pixelIdx: number): boolean {
-    if (alphaThreshold > 0) {
-      return data[pixelIdx + 3] >= alphaThreshold;
-    }
-    return false;
-  }
-
   function matches(pixelIdx: number): boolean {
     const pi = pixelIdx >> 2;
     if (mask[pi]) return false;
-    if (isWall(pixelIdx)) return false;
     return (
       Math.abs(data[pixelIdx] - targetR) <= tolerance &&
       Math.abs(data[pixelIdx + 1] - targetG) <= tolerance &&
