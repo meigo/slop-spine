@@ -29,6 +29,9 @@
   import { importPsd } from "../persist/psd";
   import { clearAutosave } from "../persist/autosave";
   import NewDocDialog from "./NewDocDialog.svelte";
+  import ShareReadyDialog from "./ShareReadyDialog.svelte";
+  import { canShareFile, isStandalone, saveToFilesAvailable, shareFile } from "./share";
+  import { downloadBlob } from "./download";
   import ColorSwatch from "./ColorSwatch.svelte";
   import { exportBundle, ExportError } from "../export/bundle";
   import { history, historyState } from "../state/history.svelte";
@@ -145,15 +148,6 @@
     ],
   ];
 
-  function downloadBlob(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   function onNewDocument(width: number, height: number) {
     newDocOpen = false;
     void clearAutosave();
@@ -163,7 +157,11 @@
 
   async function onSave() {
     try {
-      downloadBlob(await saveProject(doc), "project.zip");
+      const blob = await saveProject(doc);
+      // The Home Screen app can't download at all: Save goes to the share sheet there.
+      if (saveToFilesAvailable() && isStandalone())
+        await sendToFiles(new File([blob], "project.zip", { type: blob.type }));
+      else downloadBlob(blob, "project.zip");
     } catch (e) {
       console.error("save failed", e);
       flashStatus("Save failed.");
@@ -172,11 +170,44 @@
 
   async function onExport() {
     try {
-      downloadBlob(await exportBundle(doc), "character.zip");
+      const blob = await exportBundle(doc);
+      // iPad: to the share sheet (Save to Files) — a download lands in Downloads in the browser,
+      // and does nothing at all in the Home Screen app.
+      if (saveToFilesAvailable())
+        await sendToFiles(new File([blob], "character.zip", { type: blob.type }));
+      else downloadBlob(blob, "character.zip");
     } catch (e) {
       console.error("export failed", e);
       flashStatus(e instanceof ExportError ? e.message : "Export failed.", 8000);
     }
+  }
+
+  // --- Save to Files (iPad/iPhone) ---
+  // A web page can only put a file where the user chooses via the share sheet: Safari has no save
+  // picker, and a download always lands in Downloads as a new copy. (As slop-paint.)
+  let shareFileReady = $state<File | null>(null);
+
+  /** Hand a finished file to the share sheet. Used on iPad by Export, and by Save in the Home
+   *  Screen app. */
+  async function sendToFiles(file: File) {
+    if (!canShareFile(file)) {
+      // This browser won't share the file type: fall back to a download.
+      downloadBlob(file, file.name);
+      flashStatus(`Downloaded ${file.name}`);
+      return;
+    }
+    // Try to ride the tap that started this. Building the zip can outlast Safari's idea of a
+    // "recent" tap, and then the sheet is refused — the dialog gives it a fresh one.
+    const r = await shareFile(file);
+    if (r.outcome === "shared") {
+      flashStatus(`Sent ${file.name} to the share sheet`);
+      return;
+    }
+    if (r.outcome === "dismissed") {
+      flashStatus("Not saved — the share sheet was closed");
+      return;
+    }
+    shareFileReady = file;
   }
 
   async function onFileChosen(e: Event) {
@@ -327,6 +358,7 @@
 <input type="file" accept=".zip" class="hidden" bind:this={fileInput} onchange={onFileChosen} />
 <input type="file" accept=".psd" class="hidden" bind:this={psdInput} onchange={onPsdChosen} />
 <NewDocDialog open={newDocOpen} onConfirm={onNewDocument} onCancel={() => (newDocOpen = false)} />
+<ShareReadyDialog file={shareFileReady} onClose={() => (shareFileReady = null)} />
 
 <!-- Row 1: tools, visibility, history, zoom readout, menus. Fixed 48px, as slop-paint's. No
      `overflow` here: it would clip the menus. -->
