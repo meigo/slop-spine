@@ -16,6 +16,16 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
 
 ### Worth porting
 
+- **Autosave copies and a blank-layers guard** (`2c53625`, added 2026-09-30): on iPad a
+  backgrounded 40-layer slop-paint document came back with every layer listed and EMPTY (iOS
+  reclaimed the page's image memory), and the next autosave would have replaced the only copy.
+  Here autosave is one `autosave` slot too (`persist/autosave.ts`). slop-paint now keeps up to 3
+  checkpoints at least 5 min apart plus a kept copy, listed in File ▸ Restore autosave…
+  (`persist/autosave.ts`, pure `persist/autosave-plan.ts`, `lib/RestoreDialog.svelte`); before each
+  autosave and on return from the background it checks which layers have pixels (a 256-px probe
+  per layer) against the last save, and more layers emptied than undo steps since pauses autosave
+  and offers the restore. It also shows the layers' memory in the Document menu, warning on iPad
+  above 600 MB
 - **Stream and Smooth** (`0ad830e`, `c13ed06`, `7bd3b8e`, `b158081`, `0a38872`, `699d772`,
   `9180de3`, `2b7f465`): Stream here is the old per-event average (`input.ts:44-50,109-124`),
   which weakens as the pointer rate rises; Smooth still feeds perfect-freehand's `smoothing`
