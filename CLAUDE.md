@@ -25,6 +25,13 @@ usually apply here too.
   stay owed on the device. Run it after UI or input changes. The hidden-layer and layer-drag checks
   were seen to FAIL with the behaviour broken on purpose.
 
+## Workflow
+
+As slop-paint and slop-vector-editor: branch off `main` (`fix/…`, `feat/…`, `chore/…`, `docs/…`),
+one commit per task with a conventional subject (`fix:`, `feat:`, `chore:`, `docs:`), and merge
+into `main` with `--no-ff` ("Merge <what>") only when the user says so. Keep README.md current
+with every user-visible change.
+
 ## Port from slop-paint
 
 Queued 2026-09-29, from an audit made by READING this code against slop-paint's commits (the app
@@ -34,15 +41,10 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
 
 ### Worth porting
 
-- **Tool-options row wraps in iPad portrait** (slop-paint `cd14268`; added 2026-10-01, VERIFIED:
-  `npm run test:ipad` fails on it): at 834px the Brush and Eraser rows are 69px, the rest 40, so
-  switching tools moves the canvas. slop-paint shows 5 of the 9 size presets (1, 3, 8, 20, 80)
-  below 960px and tightens the gaps. Re-measure: spine's row also carries Press.
 - **Clear and Duplicate vs. layer state** (slop-paint `e745612`, added 2026-10-01, read only):
   Clear layer (`LayerPanel.svelte` `onClear` → `clearLayerPixels`) clears a HIDDEN layer, which the
   pen refuses (`whyNotEditable`); slop-paint refuses it too. Check whether Duplicate copies a lifted
   float's hole (slop-paint applies the float first).
-
 - **More from slop-paint's code review** (added 2026-09-30, slop-paint `1c8b5fd`): (a) `core/selection.ts` `copyPixels` copies whole device pixels (`Math.round(r.x * dpr)`…) but leaves the selection rect fractional, so clearRegion clears and renderFloatingTo redraws off-grid: a marquee with fractional edges (zoom, Pencil) blurs the art on every move-and-Apply — slop-paint sets `this.rect` to the snapped pixels there (verified: move 10 px and back was identical with it, changed without). Check too (these depend on each app's own code): (b) a structural undo step pushed when nothing changed (merge with nothing below, deleting the last layer) wipes redo — slop-paint skips it (`sameStructure`) and says why; (c) deleted/merged layers kept alive by undo but not counted in the memory budget (`detachedLayerBytes`); (d) opening a project that fails partway should leave the open document untouched (build aside, swap at the end); (e) Space-to-pan re-activates the last clicked button in Chrome unless Space's default is claimed; (f) a canvas press that prevents default never blurs a focused text field — on iPad the keyboard stays up.
 - **Engine bugs from slop-paint's code review** (added 2026-09-30): the shared engine files here carry the same bugs slop-paint's review found (2026-09-30, slop-paint `64952cd`, `5a408f3`): (a) `core/stamp-brush.ts` resets its leftover distance on every call (`let dist = 0` … `let pos = -dist`), so there is at least one stamp per input segment whatever the size — slow strokes far denser, a big soft brush 12–24× slower; slop-paint's `spaceStamps` carries `sinceLastStamp` across segments and calls (reset in `resetStampState`), tested. (b) The eraser's Opacity does nothing for Smooth, Ink and Calligraphy: `core/brush.ts` and `core/calligraphy-brush.ts` set `globalAlpha = 1` for the eraser, `core/ink-brush.ts:271` uses `isEraser ? 1`; use `settings.opacity / 100`. (c) Mouse stamps draw at half opacity: the stamp alpha is `opacity × (0.5 + p × 0.5)` and a mouse reports pressure 0; use 1 when `hasPressure` is false. (d) `core/selection.ts` `pasteFloat` sets `this.mode = "rect"`, so after a reference's handles (or a reload, if the tool is restored without `setTool`) a Lasso drag can make rectangles; slop-paint sets the mode from the tool at `startCreate`. (e) `core/touch-gestures.ts` pans/pinches/taps on a finger that lands mid-stroke (a resting hand moves the view, so the line jumps; a two-finger tap undoes under the open stroke); slop-paint added an `isDrawing` callback and ignores that whole gesture until the fingers lift, and ignores undo/redo while a stroke is open. Also check (not verified here): whether a stroke re-reads the active layer/cell on every event — slop-paint's did, so switching layers mid-stroke copied the first layer's pre-stroke pixels onto the new one (it now pins `strokeLayer` at pen-down); and whether saves or exports can capture a live Outline preview (slop-paint's `withPendingResolved`).
 - **Autosave copies and a blank-layers guard** (`2c53625`, added 2026-09-30): on iPad a

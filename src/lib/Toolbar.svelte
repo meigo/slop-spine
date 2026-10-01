@@ -299,6 +299,9 @@
   });
 
   // --- Size: slider, click-to-type readout, presets. ---
+  // Below 960px (iPad portrait) only these show, so the brush row fits on one line at 834px (as
+  // slop-paint cd14268).
+  const narrowPresets = new Set<number>([1, 3, 8, 20, 80]);
   let editingSize = $state(false);
   let sizeInputValue = $state("");
 
@@ -657,7 +660,7 @@
      doesn't move the canvas; controls stay ≤ 28px tall. Wraps rather than scrolls, so popovers
      aren't clipped. -->
 <div
-  class="z-10 flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-4 py-1 *:shrink-0"
+  class="z-10 flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-4 py-1 *:shrink-0 max-[960px]:gap-x-2"
   style:grid-area="row2"
 >
   {#if ui.tool === "brush" || ui.tool === "eraser"}
@@ -712,7 +715,9 @@
           <button
             class="size-6 rounded-md text-[10px] transition-colors {slot.size === s
               ? 'ui-on'
-              : 'text-text-muted hover:bg-surface-hover hover:text-text'}"
+              : 'text-text-muted hover:bg-surface-hover hover:text-text'} {narrowPresets.has(s)
+              ? ''
+              : 'max-[960px]:hidden'}"
             title="Size {s}"
             onclick={() => (slot.size = s)}>{s}</button
           >
