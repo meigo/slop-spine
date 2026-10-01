@@ -92,6 +92,10 @@ export function drawStampStrokeIncremental(
 
   const { min: minSize, max: maxSize } = widthRange(settings.size, sizeRange);
   const tip = getTintedTip(settings.brushType, settings.color);
+  // A mouse has no pressure (reported 0): its width is already the nominal one, and its alpha
+  // mustn't take the light-pressure half either — mouse stamps drew at half the chosen opacity.
+  const hasPressure = points[0].hasPressure ?? true;
+  const pressureAlpha = (p: number) => (hasPressure ? 0.5 + p * 0.5 : 1);
 
   ctx.save();
   if (settings.isEraser) {
@@ -117,7 +121,7 @@ export function drawStampStrokeIncremental(
   if (lastStampCount === 0 && newPoints.length > 0) {
     const p = newPoints[0];
     const { drawSize, alphaScale } = stampFootprint(minSize + p.pressure * (maxSize - minSize));
-    ctx.globalAlpha = (settings.opacity / 100) * (0.5 + p.pressure * 0.5) * alphaScale;
+    ctx.globalAlpha = (settings.opacity / 100) * pressureAlpha(p.pressure) * alphaScale;
     ctx.drawImage(tip, p.x - drawSize / 2, p.y - drawSize / 2, drawSize, drawSize);
     sinceLastStamp = 0;
   }
@@ -141,7 +145,7 @@ export function drawStampStrokeIncremental(
       const y = prev.y + dy * t;
       const p = prev.pressure + (curr.pressure - prev.pressure) * t;
       const { drawSize, alphaScale } = stampFootprint(minSize + p * (maxSize - minSize));
-      ctx.globalAlpha = (settings.opacity / 100) * (0.5 + p * 0.5) * alphaScale;
+      ctx.globalAlpha = (settings.opacity / 100) * pressureAlpha(p) * alphaScale;
       ctx.drawImage(tip, x - drawSize / 2, y - drawSize / 2, drawSize, drawSize);
     }
     sinceLastStamp = spaced.since;
