@@ -14,6 +14,11 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser } },
   },
   {
+    // Node scripts (icon generation, the iPad smoke check).
+    files: ["tools/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     rules: {
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
       "@typescript-eslint/no-explicit-any": "warn",

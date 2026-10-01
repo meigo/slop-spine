@@ -36,6 +36,7 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 npm install
 npm run dev
 npm test
+npm run test:ipad   # the app in WebKit at iPad size with touch (first: npx playwright install webkit)
 npm run check
 npm run build
 npm run deploy   # Cloudflare Workers static assets
