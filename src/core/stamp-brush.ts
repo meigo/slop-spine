@@ -48,7 +48,22 @@ export function spaceStamps(
   const last = positions[positions.length - 1];
   return { positions, since: last === undefined ? since + segLen : segLen - last };
 }
-let tintedTip: HTMLCanvasElement | null = null;
+/**
+ * Which mip level to stamp from (slop-paint f943b1c): `sizes` largest first (the tip halved down to
+ * 4 px), the smallest that is still at least `devicePx` — so no stamp is shrunk more than 2×.
+ * Stamping a 2–4 px brush straight from the 64 px tip sampled a handful of its texels, so each
+ * stamp's coverage jumped with the grain: small Pencil and Charcoal strokes came out beaded and
+ * jagged (most visibly at 1× layers, as here). Each level is the one above shrunk by half, which
+ * averages it properly.
+ */
+export function mipIndex(devicePx: number, sizes: readonly number[]): number {
+  let i = 0;
+  while (i + 1 < sizes.length && sizes[i + 1] >= devicePx) i++;
+  return i;
+}
+
+/** The tinted tip and its halvings down to 4 px, largest first. */
+let tintedTip: HTMLCanvasElement[] | null = null;
 let tintedColor = "";
 let tintedType: BrushType | null = null;
 
@@ -58,7 +73,7 @@ export function resetStampState() {
   tintedTip = null;
 }
 
-function getTintedTip(type: BrushType, color: string): HTMLCanvasElement {
+function getTintedTip(type: BrushType, color: string): HTMLCanvasElement[] {
   if (tintedTip && tintedColor === color && tintedType === type) return tintedTip;
 
   const tip = getTip(type);
@@ -71,10 +86,21 @@ function getTintedTip(type: BrushType, color: string): HTMLCanvasElement {
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, cvs.width, cvs.height);
 
-  tintedTip = cvs;
+  const levels = [cvs];
+  for (let size = cvs.width / 2; size >= 4; size /= 2) {
+    const half = document.createElement("canvas");
+    half.width = size;
+    half.height = size;
+    const hctx = half.getContext("2d")!;
+    hctx.imageSmoothingQuality = "high";
+    hctx.drawImage(levels[levels.length - 1], 0, 0, size, size);
+    levels.push(half);
+  }
+
+  tintedTip = levels;
   tintedColor = color;
   tintedType = type;
-  return cvs;
+  return levels;
 }
 
 /**
@@ -91,7 +117,16 @@ export function drawStampStrokeIncremental(
   if (points.length === 0) return;
 
   const { min: minSize, max: maxSize } = widthRange(settings.size, sizeRange);
-  const tip = getTintedTip(settings.brushType, settings.color);
+  const tips = getTintedTip(settings.brushType, settings.color);
+  const tipSizes = tips.map((t) => t.width);
+  // Stamps are sized in document units; the layer's transform scales them to device pixels.
+  const m = ctx.getTransform();
+  const toDevice = Math.hypot(m.a, m.b);
+  /** One stamp, at the alpha already set, from the tip's mip level for its size. */
+  const stamp = (x: number, y: number, drawSize: number) => {
+    const tip = tips[mipIndex(drawSize * toDevice, tipSizes)];
+    ctx.drawImage(tip, x - drawSize / 2, y - drawSize / 2, drawSize, drawSize);
+  };
   // A mouse has no pressure (reported 0): its width is already the nominal one, and its alpha
   // mustn't take the light-pressure half either — mouse stamps drew at half the chosen opacity.
   const hasPressure = points[0].hasPressure ?? true;
@@ -122,7 +157,7 @@ export function drawStampStrokeIncremental(
     const p = newPoints[0];
     const { drawSize, alphaScale } = stampFootprint(minSize + p.pressure * (maxSize - minSize));
     ctx.globalAlpha = (settings.opacity / 100) * pressureAlpha(p.pressure) * alphaScale;
-    ctx.drawImage(tip, p.x - drawSize / 2, p.y - drawSize / 2, drawSize, drawSize);
+    stamp(p.x, p.y, drawSize);
     sinceLastStamp = 0;
   }
 
@@ -146,7 +181,7 @@ export function drawStampStrokeIncremental(
       const p = prev.pressure + (curr.pressure - prev.pressure) * t;
       const { drawSize, alphaScale } = stampFootprint(minSize + p * (maxSize - minSize));
       ctx.globalAlpha = (settings.opacity / 100) * pressureAlpha(p) * alphaScale;
-      ctx.drawImage(tip, x - drawSize / 2, y - drawSize / 2, drawSize, drawSize);
+      stamp(x, y, drawSize);
     }
     sinceLastStamp = spaced.since;
   }
