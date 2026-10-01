@@ -19,6 +19,7 @@ import { drawStroke, widthRange, type BrushSettings } from "../core/brush";
 import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
 import { drawDryStroke } from "../core/dry-brush";
 import { pathSmoothRadius } from "../core/stroke-smoothing";
+import { settledIndex } from "../core/stroke-freeze";
 import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
 import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../core/fill";
@@ -249,7 +250,8 @@ export function createDrawDispatch(opts?: {
   const unfrozenFrom = () => (frozenTo === 0 ? 0 : frozenTo - FREEZE_OVERLAP);
 
   /** Bake the stroke's settled part into `frozen` once it has grown by FREEZE_STEP points.
-   *  Settled = at least 2 × the widest nib plus 30 px of path, and 40 points, behind the pen:
+   *  Settled = at least 2 × the widest nib plus 30 px of travel (`settledIndex`: a resting pen's
+   *  jitter doesn't count), and 40 points, behind the pen:
    *  Calligraphy's normals reach half a width back, its smoothing 2 points, Ink's Pool 32 ms. */
   function freezeSettled(
     ctx: CanvasRenderingContext2D,
@@ -262,13 +264,7 @@ export function createDrawDispatch(opts?: {
     if (import.meta.env.DEV && (window as unknown as { slopNoFreeze?: boolean }).slopNoFreeze)
       return;
     if (!scratch) return;
-    const marginPx = 2 * widthRange(size, sizeRange).max + 30;
-    let i = pts.length - 1;
-    let d = 0;
-    while (i > 0 && (d < marginPx || pts.length - 1 - i < 40)) {
-      d += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-      i--;
-    }
+    const i = settledIndex(pts, 2 * widthRange(size, sizeRange).max + 30, 40);
     if (i - frozenTo < FREEZE_STEP) return;
     if (!frozen) {
       frozen = document.createElement("canvas");
