@@ -15,3 +15,20 @@ history.onChange = () => {
   historyState.canUndo = history.canUndo;
   historyState.canRedo = history.canRedo;
 };
+
+/** Set while a brush or eraser stroke is open (draw-dispatch). Undo and redo wait for it to end:
+ *  the stroke's pre-stroke copy still holds the step, so its next frame would put the undone pixels
+ *  back and the step would be lost (Ctrl+Z, or a toolbar tap, while the Pencil draws). As
+ *  slop-paint. */
+let strokeOpen = false;
+export function setStrokeOpen(open: boolean): void {
+  strokeOpen = open;
+}
+
+export function undo(): void {
+  if (!strokeOpen) history.undo();
+}
+
+export function redo(): void {
+  if (!strokeOpen) history.redo();
+}

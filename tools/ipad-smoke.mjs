@@ -335,6 +335,56 @@ async function main(page) {
     ];
   });
 
+  /** A pen stroke along the page's foot with `during` run while it is open; then Undo takes the
+   *  stroke back, and the outline must still be undoable under it (a lost step says otherwise). */
+  async function strokeWith(during) {
+    const path = line(at(0.15, 0.92), at(0.85, 0.92));
+    const move = (t) => ({ type: "move", id: 2, kind: "pen", ...path(t), p: 0.6, wait: 8 });
+    const ts = (from, to) => Array.from({ length: 10 }, (_, i) => from + ((to - from) * i) / 9);
+    await gesture([
+      { type: "down", id: 2, kind: "pen", ...path(0), p: 0.6 },
+      ...ts(0, 0.4).map(move),
+    ]);
+    await during();
+    await gesture([
+      ...ts(0.4, 1).map(move),
+      { type: "up", id: 2, kind: "pen", ...path(1), wait: 8 },
+    ]);
+    await page.waitForTimeout(300);
+    await tapButton("Undo");
+    return canUndo();
+  }
+
+  await step(async () => {
+    // A hand landing while the Pencil draws is resting, not gesturing: no undo, no pan.
+    const before = await docCanvas.boundingBox();
+    const kept = await strokeWith(async () => {
+      await gesture([
+        { type: "down", id: 11, kind: "touch", ...at(0.3, 0.3) },
+        { type: "down", id: 12, kind: "touch", ...at(0.7, 0.3) },
+        { type: "up", id: 11, kind: "touch", ...at(0.3, 0.3), wait: 60 },
+        { type: "up", id: 12, kind: "touch", ...at(0.7, 0.3) },
+      ]);
+      await gesture(pathSteps("touch", 13, line(at(0.4, 0.4), at(0.6, 0.6))));
+    });
+    const after = await docCanvas.boundingBox();
+    const still = Math.abs(after.x - before.x) < 1 && Math.abs(after.y - before.y) < 1;
+    return [
+      kept && still,
+      `[sim] fingers during a pen stroke neither undo nor pan (outline still undoable ${kept}, page moved ${Math.round(after.x - before.x)},${Math.round(after.y - before.y)} px)`,
+      "fingers-mid-stroke",
+    ];
+  });
+
+  await step(async () => {
+    const kept = await strokeWith(() => page.keyboard.press("ControlOrMeta+z"));
+    return [
+      kept,
+      `[sim] Ctrl+Z during a pen stroke waits for it to end (outline still undoable ${kept})`,
+      "undo-mid-stroke",
+    ];
+  });
+
   await step(async () => {
     // The Dry brush: hair stripes broken where they run dry, so fewer px than Smooth on one path.
     const band = rect(0.05, 0.03, 0.9, 0.14);

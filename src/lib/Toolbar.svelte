@@ -33,7 +33,7 @@
   import { downloadBlob } from "./download";
   import ColorSwatch from "./ColorSwatch.svelte";
   import { exportBundle, ExportError } from "../export/bundle";
-  import { history, historyState } from "../state/history.svelte";
+  import { historyState, undo, redo } from "../state/history.svelte";
   import { clearSelectedLayer, fillAllEnclosed } from "./draw-dispatch";
   import { clipboard } from "../state/clipboard.svelte";
   import { selectionCommands } from "../state/selection-commands";
@@ -415,7 +415,7 @@
     aria-disabled={!historyState.canUndo}
     title={historyState.canUndo ? "Undo (Ctrl+Z)" : "Undo — nothing to undo"}
     onclick={() => {
-      if (historyState.canUndo) history.undo();
+      if (historyState.canUndo) undo();
     }}><Undo2 size={20} /></button
   >
   <button
@@ -423,7 +423,7 @@
     aria-disabled={!historyState.canRedo}
     title={historyState.canRedo ? "Redo (Ctrl+Shift+Z)" : "Redo — nothing to redo"}
     onclick={() => {
-      if (historyState.canRedo) history.redo();
+      if (historyState.canRedo) redo();
     }}><Redo2 size={20} /></button
   >
 
@@ -503,7 +503,7 @@
           aria-disabled={!historyState.canUndo}
           title={historyState.canUndo ? "" : "Undo — nothing to undo"}
           onclick={() => {
-            if (historyState.canUndo) history.undo();
+            if (historyState.canUndo) undo();
             close();
           }}>Undo <span class={kbd}>Ctrl+Z</span></button
         >
@@ -513,7 +513,7 @@
           aria-disabled={!historyState.canRedo}
           title={historyState.canRedo ? "" : "Redo — nothing to redo"}
           onclick={() => {
-            if (historyState.canRedo) history.redo();
+            if (historyState.canRedo) redo();
             close();
           }}>Redo <span class={kbd}>Ctrl+Shift+Z</span></button
         >

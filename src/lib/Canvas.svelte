@@ -40,7 +40,7 @@
   import { computeImagePlacement } from "../core/image-fit";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
-  import { history } from "../state/history.svelte";
+  import { history, undo, redo } from "../state/history.svelte";
   import { pixelCommand } from "../core/history";
   import { Selection } from "../core/selection";
   import { nibSemiAxes } from "../core/calligraphy-brush";
@@ -490,7 +490,11 @@
     setTool(ui.toolBeforeEyedropper);
   }
 
+  /** A pen or mouse gesture is open (any tool): fingers landing now are a resting hand. */
+  let penDown = false;
+
   function handleStroke(points: InputPoint[], done: boolean) {
+    penDown = !done;
     if (eyedropperGesture === null) eyedropperGesture = ui.tool === "eyedropper";
     const eye = eyedropperGesture;
     if (done) eyedropperGesture = null;
@@ -605,8 +609,8 @@
     // project only wires the one shortcut.
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
-      if (e.shiftKey) history.redo();
-      else history.undo();
+      if (e.shiftKey) redo();
+      else undo();
     }
     // Save/Load, matching slop-paint's Ctrl+S/Ctrl+O. Both buttons live in Toolbar.svelte, so a
     // window event bridges to them the same way Canvas.svelte's own Fit View listener does.
@@ -1489,10 +1493,11 @@
     resizeObserver.observe(stage);
 
     const cleanupTouch = setupTouchGestures(stage, viewport, {
-      onUndo: () => history.undo(),
-      onRedo: () => history.redo(),
+      onUndo: () => undo(),
+      onRedo: () => redo(),
       onToggleEraser: () => toggleEraserGesture(),
       onViewportChange: () => {},
+      isDrawing: () => penDown,
     });
 
     // Streamline is a brush preference: on the other tools it would make a marquee or the
