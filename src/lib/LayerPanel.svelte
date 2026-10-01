@@ -13,8 +13,8 @@
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
   import type { Layer } from "../rig/document";
-  import { onMount } from "svelte";
-  import Sortable from "sortablejs";
+  import { autoScrollStep, ghostTop, pastThreshold, shiftedRowIds } from "./layer-drag-visual";
+  import { dropTarget, type Drop, type RowBox } from "./layer-drop";
   import { isDoubleTap, type Tap } from "./double-tap";
   import { sliderFill } from "./slider-fill";
   import {
@@ -37,9 +37,29 @@
   let editingId = $state<number | null>(null);
   let draftName = $state("");
   let listEl: HTMLElement | undefined = $state();
-  // Bumped after a Sortable drop so {#key} rebuilds the list from state. Sortable relocates
-  // evt.item in the DOM; without this the {#each} teardown can leave a duplicate row.
-  let dragNonce = $state(0);
+  /** A press on a grip; `live` once it has travelled past the threshold and become a drag. Rows,
+   *  the grab offset, the row height and the content height are measured then, once
+   *  (SLOP-LAYER-DRAG.md rule 1): sliding rows must not move the targets they are measured
+   *  against. */
+  let dragging: {
+    id: number;
+    pointerId: number;
+    row: HTMLElement;
+    startX: number;
+    startY: number;
+    clientY: number;
+    live: boolean;
+    boxes: RowBox[];
+    grab: number;
+    rowPx: number;
+    contentHeight: number;
+  } | null = null;
+  let drop = $state<Drop | null>(null);
+  /** The floating copy of the grabbed row, in content coordinates. */
+  let ghost = $state.raw<{ top: number; layer: Layer; height: number } | null>(null);
+  /** Rows slid down to open the gap. */
+  let shifted = $state.raw<Set<number>>(new Set());
+  let scrollFrame = 0;
 
   // 28px list actions, borderless, as slop-paint's header. aria-disabled (not `disabled`) so the
   // status bar can still read the reason off the title.
@@ -125,33 +145,141 @@
     };
   }
 
-  onMount(() => {
-    if (!listEl) return;
-    const sortable = Sortable.create(listEl, {
-      handle: ".layer-drag-handle",
-      animation: 150,
-      // Pointer fallback, not HTML5 DnD: native drag shows the macOS green-plus copy
-      // cursor instead of sliding rows. Animator gets the live swap from Sortable's
-      // animation; this keeps that without the browser ghost.
-      forceFallback: true,
-      onEnd(evt) {
-        if (evt.oldIndex == null || evt.newIndex == null || evt.oldIndex === evt.newIndex) return;
-        const id = Number((evt.item as HTMLElement).dataset.layerId);
-        if (!Number.isFinite(id)) return;
-        // Visual list is top-first; document.layers is bottom-first.
-        const toIndex = doc.layers.length - 1 - evt.newIndex;
-        reorderLayer(id, toIndex);
-        evt.item.remove();
-        dragNonce++;
-      },
+  // Row drag (2026-10-01, SLOP-LAYER-DRAG.md): pointer events on the grip, drawn over the pure
+  // `dropTarget`; nothing moves a DOM node, and the document changes once, on drop, through
+  // `reorderLayer`. Replaces SortableJS, whose DOM moves needed a {#key} remount after each drop.
+
+  /** Every row, in the list's content coordinates. */
+  function rows(): RowBox[] {
+    if (!listEl) return [];
+    const off = listEl.scrollTop - listEl.getBoundingClientRect().top;
+    return [...listEl.querySelectorAll<HTMLElement>("[data-layer-id]")].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { id: Number(el.dataset.layerId), top: r.top + off, bottom: r.bottom + off };
     });
-    return () => sortable.destroy();
-  });
+  }
+
+  function startDrag(e: PointerEvent, id: number) {
+    if (e.button !== 0) return;
+    const row = (e.currentTarget as Element | null)?.closest<HTMLElement>("[data-layer-id]");
+    if (!row) return;
+    e.preventDefault();
+    try {
+      if (e.currentTarget instanceof Element) e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Capture is a convenience; moves still arrive while the pointer stays on the grip.
+    }
+    dragging = {
+      id,
+      pointerId: e.pointerId,
+      row,
+      startX: e.clientX,
+      startY: e.clientY,
+      clientY: e.clientY,
+      live: false,
+      boxes: [],
+      grab: 0,
+      rowPx: 0,
+      contentHeight: 0,
+    };
+    drop = null;
+  }
+
+  /** The press became a drag: measure once, lift the copy and start the edge scroll. */
+  function lift(d: NonNullable<typeof dragging>) {
+    const layer = doc.layers.find((l) => l.id === d.id);
+    if (!listEl || !layer) return;
+    d.live = true;
+    d.boxes = rows();
+    const r = d.row.getBoundingClientRect();
+    d.grab = d.startY - r.top;
+    d.rowPx = r.height;
+    d.contentHeight = listEl.scrollHeight;
+    ghost = { top: 0, layer, height: r.height };
+    document.documentElement.classList.add("layer-dragging");
+    scrollFrame = requestAnimationFrame(edgeScroll);
+  }
+
+  function update(d: NonNullable<typeof dragging>) {
+    if (!listEl || !ghost) return;
+    const y = d.clientY - listEl.getBoundingClientRect().top + listEl.scrollTop;
+    drop = dropTarget(d.boxes, y, d.id);
+    shifted = shiftedRowIds(d.boxes, drop?.line ?? null);
+    ghost = { ...ghost, top: ghostTop(y, d.grab, d.contentHeight, d.rowPx) };
+    document.documentElement.classList.toggle("layer-drop-refused", drop === null);
+  }
+
+  /** Near the list's top or bottom edge, scroll it — once a frame while the drag lasts. */
+  function edgeScroll() {
+    const d = dragging;
+    if (!d) return;
+    if (!listEl) return finishDrag();
+    const view = listEl.getBoundingClientRect();
+    const step = autoScrollStep(d.clientY, view.top, view.bottom);
+    const max = Math.max(d.contentHeight - listEl.clientHeight, 0);
+    const next = Math.min(Math.max(listEl.scrollTop + step, 0), max);
+    if (next !== listEl.scrollTop) {
+      listEl.scrollTop = next;
+      update(d);
+    }
+    scrollFrame = requestAnimationFrame(edgeScroll);
+  }
+
+  // The cursor classes sit on <html>, outside this component: never leave them behind.
+  $effect(() => () => finishDrag());
+
+  /** Puts everything back as it was before the press. */
+  function finishDrag() {
+    cancelAnimationFrame(scrollFrame);
+    dragging = null;
+    drop = null;
+    ghost = null;
+    shifted = new Set();
+    document.documentElement.classList.remove("layer-dragging", "layer-drop-refused");
+  }
+
+  function moveDrag(e: PointerEvent) {
+    const d = dragging;
+    if (!d || e.pointerId !== d.pointerId) return;
+    d.clientY = e.clientY;
+    if (!d.live) {
+      if (!pastThreshold(e.clientX - d.startX, e.clientY - d.startY)) return;
+      lift(d);
+    }
+    update(d);
+  }
+
+  function endDrag(e: PointerEvent, apply: boolean) {
+    const d = dragging;
+    if (!d || e.pointerId !== d.pointerId) return;
+    d.clientY = e.clientY;
+    // A press that never became a drag lands nothing.
+    if (apply && d.live) update(d);
+    const target = apply && d.live ? drop : null;
+    const id = d.id;
+    // Clear the slides and their transition in the same tick as the commit, or the re-ordered
+    // rows animate back from the gap (rule 3).
+    finishDrag();
+    if (target) reorderLayer(id, target.index);
+  }
+
+  const slide = (id: number) => (shifted.has(id) && ghost ? `translateY(${ghost.height}px)` : null);
+  const slideTransition = $derived(ghost ? "transform 150ms ease" : null);
 
   function onClear() {
     if (ui.selectedLayerId != null) clearLayerPixels(ui.selectedLayerId);
   }
 </script>
+
+<svelte:window
+  onkeydowncapture={(e) => {
+    // Capture phase, so the app's own Escape doesn't also run (rule 6).
+    if (e.key !== "Escape" || !dragging) return;
+    finishDrag();
+    e.preventDefault();
+    e.stopPropagation();
+  }}
+/>
 
 <div class="flex h-full flex-col bg-surface text-sm text-text">
   <!-- h-10: the tool-options row's height, as slop-paint's header. Grouped create │ clear │
@@ -218,8 +346,9 @@
       <span class="text-[11px] text-text-muted">No layer selected</span>
     {/if}
   </div>
-  <ul bind:this={listEl} class="flex-1 overflow-y-auto">
-    {#key dragNonce}
+  <!-- The scroller is `relative` so the dragged row's floating copy sits in its content. -->
+  <div bind:this={listEl} class="relative min-h-0 flex-1 overflow-y-auto">
+    <ul>
       {#each topFirst as layer (layer.id)}
         <!-- ONE line, as slop-paint's: identity on the left (grip, thumbnail, name), state on the
              right in fixed 20px columns (alpha lock, eye) so it lines up across rows. -->
@@ -228,14 +357,23 @@
           class="flex min-w-0 cursor-pointer items-center gap-1 border-b border-border-light py-1 pr-[6px] pl-2 text-sm transition-colors hover:bg-surface-hover {ui.selectedLayerId ===
           layer.id
             ? 'ui-selected text-text'
-            : 'text-text-secondary'}"
+            : 'text-text-secondary'} {ghost?.layer.id === layer.id ? 'opacity-40' : ''}"
+          style:transform={slide(layer.id)}
+          style:transition={slideTransition}
           title="Tap to draw on this layer · double-tap the name to rename"
           onclick={() => onSelect(layer)}
           role="presentation"
         >
           <span
-            class="layer-drag-handle shrink-0 cursor-grab text-text-muted hover:text-text-secondary"
+            class="shrink-0 cursor-grab text-text-muted hover:text-text-secondary"
+            style="touch-action: none"
             title="Drag to reorder"
+            role="presentation"
+            onpointerdown={(e) => startDrag(e, layer.id)}
+            onpointermove={moveDrag}
+            onpointerup={(e) => endDrag(e, true)}
+            onpointercancel={(e) => endDrag(e, false)}
+            onlostpointercapture={(e) => endDrag(e, false)}
           >
             <GripVertical size={14} />
           </span>
@@ -295,6 +433,23 @@
           </button>
         </li>
       {/each}
-    {/key}
-  </ul>
+    </ul>
+    {#if ghost}
+      <!-- The grabbed row, following the pointer. -->
+      <div
+        data-drag-ghost
+        class="pointer-events-none absolute inset-x-0 z-10 flex items-center gap-1 rounded bg-surface-raised pr-[6px] pl-2 text-sm text-text shadow-lg ring-1 ring-accent"
+        style="top: {ghost.top}px; height: {ghost.height}px"
+      >
+        <span class="shrink-0 text-text-muted"><GripVertical size={14} /></span>
+        <canvas
+          class="thumb-checkerboard size-5 shrink-0 rounded-sm border border-border"
+          width="40"
+          height="40"
+          use:thumbnail={{ canvas: ghost.layer.canvas, rev: ghost.layer.revision }}
+        ></canvas>
+        <span class="min-w-0 flex-1 truncate">{ghost.layer.name}</span>
+      </div>
+    {/if}
+  </div>
 </div>

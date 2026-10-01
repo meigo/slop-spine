@@ -292,6 +292,8 @@
       eraser: createCurveEditor(pressureCurves.eraser, bumpCurve),
     };
     const editor = curveEditors[slotFor(ui.tool)];
+    // The host is empty in the markup, so Svelte owns none of what this swaps.
+    // eslint-disable-next-line svelte/no-dom-manipulating
     curveHostEl.replaceChildren(editor);
     editor.redraw();
   });

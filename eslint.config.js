@@ -41,8 +41,6 @@ export default tseslint.config(
       // and discarded within one call, never read reactively. SvelteMap/SvelteSet would only add
       // signal overhead.
       "svelte/prefer-svelte-reactivity": "off",
-      // SortableJS (layer reordering) and pointer capture deliberately touch the DOM.
-      "svelte/no-dom-manipulating": "off",
     },
   },
   {

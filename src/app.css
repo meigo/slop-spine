@@ -46,6 +46,17 @@
   color: var(--color-text);
 }
 
+/* While a layer row is dragged (SLOP-LAYER-DRAG.md): the cursor everywhere, whatever the element
+   under it sets — not-allowed while the position under the pointer refuses the drop. */
+html.layer-dragging,
+html.layer-dragging * {
+  cursor: grabbing !important;
+}
+html.layer-drop-refused,
+html.layer-drop-refused * {
+  cursor: not-allowed !important;
+}
+
 /* Layer thumbnail checkerboard, as slop-paint's: light like the page, so dark strokes show. */
 .thumb-checkerboard {
   background-image:
