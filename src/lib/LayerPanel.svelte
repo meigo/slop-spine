@@ -9,7 +9,6 @@
     toggleAlphaLock,
     duplicateLayer,
     setLayerOpacity,
-    clearLayerPixels,
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
   import type { Layer } from "../rig/document";
@@ -17,6 +16,8 @@
   import { dropTarget, type Drop, type RowBox } from "./layer-drop";
   import { isDoubleTap, type Tap } from "./double-tap";
   import { sliderFill } from "./slider-fill";
+  import { clearSelectedLayer } from "./draw-dispatch";
+  import { selectionCommands } from "../state/selection-commands";
   import {
     Plus,
     Trash2,
@@ -81,6 +82,8 @@
 
   function onDuplicate() {
     if (ui.selectedLayerId == null) return;
+    // A lifted selection's pixels aren't in the layer yet: bake them, or the copy gets the hole.
+    selectionCommands.applyFloat?.();
     const id = duplicateLayer(ui.selectedLayerId);
     if (id != null) {
       ui.selectedLayerId = id;
@@ -265,10 +268,6 @@
 
   const slide = (id: number) => (shifted.has(id) && ghost ? `translateY(${ghost.height}px)` : null);
   const slideTransition = $derived(ghost ? "transform 150ms ease" : null);
-
-  function onClear() {
-    if (ui.selectedLayerId != null) clearLayerPixels(ui.selectedLayerId);
-  }
 </script>
 
 <svelte:window
@@ -301,7 +300,7 @@
         class={headerBtn}
         title={selected ? "Clear layer" : "Clear — select a layer first"}
         aria-disabled={selected == null}
-        onclick={onClear}><Eraser size={16} /></button
+        onclick={clearSelectedLayer}><Eraser size={16} /></button
       >
       <span class="-mx-0.5 h-5 w-px shrink-0 bg-border" role="presentation"></span>
       <button
