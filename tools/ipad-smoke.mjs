@@ -516,7 +516,51 @@ async function main(page) {
   });
 
   await step(async () => {
-    // Three rows, so a drop between the top two slides the third one down to open the gap.
+    // Clear layer refuses a hidden layer too (slop-paint e745612): it used to wipe pixels you
+    // couldn't see. Counted with the layer shown, as above.
+    const selected = page.locator("[data-layer-id].ui-selected");
+    const before = await ink(whole());
+    await selected.locator('button[title^="Visible"]').tap();
+    await tapButton("Clear layer");
+    const s = await status();
+    await selected.locator('button[title^="Hidden"]').tap();
+    await page.waitForTimeout(200);
+    const after = await ink(whole());
+    return [
+      before === after && /hidden/i.test(s),
+      `Clear layer refuses a hidden layer (${before} → ${after} painted px; "${s}")`,
+      "clear-hidden",
+    ];
+  });
+
+  await step(async () => {
+    // Duplicate with a lifted selection: the copy must carry the moved pixels, not the hole they
+    // left (slop-paint e745612). The top of the body is lifted and moved off it, to the right.
+    await tapButton("Rect select");
+    await pen(line(at(0.35, 0.15), at(0.65, 0.35)), { n: 10 });
+    await page.waitForTimeout(150);
+    await pen(line(at(0.5, 0.3), at(0.8, 0.3)), { n: 15 });
+    await page.waitForTimeout(200);
+    // Apply's title says "nothing lifted yet" until a float exists.
+    const lifted = (await page.locator('button[title="Apply (Enter)"]').count()) > 0;
+    await tapButton("Duplicate layer");
+    await page.waitForTimeout(200);
+    const names = await rowNames();
+    // Hide the original: what's left on the right is the copy's alone.
+    const original = rows().filter({ hasText: /^\s*Body\s*$/ });
+    await original.locator('button[title^="Visible"]').tap();
+    await page.waitForTimeout(200);
+    const copyRight = await ink(rect(0.67, 0.16, 0.26, 0.18));
+    await original.locator('button[title^="Hidden"]').tap();
+    return [
+      lifted && names.includes("Body copy") && copyRight > 1000,
+      `[sim] Duplicate with a lifted selection copies the moved pixels (lifted ${lifted}; ${names.join(", ")}; ${copyRight} painted px of the copy where they moved)`,
+      "duplicate-float",
+    ];
+  });
+
+  await step(async () => {
+    // At least three rows, so a drop between the top two slides the rest down to open the gap.
     await tapButton("Add layer");
     const before = await rowNames();
     const grip = await rows().first().locator('[title="Drag to reorder"]').boundingBox();
@@ -545,7 +589,7 @@ async function main(page) {
     const after = await rowNames();
     return [
       mid.ghost &&
-        mid.slid === 1 &&
+        mid.slid === before.length - 2 &&
         after.join() === [before[1], before[0], ...before.slice(2)].join(),
       `[sim] a finger drag on a grip lifts the row, opens a gap (${mid.slid} row slid) and reorders (${before.join(", ")} → ${after.join(", ")})`,
       "layer-drag",
@@ -595,7 +639,7 @@ async function main(page) {
     const back = await rowNames();
     const after = await ink(whole());
     return [
-      back.join() === names.join() && after > drawn / 2,
+      back.join() === names.join() && drawn > 0 && after > drawn / 2,
       `autosave survives a reload (${back.join(", ")}; ${drawn} → ${after} painted px)`,
       "autosave",
     ];

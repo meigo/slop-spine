@@ -1548,6 +1548,9 @@
     selectionCommands.resetPins = () => selection?.resetPins();
     selectionCommands.apply = () => selection?.commit();
     selectionCommands.cancel = () => selection?.cancel();
+    selectionCommands.applyFloat = () => {
+      if (selection?.hasFloating) selection.commit();
+    };
 
     // Image import. Precedence is read straight off the clipboard rather than latched from the
     // keydown: a flag set by Cmd/Ctrl+V is only cleared by a FOLLOWING paste event, so a keystroke

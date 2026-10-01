@@ -23,7 +23,6 @@
     newDocument,
     deleteBone,
     dissolveBone,
-    clearLayerPixels,
   } from "../state/doc.svelte";
   import { saveProject, loadProject } from "../persist/project-file";
   import { importPsd } from "../persist/psd";
@@ -35,7 +34,7 @@
   import ColorSwatch from "./ColorSwatch.svelte";
   import { exportBundle, ExportError } from "../export/bundle";
   import { history, historyState } from "../state/history.svelte";
-  import { fillAllEnclosed } from "./draw-dispatch";
+  import { clearSelectedLayer, fillAllEnclosed } from "./draw-dispatch";
   import { clipboard } from "../state/clipboard.svelte";
   import { selectionCommands } from "../state/selection-commands";
   import { createCurveEditor } from "../core/pressure-curve";
@@ -255,14 +254,6 @@
   function onPaste() {
     if (clipboard.hasPixels && canPaint && selectionCommands.paste?.()) return;
     window.dispatchEvent(new Event("slop-spine:paste-image"));
-  }
-
-  function onClearLayer() {
-    if (ui.selectedLayerId == null) {
-      flashStatus("Clear layer — select a layer first");
-      return;
-    }
-    clearLayerPixels(ui.selectedLayerId);
   }
 
   // Bridge for Canvas.svelte's Cmd/Ctrl+S and Cmd/Ctrl+O keybindings — same window-event pattern
@@ -593,7 +584,7 @@
           role="menuitem"
           title="Clear the selected layer to transparent"
           onclick={() => {
-            onClearLayer();
+            clearSelectedLayer();
             close();
           }}>Clear layer</button
         >

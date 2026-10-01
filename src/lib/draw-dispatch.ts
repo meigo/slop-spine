@@ -3,11 +3,12 @@
 // events (already parsed into document-space InputPoints by input.ts) land on ui.selectedLayerId's
 // own canvas, resolved by id (layer array order is a display concern, not identity). Mild
 // pressure-response curve, applied uniformly regardless of brush engine.
-import { document as doc, markLayerDirty } from "../state/doc.svelte";
+import { document as doc, markLayerDirty, clearLayerPixels } from "../state/doc.svelte";
 import {
   ui,
   isPaintTool,
   whyNotEditable,
+  editBlockLabel,
   slotFor,
   pressureCurves,
   flashStatus,
@@ -80,6 +81,19 @@ function fillThroughClip(
 // constant nominal width (see widthRange in brush.ts).
 function pressFor(tool: Tool): number {
   return ui.stroke[slotFor(tool)].press;
+}
+
+/** Clear the selected layer to transparent — Edit ▸ Clear layer and the panel's Clear. Refused,
+ *  with the reason, where the pen is refused (slop-paint e745612): it used to wipe a hidden layer,
+ *  an edit you couldn't see. */
+export function clearSelectedLayer() {
+  const layer = doc.layers.find((l) => l.id === ui.selectedLayerId);
+  const block = whyNotEditable(layer);
+  if (block || !layer) {
+    flashStatus(`Clear layer — ${editBlockLabel(block ?? "no-layer")}`);
+    return;
+  }
+  clearLayerPixels(layer.id);
 }
 
 /** Fill every ink-enclosed region on the selected layer, behind the strokes. */

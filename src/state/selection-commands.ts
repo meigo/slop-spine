@@ -25,6 +25,9 @@ export const selectionCommands: {
   apply: (() => void) | null;
   /** Drop the float, restoring the layer (Esc). */
   cancel: (() => void) | null;
+  /** Bake a lifted float, if any, keeping a plain marquee: before Duplicate, which would otherwise
+   *  copy the hole the float left (slop-paint e745612). */
+  applyFloat: (() => void) | null;
 } = {
   copy: null,
   cut: null,
@@ -39,4 +42,5 @@ export const selectionCommands: {
   resetPins: null,
   apply: null,
   cancel: null,
+  applyFloat: null,
 };
