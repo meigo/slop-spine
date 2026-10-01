@@ -40,6 +40,8 @@
   import { createCurveEditor } from "../core/pressure-curve";
   import { MAX_GAP, clampGap } from "../core/fill-holes";
   import { MAX_NIB_FLATNESS } from "../core/calligraphy-brush";
+  import { PENCIL_GRADES } from "../core/stamp-brush";
+  import { CHARCOAL_TEXTURES } from "../core/brush-textures";
   import { PRESS_MAX, PRESS_MIN } from "../core/brush";
   import { clickOutside } from "./click-outside";
   import { sliderFill } from "./slider-fill";
@@ -857,6 +859,52 @@
               />
               <span class={valueCls}>{ui.dwellPool}</span>
             </label>
+          {/if}
+
+          {#if slot.brushType === "pencil"}
+            <div
+              class={rowCls}
+              title="Pencil grade, as on real pencils: H is hard — lighter, more paper grain; B is soft — darker, even at a light touch"
+            >
+              <span class={labelCls}>Grade</span>
+              <div class="flex min-w-0 flex-1 gap-px">
+                {#each PENCIL_GRADES as g (g)}
+                  <button
+                    class="h-6 min-w-0 flex-1 rounded-md text-[10px] transition-colors {ui.pencilGrade ===
+                    g
+                      ? 'ui-on'
+                      : 'text-text-muted hover:bg-surface-hover hover:text-text'}"
+                    aria-pressed={ui.pencilGrade === g}
+                    title="{g} pencil{g === 'HB' ? ' — the default' : ''}"
+                    onclick={() => (ui.pencilGrade = g)}>{g}</button
+                  >
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if slot.brushType === "charcoal"}
+            <div
+              class={rowCls}
+              title="Charcoal texture: Rough has big holes in it, Dense hardly any"
+            >
+              <span class={labelCls}>Texture</span>
+              <div class="flex min-w-0 flex-1 gap-px">
+                {#each CHARCOAL_TEXTURES as t (t)}
+                  <button
+                    class="h-6 min-w-0 flex-1 rounded-md text-[10px] capitalize transition-colors {ui.charcoalTexture ===
+                    t
+                      ? 'ui-on'
+                      : 'text-text-muted hover:bg-surface-hover hover:text-text'}"
+                    aria-pressed={ui.charcoalTexture === t}
+                    title="{t[0].toUpperCase() + t.slice(1)} charcoal{t === 'medium'
+                      ? ' — the default'
+                      : ''}"
+                    onclick={() => (ui.charcoalTexture = t)}>{t}</button
+                  >
+                {/each}
+              </div>
+            </div>
           {/if}
 
           {#if slot.brushType === "dry"}

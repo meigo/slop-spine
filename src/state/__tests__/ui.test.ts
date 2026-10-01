@@ -218,6 +218,18 @@ describe("applyPreferences / gatherPreferences", () => {
     ui.sharpCorners = false;
   });
 
+  it("restores the Pencil grade and Charcoal texture, and refuses unknown ones", () => {
+    expect(ui.pencilGrade).toBe("HB");
+    expect(ui.charcoalTexture).toBe("medium");
+    applyPreferences({ pencilGrade: "6B", charcoalTexture: "rough" } as never);
+    expect(gatherPreferences()).toMatchObject({ pencilGrade: "6B", charcoalTexture: "rough" });
+    applyPreferences({ pencilGrade: "9Z", charcoalTexture: "soft" } as never);
+    expect(ui.pencilGrade).toBe("6B");
+    expect(ui.charcoalTexture).toBe("rough");
+    ui.pencilGrade = "HB";
+    ui.charcoalTexture = "medium";
+  });
+
   it("snaps size to the slider's 0.5 step", () => {
     applyPreferences({ stroke: { brush: { size: 2.3 } } } as never);
     expect(ui.stroke.brush.size).toBe(2.5);
