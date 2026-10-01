@@ -437,7 +437,7 @@
       <!-- The grabbed row, following the pointer. -->
       <div
         data-drag-ghost
-        class="pointer-events-none absolute inset-x-0 z-10 flex items-center gap-1 rounded bg-surface-raised pr-[6px] pl-2 text-sm text-text shadow-lg ring-1 ring-accent"
+        class="pointer-events-none absolute inset-x-0 z-10 flex items-center gap-1 border-y border-accent bg-surface-raised pr-[6px] pl-2 text-sm text-text shadow-lg"
         style="top: {ghost.top}px; height: {ghost.height}px"
       >
         <span class="shrink-0 text-text-muted"><GripVertical size={14} /></span>
