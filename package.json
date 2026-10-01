@@ -27,7 +27,6 @@
     "@eslint/js": "^10.0.1",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tailwindcss/vite": "^4.2.2",
-    "@types/sortablejs": "^1.15.9",
     "eslint": "^10.9.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-better-tailwindcss": "^4.7.0",
@@ -54,7 +53,6 @@
     "ag-psd": "^31.0.2",
     "delaunator": "^5.1.0",
     "fflate": "^0.8.3",
-    "perfect-freehand": "^1.2.3",
-    "sortablejs": "^1.15.7"
+    "perfect-freehand": "^1.2.3"
   }
 }
