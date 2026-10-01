@@ -410,6 +410,36 @@ async function main(page) {
   });
 
   await step(async () => {
+    // The stamp tips: from the tip image at size 12, as soft discs at size 2 (8 device px or less).
+    const band = rect(0.05, 0.03, 0.9, 0.14);
+    const stroke = line(at(0.1, 0.1), at(0.9, 0.1));
+    const size = page.locator('input[type="range"][step="0.5"]').first();
+    const counts = [];
+    for (const [type, px] of [
+      ["pencil", "12"],
+      ["pencil", "2"],
+      ["charcoal", "12"],
+    ]) {
+      await page.locator('select[title="Brush"]').selectOption(type);
+      await size.fill(px);
+      const before = await ink(band);
+      await pen(stroke, { n: 60, p: () => 1 });
+      await page.waitForTimeout(300);
+      counts.push((await ink(band)) - before);
+      await shot(`stamp-${type}-${px}`);
+      await tapButton("Undo");
+    }
+    await page.locator('select[title="Brush"]').selectOption("smooth");
+    await size.fill("12");
+    const [pencil, tiny, charcoal] = counts;
+    return [
+      pencil > 500 && tiny > 50 && tiny < pencil && charcoal > 500 && (await ink(band)) === 0,
+      `[sim] Pencil at 12 and 2 and Charcoal at 12 paint (${pencil}, ${tiny}, ${charcoal} px) and undo`,
+      "stamp-tips",
+    ];
+  });
+
+  await step(async () => {
     await tapButton("Fill (G)");
     const before = await ink(whole());
     await penTap(at(0.5, 0.5));
