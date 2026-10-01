@@ -18,6 +18,7 @@ import type { InputPoint } from "../core/input";
 import { drawStroke, type BrushSettings } from "../core/brush";
 import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
 import { drawDryStroke } from "../core/dry-brush";
+import { pathSmoothRadius } from "../core/stroke-smoothing";
 import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
 import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../core/fill";
@@ -143,6 +144,8 @@ export function fillAllEnclosed() {
 export function createDrawDispatch(opts?: {
   onPainted?: () => void;
   getSelection?: () => Selection | null;
+  /** Screen px per document px: Smooth's radius is a screen distance (`pathSmoothRadius`). */
+  getZoom?: () => number;
 }) {
   // Assigned unconditionally: a dispatch created without a selection source must leave the module
   // reading `null`, not the previous Canvas instance's (possibly destroyed) selection.
@@ -160,6 +163,8 @@ export function createDrawDispatch(opts?: {
       color: ui.brushValue,
       opacity: slot.opacity,
       smoothing: slot.smoothing,
+      pathSmoothRadius: pathSmoothRadius(slot.smoothing, opts?.getZoom?.() ?? 1),
+      sharpCorners: ui.sharpCorners,
       isEraser,
       // Brush only, as slop-paint: the eraser ignores draw-behind.
       drawBehind: !isEraser && ui.drawBehind,

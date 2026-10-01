@@ -208,6 +208,16 @@ describe("applyPreferences / gatherPreferences", () => {
     ui.dryTaper = 10;
   });
 
+  it("restores Sharp corners, and keeps it off for a save without it", () => {
+    applyPreferences({} as never);
+    expect(ui.sharpCorners).toBe(false);
+    applyPreferences({ sharpCorners: true } as never);
+    expect(gatherPreferences()).toMatchObject({ sharpCorners: true });
+    applyPreferences({ sharpCorners: "yes" } as never);
+    expect(ui.sharpCorners).toBe(true);
+    ui.sharpCorners = false;
+  });
+
   it("snaps size to the slider's 0.5 step", () => {
     applyPreferences({ stroke: { brush: { size: 2.3 } } } as never);
     expect(ui.stroke.brush.size).toBe(2.5);

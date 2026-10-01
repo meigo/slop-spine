@@ -152,6 +152,8 @@ export const ui = $state({
   drawBehind: false,
   /** Smooth brush: taper the stroke ends to a point instead of capping them. */
   taper: false,
+  /** Smooth brush: keep a corner sharp where the pen paused; off, Smooth rounds it. */
+  sharpCorners: false,
   /** Calligraphy nib: angle in degrees and flatness (0 round … MAX_NIB_FLATNESS). */
   nibAngle: 45,
   nibFlatness: 0.35,
@@ -335,6 +337,7 @@ export function gatherPreferences(): Preferences {
     brushValue: ui.brushValue,
     drawBehind: ui.drawBehind,
     taper: ui.taper,
+    sharpCorners: ui.sharpCorners,
     nibAngle: ui.nibAngle,
     nibFlatness: ui.nibFlatness,
     dwellPool: ui.dwellPool,
@@ -390,6 +393,7 @@ export function applyPreferences(p: Partial<Preferences> & Partial<LegacyPrefere
   if (isHexColor(p.fillValue)) ui.fillValue = p.fillValue.toLowerCase();
   if (typeof p.drawBehind === "boolean") ui.drawBehind = p.drawBehind;
   if (typeof p.taper === "boolean") ui.taper = p.taper;
+  if (typeof p.sharpCorners === "boolean") ui.sharpCorners = p.sharpCorners;
   const angle = intIn(p.nibAngle, 0, 180);
   if (angle !== null) ui.nibAngle = angle;
   const flat = finiteNum(p.nibFlatness);
