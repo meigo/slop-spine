@@ -192,6 +192,22 @@ describe("applyPreferences / gatherPreferences", () => {
     expect(ui.brushValue).toBe("#aabbcc");
   });
 
+  it("restores the Dry brush on either slot, and its Dryness and Taper, clamped", () => {
+    applyPreferences({
+      stroke: { brush: { brushType: "dry" }, eraser: { brushType: "dry" } },
+      dryness: 80,
+      dryTaper: 30,
+    } as never);
+    expect(ui.stroke.brush.brushType).toBe("dry");
+    expect(ui.stroke.eraser.brushType).toBe("dry");
+    expect(gatherPreferences()).toMatchObject({ dryness: 80, dryTaper: 30 });
+    applyPreferences({ dryness: 250, dryTaper: "x" } as never);
+    expect(ui.dryness).toBe(100);
+    expect(ui.dryTaper).toBe(30);
+    ui.dryness = 50;
+    ui.dryTaper = 10;
+  });
+
   it("snaps size to the slider's 0.5 step", () => {
     applyPreferences({ stroke: { brush: { size: 2.3 } } } as never);
     expect(ui.stroke.brush.size).toBe(2.5);

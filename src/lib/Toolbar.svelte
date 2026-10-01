@@ -345,6 +345,7 @@
     { value: "smooth", label: "Smooth" },
     { value: "ink", label: "Ink" },
     { value: "calligraphy", label: "Calligraphy" },
+    { value: "dry", label: "Dry brush" },
     { value: "pencil", label: "Pencil" },
     { value: "charcoal", label: "Charcoal" },
     { value: "airbrush", label: "Airbrush" },
@@ -849,6 +850,39 @@
                 bind:value={ui.dwellPool}
               />
               <span class={valueCls}>{ui.dwellPool}</span>
+            </label>
+          {/if}
+
+          {#if slot.brushType === "dry"}
+            <label
+              class={rowCls}
+              title="How short of paint the bristles are: more dry breaks and sparser edges — 0 is a wet, solid stroke"
+            >
+              <span class={labelCls}>Dryness</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                class="min-w-0 flex-1"
+                style={sliderFill(ui.dryness, 0, 100)}
+                bind:value={ui.dryness}
+              />
+              <span class={valueCls}>{ui.dryness}</span>
+            </label>
+            <label
+              class={rowCls}
+              title="How long each bristle mark tapers at its ends — up to twice the stroke's width"
+            >
+              <span class={labelCls}>Taper</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                class="min-w-0 flex-1"
+                style={sliderFill(ui.dryTaper, 0, 100)}
+                bind:value={ui.dryTaper}
+              />
+              <span class={valueCls}>{ui.dryTaper}</span>
             </label>
           {/if}
 

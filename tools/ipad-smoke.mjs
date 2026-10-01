@@ -336,6 +336,30 @@ async function main(page) {
   });
 
   await step(async () => {
+    // The Dry brush: hair stripes broken where they run dry, so fewer px than Smooth on one path.
+    const band = rect(0.05, 0.03, 0.9, 0.14);
+    const stroke = line(at(0.1, 0.1), at(0.9, 0.1));
+    const brushType = page.locator('select[title="Brush"]');
+    const paints = async (type) => {
+      await brushType.selectOption(type);
+      const before = await ink(band);
+      await pen(stroke, { n: 60 });
+      await page.waitForTimeout(300);
+      const drawn = (await ink(band)) - before;
+      await shot(`dry-vs-${type}`);
+      await tapButton("Undo");
+      return [drawn, (await ink(band)) === before];
+    };
+    const [dry, dryUndone] = await paints("dry");
+    const [smooth, smoothUndone] = await paints("smooth");
+    return [
+      dry > 50 && dry < smooth * 0.9 && dryUndone && smoothUndone,
+      `[sim] the Dry brush paints a broken stroke (${dry} px against Smooth's ${smooth}) and undoes`,
+      "dry-brush",
+    ];
+  });
+
+  await step(async () => {
     await tapButton("Fill (G)");
     const before = await ink(whole());
     await penTap(at(0.5, 0.5));

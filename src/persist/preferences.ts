@@ -16,6 +16,8 @@ export interface Preferences {
   nibAngle: number;
   nibFlatness: number;
   dwellPool: number;
+  dryness: number;
+  dryTaper: number;
   fillValue: string;
   fillOpacity: number;
   fillTolerance: number;

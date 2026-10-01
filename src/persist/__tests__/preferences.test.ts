@@ -56,6 +56,8 @@ const sample: Preferences = {
   nibAngle: 30,
   nibFlatness: 0.5,
   dwellPool: 20,
+  dryness: 70,
+  dryTaper: 25,
   fillValue: "#00ff88",
   fillOpacity: 90,
   fillTolerance: 16,
