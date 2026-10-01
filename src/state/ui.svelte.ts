@@ -6,8 +6,9 @@ import { MAX_NIB_FLATNESS } from "../core/calligraphy-brush";
 import type { Preferences, LegacyPreferences, CurvePrefs } from "../persist/preferences";
 
 export type Tool = "brush" | "eraser" | "fill" | "eyedropper" | "select" | "lasso" | "bone";
-/** The six brushes slop-paint offers, in its order. */
-export type BrushType = "smooth" | "ink" | "calligraphy" | "pencil" | "charcoal" | "airbrush";
+/** The seven brushes slop-paint offers, in its order. */
+export type BrushType =
+  "smooth" | "ink" | "calligraphy" | "dry" | "pencil" | "charcoal" | "airbrush";
 export type BoneMode = "edit" | "create" | "pose";
 export type SelectionState = "idle" | "selected" | "transforming" | "warping";
 
@@ -156,6 +157,9 @@ export const ui = $state({
   nibFlatness: 0.35,
   /** Ink: 0–100, how much the mark swells where the pen lingers. */
   dwellPool: 0,
+  /** Dry brush: 0–100, how short of paint the bristles are, and how long each hair tapers. */
+  dryness: 50,
+  dryTaper: 10,
   /** Fill's colour, independent of the brush's. Fills land BEHIND the strokes (fillRegionBehind),
    *  so the two tools are painting different things — outlines in one colour, flats in another —
    *  and sharing one swatch meant re-picking on every switch, or silently inking a line in the
@@ -249,6 +253,7 @@ const BRUSH_TYPES: readonly BrushType[] = [
   "smooth",
   "ink",
   "calligraphy",
+  "dry",
   "pencil",
   "charcoal",
   "airbrush",
@@ -333,6 +338,8 @@ export function gatherPreferences(): Preferences {
     nibAngle: ui.nibAngle,
     nibFlatness: ui.nibFlatness,
     dwellPool: ui.dwellPool,
+    dryness: ui.dryness,
+    dryTaper: ui.dryTaper,
     fillValue: ui.fillValue,
     fillOpacity: ui.fillOpacity,
     fillTolerance: ui.fillTolerance,
@@ -389,6 +396,10 @@ export function applyPreferences(p: Partial<Preferences> & Partial<LegacyPrefere
   if (flat !== null) ui.nibFlatness = Math.min(MAX_NIB_FLATNESS, Math.max(0, flat));
   const pool = intIn(p.dwellPool, 0, 100);
   if (pool !== null) ui.dwellPool = pool;
+  const dryness = intIn(p.dryness, 0, 100);
+  if (dryness !== null) ui.dryness = dryness;
+  const dryTaper = intIn(p.dryTaper, 0, 100);
+  if (dryTaper !== null) ui.dryTaper = dryTaper;
   const fillOpacity = intIn(p.fillOpacity, 1, 100);
   if (fillOpacity !== null) ui.fillOpacity = fillOpacity;
   const tol = intIn(p.fillTolerance, 0, 128);

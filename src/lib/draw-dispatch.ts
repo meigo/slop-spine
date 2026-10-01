@@ -17,6 +17,7 @@ import {
 import type { InputPoint } from "../core/input";
 import { drawStroke, type BrushSettings } from "../core/brush";
 import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
+import { drawDryStroke } from "../core/dry-brush";
 import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
 import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../core/fill";
@@ -166,6 +167,8 @@ export function createDrawDispatch(opts?: {
       nibAngle: ui.nibAngle,
       nibFlatness: ui.nibFlatness,
       dwellPool: ui.dwellPool,
+      dryness: ui.dryness,
+      dryTaper: ui.dryTaper,
       taper: ui.taper,
     };
   }
@@ -319,13 +322,19 @@ export function createDrawDispatch(opts?: {
     const settings = buildBrushSettings(tool, strokeLayer);
     const brushType = ui.stroke[slotFor(tool)].brushType;
 
-    // Smooth, ink and calligraphy redraw the WHOLE stroke each frame from the pre-stroke copy: a
-    // per-segment redraw re-composites each overlap and hardens the antialiased edge (see
+    // Smooth, ink, calligraphy and dry redraw the WHOLE stroke each frame from the pre-stroke
+    // copy: a per-segment redraw re-composites each overlap and hardens the antialiased edge (see
     // ink-brush.ts). The stamp tips draw incrementally.
-    if (brushType === "smooth" || brushType === "ink" || brushType === "calligraphy") {
+    if (
+      brushType === "smooth" ||
+      brushType === "ink" ||
+      brushType === "calligraphy" ||
+      brushType === "dry"
+    ) {
       restorePreStroke(ctx, strokeLayer);
       withClip(ctx, () => {
         if (brushType === "ink") drawInkStroke(ctx, curved, settings, sizeRange);
+        else if (brushType === "dry") drawDryStroke(ctx, curved, settings, sizeRange);
         else if (brushType === "calligraphy")
           drawCalligraphyStroke(ctx, curved, settings, sizeRange);
         else drawStroke(ctx, curved, settings, done, sizeRange);
