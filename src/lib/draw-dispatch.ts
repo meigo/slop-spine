@@ -25,7 +25,7 @@ import { clampGap } from "../core/fill-holes";
 import type { Layer } from "../rig/document";
 import type { Selection } from "../core/selection";
 import { pixelCommand } from "../core/history";
-import { history } from "../state/history.svelte";
+import { history, setStrokeOpen } from "../state/history.svelte";
 
 let getSelection: () => Selection | null = () => null;
 
@@ -299,6 +299,7 @@ export function createDrawDispatch(opts?: {
     lastPoints = [];
     strokeLayer = null;
     strokeCtx = null;
+    setStrokeOpen(false);
   }
 
   /** Restore the pre-stroke layer via GPU `drawImage` of the scratch — `putImageData` of a
@@ -395,7 +396,10 @@ export function createDrawDispatch(opts?: {
       strokeLayer = resolveSelectedLayer();
       strokeCtx = strokeLayer ? strokeLayer.canvas.getContext("2d") : null;
       resetStampState();
-      if (strokeLayer) captureScratch(strokeLayer);
+      if (strokeLayer) {
+        captureScratch(strokeLayer);
+        setStrokeOpen(true);
+      }
     }
     if (!strokeLayer || !strokeCtx) {
       if (done) endStroke();

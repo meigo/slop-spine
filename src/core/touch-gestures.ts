@@ -27,6 +27,9 @@ export interface TouchGestureCallbacks {
   onRedo: () => void;
   onToggleEraser: () => void;
   onViewportChange: () => void;
+  /** A pen or mouse stroke is open: fingers touching down now are a resting hand, not a gesture
+   *  (they panned the view mid-stroke, so the line jumped, and a two-finger tap undid under it). */
+  isDrawing?: () => boolean;
 }
 
 const TAP_MAX_DURATION = 300; // ms
@@ -78,6 +81,8 @@ export function setupTouchGestures(
 
   // Track if gesture moved (to distinguish taps from drags)
   let gestureDidMove = false;
+  // Set when a finger lands while a stroke is open; the whole gesture is ignored until all lift.
+  let suppressed = false;
 
   // Tap detection
   let maxSimultaneousTouches = 0;
@@ -95,6 +100,7 @@ export function setupTouchGestures(
 
     workspace.setPointerCapture(e.pointerId);
 
+    if (callbacks.isDrawing?.()) suppressed = true;
     touches.set(e.pointerId, {
       id: e.pointerId,
       x: e.clientX,
@@ -129,6 +135,7 @@ export function setupTouchGestures(
 
     t.x = e.clientX;
     t.y = e.clientY;
+    if (suppressed) return; // a hand resting during a stroke: no pan, pinch or tap until it lifts
 
     // Check if this counts as movement
     const dx = t.x - t.startX;
@@ -157,6 +164,11 @@ export function setupTouchGestures(
 
     if (!t) return;
 
+    if (suppressed) {
+      if (touches.size === 0) endSuppressed();
+      return;
+    }
+
     // If all fingers lifted, check for tap gestures
     if (touches.size === 0 && !gestureDidMove) {
       const duration = e.timeStamp - t.startTime;
@@ -177,12 +189,26 @@ export function setupTouchGestures(
   function onPointerCancel(e: PointerEvent) {
     if (e.pointerType !== "touch") return;
     touches.delete(e.pointerId);
+    if (suppressed) {
+      if (touches.size === 0) endSuppressed();
+      return;
+    }
     singlePanActive = false;
     // Clear the pinch WITHOUT snapping: a cancelled gesture's rotation is whatever it happened to be
     // when the OS took the pointer away, so snapping it would twist the canvas unasked. Leaving
     // pinchActive set also meant the next lift snapped on those stale numbers.
     pinchActive = false;
     restartSinglePan();
+  }
+
+  /** The resting hand has lifted: drop what its fingers started (a pan, a pinch, a tap count), so
+   *  the next gesture starts clean and no stale pinch is snapped. */
+  function endSuppressed() {
+    suppressed = false;
+    singlePanActive = false;
+    pinchActive = false;
+    gestureDidMove = false;
+    maxSimultaneousTouches = 0;
   }
 
   /** After one finger goes away, hand the survivor back to single-finger pan from where it is now
