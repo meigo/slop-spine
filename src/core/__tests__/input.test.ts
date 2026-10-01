@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { isStageChromeTarget, setupInput, type InputPoint } from "../input";
+
+// The rope's pause check runs once a frame; these tests drive events only.
+vi.stubGlobal("requestAnimationFrame", () => 0);
+vi.stubGlobal("cancelAnimationFrame", () => {});
 
 function node(closest: (sel: string) => unknown) {
   return { closest } as unknown as EventTarget;
@@ -25,13 +29,15 @@ describe("isStageChromeTarget", () => {
 type Ptr = { pointerId: number; pointerType: string; x: number; y: number; pressure?: number };
 
 /** setupInput on a bare EventTarget, recording every onStroke call. */
-function stage() {
+function stage(streamline = 0) {
   const el = Object.assign(new EventTarget(), {
     setPointerCapture: () => {},
     getBoundingClientRect: () => ({ left: 0, top: 0 }),
   }) as unknown as HTMLElement;
   const calls: { points: InputPoint[]; done: boolean }[] = [];
-  setupInput(el, (points, done) => calls.push({ points: [...points], done }));
+  setupInput(el, (points, done) => calls.push({ points: [...points], done }), undefined, {
+    streamline,
+  });
   const fire = (type: string, p: Ptr) =>
     el.dispatchEvent(
       Object.assign(new Event(type, { cancelable: true }), {
@@ -91,5 +97,20 @@ describe("setupInput", () => {
     fire("pointerup", pen(2, 0, 0));
     const points = calls[calls.length - 1].points;
     expect(points[points.length - 1].pressure).toBe(0.7);
+  });
+
+  it("Stream holds the line back on its string, and the lift still ends at the pen", () => {
+    const { calls, fire } = stage(1); // a 40 px string
+    fire("pointerdown", pen(0, 0));
+    for (let x = 1; x <= 30; x++) fire("pointermove", pen(x, x % 2 ? 2 : -2)); // a wobbly 30 px
+    // Never taut: the line hasn't left the start (a pen resting there still adds points there).
+    expect(calls[calls.length - 1].points.every((p) => p.x === 0 && p.y === 0)).toBe(true);
+    for (let x = 31; x <= 100; x++) fire("pointermove", pen(x, 0));
+    const held = calls[calls.length - 1].points;
+    expect(held[held.length - 1].x).toBeCloseTo(60, 0); // 40 px behind the pen at 100
+    fire("pointerup", pen(100, 0));
+    const done = calls[calls.length - 1];
+    expect(done.done).toBe(true);
+    expect(done.points[done.points.length - 1]).toMatchObject({ x: 100, y: 0 });
   });
 });

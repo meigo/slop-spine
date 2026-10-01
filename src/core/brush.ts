@@ -1,5 +1,6 @@
 import getStroke from "perfect-freehand";
 import type { InputPoint } from "./input";
+import { smoothPath } from "./stroke-smoothing";
 
 /** Pen pressure span, same as slop-animator's Press slider. 1 draws at a constant width. */
 export const PRESS_MIN = 1;
@@ -46,7 +47,11 @@ export interface BrushSettings {
   size: number;
   color: string;
   opacity: number;
+  /** Smooth 0–100 (the slider); the stroke uses `pathSmoothRadius`, which draw-dispatch derives
+   *  from it. */
   smoothing: number;
+  /** Smooth brush: path-averaging radius in document px (`stroke-smoothing.ts`). */
+  pathSmoothRadius?: number;
   isEraser: boolean;
   drawBehind: boolean;
   alphaLock: boolean;
@@ -61,6 +66,8 @@ export interface BrushSettings {
   dryTaper?: number;
   /** Taper the stroke's ends to a point instead of capping them (Smooth brush). */
   taper?: boolean;
+  /** Smooth brush: keep a corner sharp where the pen paused, instead of smoothing it round. */
+  sharpCorners?: boolean;
 }
 
 /**
@@ -79,10 +86,11 @@ export function drawStroke(
   const strokePoints = strokeOutline(
     points,
     settings.size,
-    settings.smoothing,
+    settings.pathSmoothRadius ?? 0,
     sizeRange,
     done,
     settings.taper ?? false,
+    settings.sharpCorners ?? false,
   );
   if (strokePoints.length < 2) return;
 
@@ -113,19 +121,25 @@ export function drawStroke(
   ctx.restore();
 }
 
-/** The filled outline polygon for a smooth stroke (pure — no canvas). */
+/** perfect-freehand's outline point spacing (its `smoothing`), before the thin-stroke cap. It
+ *  was the Smooth slider once, but it only rounds the outline's edge; Smooth now smooths the path. */
+const OUTLINE_SPACING = 0.5;
+
+/** The filled outline polygon for a smooth stroke (pure — no canvas). `smoothRadius` (document
+ *  px) averages the path first — see `smoothPath`. */
 export function strokeOutline(
   points: InputPoint[],
   size: number,
-  smoothing: number,
+  smoothRadius: number,
   sizeRange: number,
   done: boolean,
   taper: boolean = false,
+  sharpCorners: boolean = false,
 ): number[][] {
   // We map pressure → size ourselves and tell pf thinning=1 so it uses our mapped pressure directly.
   const { min: minSize, max: maxSize } = widthRange(size, sizeRange);
   let minStrokeWidth = Infinity;
-  const inputPoints = points.map((p) => {
+  const inputPoints = smoothPath(points, smoothRadius, sharpCorners).map((p) => {
     const desiredSize = minSize + p.pressure * (maxSize - minSize);
     if (desiredSize < minStrokeWidth) minStrokeWidth = desiredSize;
     const mappedPressure = maxSize > 0 ? desiredSize / maxSize : 1;
@@ -139,7 +153,7 @@ export function strokeOutline(
   return getStroke(inputPoints, {
     size: pfSize,
     thinning: 1,
-    smoothing: decimationSmoothing(smoothing / 100, minStrokeWidth, pfSize),
+    smoothing: decimationSmoothing(OUTLINE_SPACING, minStrokeWidth, pfSize),
     streamline: 0.3,
     start: { taper, cap: !taper },
     end: { taper, cap: !taper },

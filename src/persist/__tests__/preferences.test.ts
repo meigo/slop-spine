@@ -53,6 +53,7 @@ const sample: Preferences = {
   brushValue: "#ff00aa",
   drawBehind: true,
   taper: true,
+  sharpCorners: true,
   nibAngle: 30,
   nibFlatness: 0.5,
   dwellPool: 20,

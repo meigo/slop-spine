@@ -439,6 +439,7 @@
   const drawDispatch = createDrawDispatch({
     onPainted: scheduleComposite,
     getSelection: () => selection,
+    getZoom: () => viewport?.zoom ?? 1,
   });
 
   // --- Eyedropper, as slop-paint's: drag to slide the sample point out from under the pen tip (a

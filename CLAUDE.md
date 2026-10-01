@@ -53,14 +53,6 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   per layer) against the last save, and more layers emptied than undo steps since pauses autosave
   and offers the restore. It also shows the layers' memory in the Document menu, warning on iPad
   above 600 MB
-- **Stream and Smooth** (`0ad830e`, `c13ed06`, `7bd3b8e`, `b158081`, `0a38872`, `699d772`,
-  `9180de3`, `2b7f465`): Stream here is the old per-event average (`input.ts:44-50,109-124`),
-  which weakens as the pointer rate rises; Smooth still feeds perfect-freehand's `smoothing`
-  (`core/brush.ts:78,137`), which is only outline spacing. slop-paint: a screen-space rope with a
-  Hermite catch-up on pause and lift, points stamped with the pen's time (`trailTimeAt`), and
-  Smooth averaging the path, with optional Sharp corners (`stroke-smoothing.ts`, `input.ts`,
-  `brush.ts`). Settings in `state/ui.svelte.ts:22-46,302`; wiring at `Canvas.svelte:1501`. Keep
-  `2b7f465`'s rule (a move that adds no point doesn't call `onStroke`), or undo leaves the first dot
 - **Bridge for the bucket** (`ccd6bd1`): the Bridge slider (`ui.fillGap`, `Toolbar.svelte:916-942`)
   reaches only Fill enclosed. slop-paint's `fillMask` / `growWithin` (`src/fill.ts`, tested) let
   one setting close line breaks for the bucket too. Its traps: grow back in 8-connected steps (a

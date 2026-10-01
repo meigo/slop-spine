@@ -13,6 +13,7 @@ export interface Preferences {
   brushValue: string;
   drawBehind: boolean;
   taper: boolean;
+  sharpCorners: boolean;
   nibAngle: number;
   nibFlatness: number;
   dwellPool: number;
