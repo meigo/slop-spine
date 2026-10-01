@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mipIndex, spaceStamps, stampFootprint, MIN_STAMP_PX } from "../stamp-brush";
+import { discProfile, mipIndex, spaceStamps, stampFootprint, MIN_STAMP_PX } from "../stamp-brush";
 
 /**
  * A 64px tip drawn into a box smaller than MIN_STAMP_PX downsamples to alpha 0 in
@@ -96,5 +96,34 @@ describe("mipIndex", () => {
 
   it("uses the full tip above its own size", () => {
     expect(mipIndex(200, sizes)).toBe(0);
+  });
+});
+
+describe("discProfile", () => {
+  /** A size×size alpha map from a function of the distance to the centre (0 centre, 1 rim). */
+  const tip = (size: number, f: (d: number) => number) =>
+    Array.from({ length: size * size }, (_, i) => {
+      const x = (i % size) + 0.5 - size / 2;
+      const y = Math.floor(i / size) + 0.5 - size / 2;
+      const d = Math.hypot(x, y) / (size / 2);
+      return d > 1 ? 0 : Math.round(f(d) * 255);
+    });
+
+  it("reads a flat tip as equally dark inside and out", () => {
+    const p = discProfile(
+      tip(64, () => 1),
+      64,
+    );
+    expect(p.inner).toBeCloseTo(1, 2);
+    expect(p.outer).toBeCloseTo(1, 2);
+  });
+
+  it("reads a soft tip as darker inside than in its outer ring", () => {
+    const p = discProfile(
+      tip(64, (d) => 0.8 * (1 - d)),
+      64,
+    );
+    expect(p.inner).toBeGreaterThan(p.outer);
+    expect(p.inner).toBeCloseTo(0.8 * (1 - 0.4), 1); // mean of 1 − d over the inner disc ≈ 0.6
   });
 });
