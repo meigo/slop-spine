@@ -14,7 +14,7 @@ usually apply here too.
   slop-paint 2026-10-01): the app in WebKit at iPad Pro 11 with touch, in a fresh PERSISTENT temp
   profile (ephemeral WebKit refuses Blobs in IndexedDB, so every autosave failed). Starts its own
   dev server; `npm run test:ipad -- <url>` checks a URL. ~20 checks: first layer, pen stroke, undo/redo
-  and two-finger-tap undo, the Dry brush against Smooth, bucket, eraser, pinch, Export refused with no bones, Create two bones,
+  and two-finger-tap undo, the Dry brush against Smooth, bucket, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
   Pose bends the drawing, Export Spine (the zip is unzipped: bones, mesh, atlas, PNG), add layer,
   double-tap rename, a hidden layer refuses the pen and Clear layer, Duplicate with a lifted
   selection, the layer-row finger drag (ghost, gap,

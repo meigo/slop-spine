@@ -373,6 +373,28 @@ async function main(page) {
   });
 
   await step(async () => {
+    // The eraser's own Opacity: at 40% it fades the ink (alpha stays above half), not removes it.
+    await tapButton("Eraser (E)");
+    const opacity = page
+      .locator("label", { hasText: /^\s*Opacity/ })
+      .locator("input")
+      .first();
+    await opacity.fill("40");
+    const band = rect(0.3, 0.45, 0.4, 0.1);
+    const before = await ink(band);
+    await pen(line(at(0.3, 0.5), at(0.7, 0.5)), { p: () => 0.9 });
+    await page.waitForTimeout(300);
+    const after = await ink(band);
+    await tapButton("Undo");
+    await opacity.fill("100");
+    return [
+      after > before * 0.98,
+      `[sim] the eraser at Opacity 40 fades ink rather than removing it (${before} → ${after} painted px in the band)`,
+      "eraser-opacity",
+    ];
+  });
+
+  await step(async () => {
     await tapButton("Eraser (E)");
     const band = rect(0.3, 0.45, 0.4, 0.1);
     const before = await ink(band);
