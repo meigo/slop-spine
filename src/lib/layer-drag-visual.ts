@@ -1,5 +1,5 @@
 /** What a row drag in the layers panel looks like (2026-10-01): the dragged row follows the pointer
- *  and the rows below the drop point slide down to open a gap — drawn over `layer-drop.ts`'s
+ *  and its place in the list moves to the drop slot, the rows in between closing up — drawn over `layer-drop.ts`'s
  *  `dropTarget`, which alone decides where a drop lands. Copied from slop-vector-editor
  *  (SLOP-LAYER-DRAG.md); here ids are numbers and the row height is passed in, as spine's rows are
  *  not ROW_PX tall.
@@ -20,11 +20,26 @@ export function pastThreshold(dx: number, dy: number): boolean {
   return Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX;
 }
 
-/** The rows that slide down to open the gap: every row at or below the drop line. Nothing slides
- *  when there is no drop (a refused position), so the gap closes. */
-export function shiftedRowIds(rows: readonly RowBox[], line: number | null): Set<number> {
-  if (line === null) return new Set();
-  return new Set(rows.filter((r) => r.top >= line - 0.5).map((r) => r.id));
+/** How far each row slides while layer `id` hovers over stack slot `slot` (0 = top row): the
+ *  dragged row's own place moves to the slot and the rows in between close up behind it, as
+ *  SortableJS did — no extra gap, the list keeps its height. Only rows that move are listed;
+ *  `slot` null (a refused position) slides nothing. Rows may differ in height. */
+export function slideOffsets(
+  rows: readonly RowBox[],
+  id: number,
+  slot: number | null,
+): Map<number, number> {
+  const out = new Map<number, number>();
+  const dragged = rows.find((r) => r.id === id);
+  if (slot === null || !dragged || rows.length === 0) return out;
+  const order = rows.filter((r) => r.id !== id);
+  order.splice(slot, 0, dragged);
+  let top = rows[0].top;
+  for (const r of order) {
+    if (Math.abs(top - r.top) > 0.5) out.set(r.id, top - r.top);
+    top += r.bottom - r.top;
+  }
+  return out;
 }
 
 /** The floating row's top: the pointer less where on its row it was grabbed, kept inside the

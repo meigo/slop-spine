@@ -560,7 +560,7 @@ async function main(page) {
   });
 
   await step(async () => {
-    // At least three rows, so a drop between the top two slides the rest down to open the gap.
+    // At least three rows, so a drop one slot down moves only the top two (the rest stay put).
     await tapButton("Add layer");
     const before = await rowNames();
     const grip = await rows().first().locator('[title="Drag to reorder"]').boundingBox();
@@ -580,8 +580,10 @@ async function main(page) {
     await page.waitForTimeout(250);
     const mid = await page.evaluate(() => ({
       ghost: !!document.querySelector("[data-drag-ghost]"),
-      slid: [...document.querySelectorAll("[data-layer-id]")].filter((e) => e.style.transform)
-        .length,
+      // Each row's slide in px: the grabbed top row down one row, the second up one, the rest 0.
+      dy: [...document.querySelectorAll("[data-layer-id]")].map((e) =>
+        Math.round(Number(e.style.transform.match(/-?[\d.]+/)?.[0] ?? 0)),
+      ),
     }));
     await shot(`${String(n + 1).padStart(2, "0")}-layer-drag-mid`);
     await gesture([{ type: "up", id: 21, kind: "touch", x: g.x, y: g.y + 1.2 * rowH }]);
@@ -589,9 +591,11 @@ async function main(page) {
     const after = await rowNames();
     return [
       mid.ghost &&
-        mid.slid === before.length - 2 &&
+        mid.dy[0] > 0 &&
+        mid.dy[1] === -mid.dy[0] &&
+        mid.dy.slice(2).every((d) => d === 0) &&
         after.join() === [before[1], before[0], ...before.slice(2)].join(),
-      `[sim] a finger drag on a grip lifts the row, opens a gap (${mid.slid} row slid) and reorders (${before.join(", ")} → ${after.join(", ")})`,
+      `[sim] a finger drag on a grip lifts the row, moves its place one slot down (slides ${mid.dy.join(", ")}) and reorders (${before.join(", ")} → ${after.join(", ")})`,
       "layer-drag",
     ];
   });

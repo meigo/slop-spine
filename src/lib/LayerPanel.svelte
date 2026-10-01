@@ -12,7 +12,7 @@
   } from "../state/doc.svelte";
   import { ui } from "../state/ui.svelte";
   import type { Layer } from "../rig/document";
-  import { autoScrollStep, ghostTop, pastThreshold, shiftedRowIds } from "./layer-drag-visual";
+  import { autoScrollStep, ghostTop, pastThreshold, slideOffsets } from "./layer-drag-visual";
   import { dropTarget, type Drop, type RowBox } from "./layer-drop";
   import { isDoubleTap, type Tap } from "./double-tap";
   import { sliderFill } from "./slider-fill";
@@ -58,8 +58,8 @@
   let drop = $state<Drop | null>(null);
   /** The floating copy of the grabbed row, in content coordinates. */
   let ghost = $state.raw<{ top: number; layer: Layer; height: number } | null>(null);
-  /** Rows slid down to open the gap. */
-  let shifted = $state.raw<Set<number>>(new Set());
+  /** How far each row slides: the dragged row's place to the drop slot, the rows passed close up. */
+  let shifted = $state.raw<Map<number, number>>(new Map());
   let scrollFrame = 0;
 
   // 28px list actions, borderless, as slop-paint's header. aria-disabled (not `disabled`) so the
@@ -207,7 +207,7 @@
     if (!listEl || !ghost) return;
     const y = d.clientY - listEl.getBoundingClientRect().top + listEl.scrollTop;
     drop = dropTarget(d.boxes, y, d.id);
-    shifted = shiftedRowIds(d.boxes, drop?.line ?? null);
+    shifted = slideOffsets(d.boxes, d.id, drop ? d.boxes.length - 1 - drop.index : null);
     ghost = { ...ghost, top: ghostTop(y, d.grab, d.contentHeight, d.rowPx) };
     document.documentElement.classList.toggle("layer-drop-refused", drop === null);
   }
@@ -237,7 +237,7 @@
     dragging = null;
     drop = null;
     ghost = null;
-    shifted = new Set();
+    shifted = new Map();
     document.documentElement.classList.remove("layer-dragging", "layer-drop-refused");
   }
 
@@ -266,7 +266,10 @@
     if (target) reorderLayer(id, target.index);
   }
 
-  const slide = (id: number) => (shifted.has(id) && ghost ? `translateY(${ghost.height}px)` : null);
+  const slide = (id: number) => {
+    const dy = ghost ? shifted.get(id) : undefined;
+    return dy ? `translateY(${dy}px)` : null;
+  };
   const slideTransition = $derived(ghost ? "transform 150ms ease" : null);
 </script>
 
