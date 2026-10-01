@@ -14,7 +14,7 @@ usually apply here too.
   slop-paint 2026-10-01): the app in WebKit at iPad Pro 11 with touch, in a fresh PERSISTENT temp
   profile (ephemeral WebKit refuses Blobs in IndexedDB, so every autosave failed). Starts its own
   dev server; `npm run test:ipad -- <url>` checks a URL. ~20 checks: first layer, pen stroke, undo/redo
-  and two-finger-tap undo, fingers and Ctrl+Z during a pen stroke, the Dry brush against Smooth, bucket, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
+  and two-finger-tap undo, fingers and Ctrl+Z during a pen stroke, the Dry brush against Smooth, Pencil and Charcoal stamps, bucket, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
   Pose bends the drawing, Export Spine (the zip is unzipped: bones, mesh, atlas, PNG), add layer,
   double-tap rename, a hidden layer refuses the pen and Clear layer, Duplicate with a lifted
   selection, the layer-row finger drag (ghost, gap,
@@ -97,6 +97,13 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   64-px tiles (`changedTiles` / `cropPixels`)
 - **Touch gestures**, when syncing the file: `core/touch-gestures.ts:~107` resets `gestureDidMove`
   on every finger-down, so a finger joining a moved pan can read as a tap (slop-paint `e61dc5a`)
+- **Newer stamp-brush work** (added 2026-10-01; the mip levels, small-stamp discs and random turn
+  are already ported): `e4a524c` gives Pencil, Charcoal and Airbrush a Stream string of at least
+  4 screen px whatever Stream says (thin Pencil lines were stepped and beaded on iPad at Stream 0;
+  `STAMP_MIN_ROPE_PX`, `input.ts` `minRopePx`) — it needs the rope Stream above, so take it with
+  that. Optional features: Pencil grades 4H–8B (`55c718d`, `pencilGrade` in `stamp-brush.ts`, a
+  grain argument to `getTip`) and Charcoal textures Rough–Dense (`c631167`, `charcoalHoles` in
+  `brush-textures.ts`), each a setting in the brush gear, saved
 
 ### Doesn't apply
 
