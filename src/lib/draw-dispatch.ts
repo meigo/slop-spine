@@ -175,6 +175,8 @@ export function createDrawDispatch(opts?: {
       dwellPool: ui.dwellPool,
       dryness: ui.dryness,
       dryTaper: ui.dryTaper,
+      pencilGrade: ui.pencilGrade,
+      charcoalTexture: ui.charcoalTexture,
       taper: ui.taper,
     };
   }

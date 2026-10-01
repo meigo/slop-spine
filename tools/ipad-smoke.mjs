@@ -484,6 +484,44 @@ async function main(page) {
   });
 
   await step(async () => {
+    // Pencil grades and Charcoal textures, in the brush gear: a light 8B line is darker than a 4H
+    // one, and Dense charcoal more solid than Rough.
+    const band = rect(0.05, 0.03, 0.9, 0.14);
+    const stroke = line(at(0.1, 0.1), at(0.9, 0.1));
+    const size = page.locator('input[type="range"][step="0.5"]').first();
+    const pick = async (type, option) => {
+      await page.locator('select[title="Brush"]').selectOption(type);
+      await tapButton("Brush settings");
+      await tapButton(option);
+      await tapButton("Brush settings");
+    };
+    const paint = async (type, option) => {
+      await pick(type, option);
+      await size.fill("20");
+      const before = await ink(band);
+      await pen(stroke, { n: 60, p: () => 0.3 });
+      await page.waitForTimeout(300);
+      const n = (await ink(band)) - before;
+      await shot(`option-${option.split(" ")[0]}-${type}`);
+      await tapButton("Undo");
+      return n;
+    };
+    const hard = await paint("pencil", "4H pencil");
+    const soft = await paint("pencil", "8B pencil");
+    const rough = await paint("charcoal", "Rough charcoal");
+    const dense = await paint("charcoal", "Dense charcoal");
+    await pick("pencil", "HB pencil");
+    await pick("charcoal", "Medium charcoal");
+    await page.locator('select[title="Brush"]').selectOption("smooth");
+    await size.fill("12");
+    return [
+      soft > 100 && soft > hard * 1.2 && dense > rough * 1.1 && (await ink(band)) === 0,
+      `[sim] Pencil 4H → 8B (${hard} → ${soft} dark px) and Charcoal Rough → Dense (${rough} → ${dense}) in the brush gear`,
+      "grade-texture",
+    ];
+  });
+
+  await step(async () => {
     await tapButton("Fill (G)");
     const before = await ink(whole());
     await penTap(at(0.5, 0.5));

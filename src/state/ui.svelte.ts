@@ -3,6 +3,8 @@ import { clampGap } from "../core/fill-holes";
 import { PressureCurve, type CurvePoint } from "../core/pressure-curve";
 import { clampPress, PRESS_DEFAULT } from "../core/brush";
 import { MAX_NIB_FLATNESS } from "../core/calligraphy-brush";
+import { PENCIL_GRADES, type PencilGrade } from "../core/stamp-brush";
+import { CHARCOAL_TEXTURES, type CharcoalTexture } from "../core/brush-textures";
 import type { Preferences, LegacyPreferences, CurvePrefs } from "../persist/preferences";
 
 export type Tool = "brush" | "eraser" | "fill" | "eyedropper" | "select" | "lasso" | "bone";
@@ -162,6 +164,9 @@ export const ui = $state({
   /** Dry brush: 0–100, how short of paint the bristles are, and how long each hair tapers. */
   dryness: 50,
   dryTaper: 10,
+  /** Pencil grade (`PENCIL_GRADES`) and Charcoal texture (`CHARCOAL_TEXTURES`), as slop-paint. */
+  pencilGrade: "HB" as PencilGrade,
+  charcoalTexture: "medium" as CharcoalTexture,
   /** Fill's colour, independent of the brush's. Fills land BEHIND the strokes (fillRegionBehind),
    *  so the two tools are painting different things — outlines in one colour, flats in another —
    *  and sharing one swatch meant re-picking on every switch, or silently inking a line in the
@@ -343,6 +348,8 @@ export function gatherPreferences(): Preferences {
     dwellPool: ui.dwellPool,
     dryness: ui.dryness,
     dryTaper: ui.dryTaper,
+    pencilGrade: ui.pencilGrade,
+    charcoalTexture: ui.charcoalTexture,
     fillValue: ui.fillValue,
     fillOpacity: ui.fillOpacity,
     fillTolerance: ui.fillTolerance,
@@ -404,6 +411,10 @@ export function applyPreferences(p: Partial<Preferences> & Partial<LegacyPrefere
   if (dryness !== null) ui.dryness = dryness;
   const dryTaper = intIn(p.dryTaper, 0, 100);
   if (dryTaper !== null) ui.dryTaper = dryTaper;
+  if (PENCIL_GRADES.includes(p.pencilGrade as PencilGrade))
+    ui.pencilGrade = p.pencilGrade as PencilGrade;
+  if (CHARCOAL_TEXTURES.includes(p.charcoalTexture as CharcoalTexture))
+    ui.charcoalTexture = p.charcoalTexture as CharcoalTexture;
   const fillOpacity = intIn(p.fillOpacity, 1, 100);
   if (fillOpacity !== null) ui.fillOpacity = fillOpacity;
   const tol = intIn(p.fillTolerance, 0, 128);

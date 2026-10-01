@@ -12,6 +12,38 @@ export interface StampBrushSettings extends BrushSettings {
   brushType: BrushType;
 }
 
+/** Pencil grades, hardest first, as on real graphite pencils (2026-10-01). */
+export const PENCIL_GRADES = ["4H", "2H", "HB", "2B", "4B", "6B", "8B"] as const;
+export type PencilGrade = (typeof PENCIL_GRADES)[number];
+
+/** What a grade does to the Pencil: `strength` scales every stamp's alpha (a hard pencil is
+ *  lighter), `floor` is how dark the lightest touch already is (a soft one is dark even when barely
+ *  pressed; the stamp's pressure alpha runs `floor` → 1), `grain` how much paper shows through the
+ *  tip (soft graphite fills the paper's tooth). HB is the Pencil as it was: strength 1, floor 0.5
+ *  (the stamp engine's old `0.5 + p × 0.5`), grain 1. An unknown grade is HB. */
+export function pencilGrade(grade: string | undefined): {
+  strength: number;
+  floor: number;
+  grain: number;
+} {
+  switch (grade) {
+    case "4H":
+      return { strength: 0.55, floor: 0.3, grain: 1.3 };
+    case "2H":
+      return { strength: 0.75, floor: 0.4, grain: 1.15 };
+    case "2B":
+      return { strength: 1, floor: 0.62, grain: 0.8 };
+    case "4B":
+      return { strength: 1, floor: 0.72, grain: 0.6 };
+    case "6B":
+      return { strength: 1, floor: 0.8, grain: 0.45 };
+    case "8B":
+      return { strength: 1, floor: 0.88, grain: 0.3 };
+    default:
+      return { strength: 1, floor: 0.5, grain: 1 };
+  }
+}
+
 /**
  * Below this box size a 64px tip downsamples to alpha 0 (Chrome samples a couple of texels in the
  * transparent corner), so the stamp draws nothing at all. Measured in slop-animator.
@@ -49,11 +81,11 @@ export function spaceStamps(
   return { positions, since: last === undefined ? since + segLen : segLen - last };
 }
 /**
- * Which mip level to stamp from (slop-paint f943b1c): `sizes` largest first (the tip halved down to
- * 4 px), the smallest that is still at least `devicePx` — so no stamp is shrunk more than 2×.
- * Stamping a 2–4 px brush straight from the 64 px tip sampled a handful of its texels, so each
- * stamp's coverage jumped with the grain: small Pencil and Charcoal strokes came out beaded and
- * jagged (most visibly at 1× layers, as here). Each level is the one above shrunk by half, which
+ * Which mip level to stamp from (2026-10-01): `sizes` largest first (the tip halved down to 4 px),
+ * the smallest that is still at least `devicePx` — so no stamp is shrunk more than 2×. Stamping a
+ * 2–4 px brush straight from the 64 px tip sampled a handful of its texels, so each stamp's
+ * coverage jumped with the grain: small Pencil and Charcoal strokes came out beaded and jagged
+ * (most visibly at 1× layers, as on iPad). Each level is the one above shrunk by half, which
  * averages it properly.
  */
 export function mipIndex(devicePx: number, sizes: readonly number[]): number {
@@ -63,11 +95,11 @@ export function mipIndex(devicePx: number, sizes: readonly number[]): number {
 }
 
 /**
- * Stamps this small (in device px) are drawn as two soft discs, not the tip image (slop-paint
- * 6f94df4). On iPad small Pencil strokes still came out dashed and beaded after the mip levels — a
- * tiny image draw there seems to land on whole pixels (the GPU canvas; not reproducible in
- * software WebKit), so stamps 1–2 px apart clumped into a pattern. A filled arc is antialiased at
- * its sub-pixel position on every renderer, and at this size the grain is finer than a pixel.
+ * Stamps this small (in device px) are drawn as two soft discs, not the tip image (2026-10-01).
+ * On iPad small Pencil strokes still came out dashed and beaded after the mip levels — a tiny
+ * image draw there seems to land on whole pixels (the GPU canvas; not reproducible in software
+ * WebKit), so stamps 1–2 px apart clumped into a pattern. A filled arc is antialiased at its
+ * sub-pixel position on every renderer, and at this size the grain is finer than a pixel anyway.
  */
 export const SMALL_STAMP_PX = 8;
 
@@ -105,6 +137,8 @@ let tintedTip: HTMLCanvasElement[] | null = null;
 let tintedProfile = { inner: 1, outer: 1 };
 let tintedColor = "";
 let tintedType: BrushType | null = null;
+let tintedGrain = 1;
+let tintedTexture: string | undefined;
 
 export function resetStampState() {
   lastStampCount = 0;
@@ -112,10 +146,23 @@ export function resetStampState() {
   tintedTip = null;
 }
 
-function getTintedTip(type: BrushType, color: string): HTMLCanvasElement[] {
-  if (tintedTip && tintedColor === color && tintedType === type) return tintedTip;
+function getTintedTip(
+  type: BrushType,
+  color: string,
+  grain = 1,
+  texture?: string,
+): HTMLCanvasElement[] {
+  if (
+    tintedTip &&
+    tintedColor === color &&
+    tintedType === type &&
+    tintedGrain === grain &&
+    tintedTexture === texture
+  ) {
+    return tintedTip;
+  }
 
-  const tip = getTip(type);
+  const tip = getTip(type, grain, texture);
   const cvs = document.createElement("canvas");
   cvs.width = tip.width;
   cvs.height = tip.height;
@@ -144,6 +191,8 @@ function getTintedTip(type: BrushType, color: string): HTMLCanvasElement[] {
   tintedTip = levels;
   tintedColor = color;
   tintedType = type;
+  tintedGrain = grain;
+  tintedTexture = texture;
   return levels;
 }
 
@@ -161,7 +210,14 @@ export function drawStampStrokeIncremental(
   if (points.length === 0) return;
 
   const { min: minSize, max: maxSize } = widthRange(settings.size, sizeRange);
-  const tips = getTintedTip(settings.brushType, settings.color);
+  // The Pencil's grade (HB for every other tip: the original numbers).
+  const grade = pencilGrade(settings.brushType === "pencil" ? settings.pencilGrade : undefined);
+  const tips = getTintedTip(
+    settings.brushType,
+    settings.color,
+    grade.grain,
+    settings.brushType === "charcoal" ? settings.charcoalTexture : undefined,
+  );
   const tipSizes = tips.map((t) => t.width);
   // Stamps are sized in document units; the layer's transform scales them to device pixels.
   const m = ctx.getTransform();
@@ -176,10 +232,10 @@ export function drawStampStrokeIncremental(
   const stamp = (x: number, y: number, drawSize: number) => {
     if (drawSize * toDevice > SMALL_STAMP_PX) {
       const tip = tips[mipIndex(drawSize * toDevice, tipSizes)];
-      // A random turn per stamp (slop-paint 11dded1): every stamp is the same tip, so unturned its
-      // holes land in the same place each time and line up into rows along the stroke (Charcoal
-      // showed it most). Turned about the stamp's centre via the transform: the layer's own (`m`)
-      // times a translate to (x, y) and a rotation — cheaper than save/translate/rotate/restore.
+      // A random turn per stamp (2026-10-01): every stamp is the same tip, so unturned its holes
+      // land in the same place each time and line up into rows along the stroke (Charcoal showed
+      // it most). Turned about the stamp's centre via the transform: the layer's own (`m`) times
+      // a translate to (x, y) and a rotation — cheaper than save/translate/rotate/restore.
       const t = Math.random() * Math.PI * 2;
       const cos = Math.cos(t);
       const sin = Math.sin(t);
@@ -209,7 +265,8 @@ export function drawStampStrokeIncremental(
   // A mouse has no pressure (reported 0): its width is already the nominal one, and its alpha
   // mustn't take the light-pressure half either — mouse stamps drew at half the chosen opacity.
   const hasPressure = points[0].hasPressure ?? true;
-  const pressureAlpha = (p: number) => (hasPressure ? 0.5 + p * 0.5 : 1);
+  const pressureAlpha = (p: number) =>
+    grade.strength * (hasPressure ? grade.floor + p * (1 - grade.floor) : 1);
 
   ctx.save();
   if (settings.isEraser) {

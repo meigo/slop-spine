@@ -12,8 +12,9 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 
 - Draw and rig in one document (brush / eraser / fill / eyedropper, layers, bones)
 - slop-paint's brushes: Smooth, Ink (with pooling), Calligraphy, Dry brush (bristle stripes broken
-  where the paint runs out, with Dryness and Taper), Pencil, Charcoal, Airbrush; brush and eraser
-  each keep their own size, opacity, Press and pressure curve; draw behind; per-layer alpha lock
+  where the paint runs out, with Dryness and Taper), Pencil (grades 4H–8B), Charcoal (textures
+  Rough–Dense), Airbrush; brush and eraser each keep their own size, opacity, Press and pressure
+  curve; draw behind; per-layer alpha lock
 - Stream trails the line behind the pen on a string (small wobbles never reach it; it catches up
   at a pause and on lift); Smooth averages the Smooth brush's path with no lag, optionally keeping
   sharp corners where you pause

@@ -1,5 +1,7 @@
 import type { Tool, StrokeSlot } from "../state/ui.svelte";
 import type { CurvePoint } from "../core/pressure-curve";
+import type { PencilGrade } from "../core/stamp-brush";
+import type { CharcoalTexture } from "../core/brush-textures";
 
 export interface CurvePrefs {
   cp1: CurvePoint;
@@ -19,6 +21,8 @@ export interface Preferences {
   dwellPool: number;
   dryness: number;
   dryTaper: number;
+  pencilGrade: PencilGrade;
+  charcoalTexture: CharcoalTexture;
   fillValue: string;
   fillOpacity: number;
   fillTolerance: number;

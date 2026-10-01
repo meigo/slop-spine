@@ -54,6 +54,8 @@ const sample: Preferences = {
   drawBehind: true,
   taper: true,
   sharpCorners: true,
+  pencilGrade: "2B",
+  charcoalTexture: "fine",
   nibAngle: 30,
   nibFlatness: 0.5,
   dwellPool: 20,
