@@ -40,6 +40,7 @@
   import { computeImagePlacement } from "../core/image-fit";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
+  import { STAMP_MIN_ROPE_PX } from "../core/stroke-smoothing";
   import { history, undo, redo } from "../state/history.svelte";
   import { pixelCommand } from "../core/history";
   import { Selection } from "../core/selection";
@@ -1508,6 +1509,15 @@
         ui.tool === "brush" || ui.tool === "eraser"
           ? ui.stroke[slotFor(ui.tool)].streamline / 100
           : 0,
+      // The stamp tips follow the points exactly, so they always get a short string
+      // (STAMP_MIN_ROPE_PX): at Stream 0 a thin Pencil line came out stepped on iPad (slop-paint).
+      minRopePx: () => {
+        if (ui.tool !== "brush" && ui.tool !== "eraser") return 0;
+        const type = ui.stroke[slotFor(ui.tool)].brushType;
+        return type === "pencil" || type === "charcoal" || type === "airbrush"
+          ? STAMP_MIN_ROPE_PX
+          : 0;
+      },
     });
     const onCursorMove = (e: PointerEvent) => updateBrushCursor(e);
     const onCursorLeave = () => hideBrushCursor();

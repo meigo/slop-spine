@@ -29,7 +29,7 @@ describe("isStageChromeTarget", () => {
 type Ptr = { pointerId: number; pointerType: string; x: number; y: number; pressure?: number };
 
 /** setupInput on a bare EventTarget, recording every onStroke call. */
-function stage(streamline = 0) {
+function stage(streamline = 0, minRopePx = 0) {
   const el = Object.assign(new EventTarget(), {
     setPointerCapture: () => {},
     getBoundingClientRect: () => ({ left: 0, top: 0 }),
@@ -37,6 +37,7 @@ function stage(streamline = 0) {
   const calls: { points: InputPoint[]; done: boolean }[] = [];
   setupInput(el, (points, done) => calls.push({ points: [...points], done }), undefined, {
     streamline,
+    minRopePx: () => minRopePx,
   });
   const fire = (type: string, p: Ptr) =>
     el.dispatchEvent(
@@ -97,6 +98,17 @@ describe("setupInput", () => {
     fire("pointerup", pen(2, 0, 0));
     const points = calls[calls.length - 1].points;
     expect(points[points.length - 1].pressure).toBe(0.7);
+  });
+
+  it("a minimum string holds the line back even at Stream 0 (the stamp tips)", () => {
+    const { calls, fire } = stage(0, 4);
+    fire("pointerdown", pen(0, 0));
+    for (let x = 1; x <= 20; x++) fire("pointermove", pen(x, 0));
+    const held = calls[calls.length - 1].points;
+    expect(held[held.length - 1].x).toBeCloseTo(16, 0);
+    fire("pointerup", pen(20, 0));
+    const done = calls[calls.length - 1].points;
+    expect(done[done.length - 1]).toMatchObject({ x: 20, y: 0 });
   });
 
   it("Stream holds the line back on its string, and the lift still ends at the pen", () => {
