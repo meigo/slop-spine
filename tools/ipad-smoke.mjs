@@ -386,6 +386,50 @@ async function main(page) {
   });
 
   await step(async () => {
+    // A long opaque Ink or Calligraphy stroke freezes its settled part (draw-dispatch `frozenTo`):
+    // it must draw the same pixels as a full redraw (dev-only `slopNoFreeze`), and one Undo must
+    // take ALL of it back (undo reads its "before" from the copy freezing must not bake into).
+    const spiral = (t) => {
+      const a = t * Math.PI * 12;
+      const r = 0.04 + 0.36 * t;
+      return at(0.5 + r * Math.cos(a), 0.5 + r * Math.sin(a));
+    };
+    const pixels = (keep) =>
+      page.evaluate((keep) => {
+        const c = document.querySelector('[class*="paper-"] + canvas');
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        if (keep) return void (window.__snap = d);
+        let n = 0;
+        for (let i = 0; i < d.length; i++) if (Math.abs(d[i] - window.__snap[i]) > 8) n++;
+        return n;
+      }, keep);
+    const results = [];
+    for (const type of ["ink", "calligraphy"]) {
+      await page.locator('select[title="Brush"]').selectOption(type);
+      const base = await ink(whole());
+      await page.evaluate(() => (window.slopNoFreeze = true));
+      await pen(spiral, { n: 150, p: () => 0.7 });
+      await page.waitForTimeout(400);
+      await pixels(true);
+      await tapButton("Undo");
+      await page.evaluate(() => (window.slopNoFreeze = false));
+      await pen(spiral, { n: 150, p: () => 0.7 });
+      await page.waitForTimeout(400);
+      const differ = await pixels(false);
+      await shot(`frozen-${type}`);
+      await tapButton("Undo");
+      const after = await ink(whole());
+      results.push({ type, differ, undone: after === base });
+    }
+    await page.locator('select[title="Brush"]').selectOption("smooth");
+    return [
+      results.every((r) => r.differ < 2000 && r.undone),
+      `[sim] a long frozen stroke matches a full redraw and undoes whole (${results.map((r) => `${r.type}: ${r.differ} channel values differ, undone ${r.undone}`).join("; ")})`,
+      "frozen-stroke",
+    ];
+  });
+
+  await step(async () => {
     // The Dry brush: hair stripes broken where they run dry, so fewer px than Smooth on one path.
     const band = rect(0.05, 0.03, 0.9, 0.14);
     const stroke = line(at(0.1, 0.1), at(0.9, 0.1));
