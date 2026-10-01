@@ -15,7 +15,7 @@ import {
   type Tool,
 } from "../state/ui.svelte";
 import type { InputPoint } from "../core/input";
-import { drawStroke, type BrushSettings } from "../core/brush";
+import { drawStroke, widthRange, type BrushSettings } from "../core/brush";
 import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
 import { drawDryStroke } from "../core/dry-brush";
 import { pathSmoothRadius } from "../core/stroke-smoothing";
@@ -226,6 +226,67 @@ export function createDrawDispatch(opts?: {
     scratchCtx.drawImage(layer.canvas, 0, 0);
   }
 
+  /**
+   * Freezing a long stroke (slop-paint b89284d). Ink and Calligraphy redraw the whole stroke every
+   * frame (a piecewise draw would composite edge pixels many times and harden them), so a frame
+   * cost more the longer the stroke — laggy on iPad after ~20 s of Pencil. For an OPAQUE stroke
+   * the settled part — far enough behind the pen that new points can no longer change it — is
+   * baked every `FREEZE_STEP` points into `frozen`, a copy of the pre-stroke layer that each frame
+   * then restores from, so only the rest is redrawn. The engines draw a RANGE of the stroke from
+   * geometry worked out over the whole of it, so the baked part is the same pixels; each draw
+   * starts `FREEZE_OVERLAP` points early, so the cut lies inside paint and can't show as a seam
+   * (opaque paint drawn twice looks the same). Translucent strokes keep the full redraw: drawn
+   * twice, the overlap would darken. `scratch` stays the untouched pre-stroke copy, as undo reads
+   * its "before" from it (slop-paint keeps a separate undo snapshot instead). `frozen` exists only
+   * while a stroke has frozen something: one more layer-sized canvas, released at the stroke's end.
+   */
+  const FREEZE_STEP = 300;
+  const FREEZE_OVERLAP = 8;
+  let frozenTo = 0;
+  let frozen: HTMLCanvasElement | null = null;
+
+  /** Where this frame's draw starts: the whole stroke, or just past the frozen part. */
+  const unfrozenFrom = () => (frozenTo === 0 ? 0 : frozenTo - FREEZE_OVERLAP);
+
+  /** Bake the stroke's settled part into `frozen` once it has grown by FREEZE_STEP points.
+   *  Settled = at least 2 × the widest nib plus 30 px of path, and 40 points, behind the pen:
+   *  Calligraphy's normals reach half a width back, its smoothing 2 points, Ink's Pool 32 ms. */
+  function freezeSettled(
+    ctx: CanvasRenderingContext2D,
+    pts: InputPoint[],
+    draw: (target: CanvasRenderingContext2D, from: number, to: number) => void,
+    size: number,
+    sizeRange: number,
+  ) {
+    // Dev-only off switch, to compare a frozen stroke with a full redraw (test:ipad does).
+    if (import.meta.env.DEV && (window as unknown as { slopNoFreeze?: boolean }).slopNoFreeze)
+      return;
+    if (!scratch) return;
+    const marginPx = 2 * widthRange(size, sizeRange).max + 30;
+    let i = pts.length - 1;
+    let d = 0;
+    while (i > 0 && (d < marginPx || pts.length - 1 - i < 40)) {
+      d += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      i--;
+    }
+    if (i - frozenTo < FREEZE_STEP) return;
+    if (!frozen) {
+      frozen = document.createElement("canvas");
+      frozen.width = scratch.width;
+      frozen.height = scratch.height;
+      frozen.getContext("2d")!.drawImage(scratch, 0, 0);
+    }
+    const f = frozen.getContext("2d")!;
+    f.save();
+    try {
+      f.setTransform(ctx.getTransform());
+      withClip(f, () => draw(f, unfrozenFrom(), i));
+    } finally {
+      f.restore();
+    }
+    frozenTo = i;
+  }
+
   interface Rect {
     x: number;
     y: number;
@@ -304,6 +365,8 @@ export function createDrawDispatch(opts?: {
     lastPoints = [];
     strokeLayer = null;
     strokeCtx = null;
+    frozenTo = 0;
+    frozen = null;
     setStrokeOpen(false);
   }
 
@@ -311,11 +374,12 @@ export function createDrawDispatch(opts?: {
    *  2048×2048 snapshot is a 16MB CPU upload per Pencil sample and is why live drawing crawled
    *  on iPad. */
   function restorePreStroke(ctx: CanvasRenderingContext2D, layer: Layer) {
-    if (!scratch) return;
+    const from = frozen ?? scratch; // with the stroke's frozen part, once it has one
+    if (!from) return;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
-    ctx.drawImage(scratch, 0, 0);
+    ctx.drawImage(from, 0, 0);
     ctx.restore();
   }
 
@@ -337,12 +401,17 @@ export function createDrawDispatch(opts?: {
       brushType === "calligraphy" ||
       brushType === "dry"
     ) {
+      // Ink and Calligraphy draw a range: from the frozen part on (see `frozenTo`).
+      const ranged = (target: CanvasRenderingContext2D, from: number, to = Infinity) => {
+        if (brushType === "ink") drawInkStroke(target, curved, settings, sizeRange, from, to);
+        else drawCalligraphyStroke(target, curved, settings, sizeRange, from, to);
+      };
+      if ((brushType === "ink" || brushType === "calligraphy") && settings.opacity >= 100 && !done)
+        freezeSettled(ctx, curved, ranged, settings.size, sizeRange);
       restorePreStroke(ctx, strokeLayer);
       withClip(ctx, () => {
-        if (brushType === "ink") drawInkStroke(ctx, curved, settings, sizeRange);
+        if (brushType === "ink" || brushType === "calligraphy") ranged(ctx, unfrozenFrom());
         else if (brushType === "dry") drawDryStroke(ctx, curved, settings, sizeRange);
-        else if (brushType === "calligraphy")
-          drawCalligraphyStroke(ctx, curved, settings, sizeRange);
         else drawStroke(ctx, curved, settings, done, sizeRange);
       });
     } else {
