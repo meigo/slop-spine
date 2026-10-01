@@ -97,6 +97,13 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   64-px tiles (`changedTiles` / `cropPixels`)
 - **Touch gestures**, when syncing the file: `core/touch-gestures.ts:~107` resets `gestureDidMove`
   on every finger-down, so a finger joining a moved pan can read as a tap (slop-paint `e61dc5a`)
+- **Newer stamp-brush work** (added 2026-10-01; the mip levels, small-stamp discs and random turn
+  are already ported): `e4a524c` gives Pencil, Charcoal and Airbrush a Stream string of at least
+  4 screen px whatever Stream says (thin Pencil lines were stepped and beaded on iPad at Stream 0;
+  `STAMP_MIN_ROPE_PX`, `input.ts` `minRopePx`) — it needs the rope Stream above, so take it with
+  that. Optional features: Pencil grades 4H–8B (`55c718d`, `pencilGrade` in `stamp-brush.ts`, a
+  grain argument to `getTip`) and Charcoal textures Rough–Dense (`c631167`, `charcoalHoles` in
+  `brush-textures.ts`), each a setting in the brush gear, saved
 
 ### Doesn't apply
 
