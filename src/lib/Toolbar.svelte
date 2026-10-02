@@ -21,6 +21,7 @@
     document as doc,
     loadDocument,
     newDocument,
+    resizeDocument,
     deleteBone,
     dissolveBone,
   } from "../state/doc.svelte";
@@ -28,6 +29,7 @@
   import { importPsd } from "../persist/psd";
   import { clearAutosave } from "../persist/autosave";
   import NewDocDialog from "./NewDocDialog.svelte";
+  import ResizeDocDialog, { type ResizeMode } from "./ResizeDocDialog.svelte";
   import ShareReadyDialog from "./ShareReadyDialog.svelte";
   import { canShareFile, isStandalone, saveToFilesAvailable, shareFile } from "./share";
   import { downloadBlob } from "./download";
@@ -80,6 +82,7 @@
   let fileInput: HTMLInputElement | undefined = $state();
   let psdInput: HTMLInputElement | undefined = $state();
   let newDocOpen = $state(false);
+  let resizeOpen = $state(false);
 
   // Pixel/select tools need a layer. Dim them when none is selected (on load, after delete),
   // still clickable so you can arm a tool before picking a layer — same as animator. Hidden is
@@ -153,6 +156,20 @@
     newDocOpen = false;
     void clearAutosave();
     newDocument(width, height);
+    window.dispatchEvent(new Event("slop-spine:fit-view"));
+  }
+
+  function onResizeDocument(
+    width: number,
+    height: number,
+    anchorX: number,
+    anchorY: number,
+    mode: ResizeMode,
+  ) {
+    resizeOpen = false;
+    // A lifted float is in the old canvas's coordinates: apply it first (as slop-paint).
+    selectionCommands.applyFloat?.();
+    resizeDocument(width, height, anchorX, anchorY, mode);
     window.dispatchEvent(new Event("slop-spine:fit-view"));
   }
 
@@ -357,6 +374,11 @@
 <input type="file" accept=".zip" class="hidden" bind:this={fileInput} onchange={onFileChosen} />
 <input type="file" accept=".psd" class="hidden" bind:this={psdInput} onchange={onPsdChosen} />
 <NewDocDialog open={newDocOpen} onConfirm={onNewDocument} onCancel={() => (newDocOpen = false)} />
+<ResizeDocDialog
+  open={resizeOpen}
+  onConfirm={onResizeDocument}
+  onCancel={() => (resizeOpen = false)}
+/>
 <ShareReadyDialog file={shareFileReady} onClose={() => (shareFileReady = null)} />
 
 <!-- Row 1: tools, visibility, history, zoom readout, menus. Fixed 48px, as slop-paint's. No
@@ -436,7 +458,7 @@
   >
 
   <!-- File / Edit / View, in slop-paint's order and naming (no Document menu: spine has no project
-       name or canvas resize). Short verbs, "…" when a dialog follows, shortcuts as key chips. -->
+       name, and Resize… sits in File beside New…). Short verbs, "…" when a dialog follows, shortcuts as key chips. -->
   <div class="ml-auto flex shrink-0 items-center gap-1">
     <ToolbarMenu label="File">
       {#snippet children(close)}
@@ -447,6 +469,14 @@
             newDocOpen = true;
             close();
           }}>New…</button
+        >
+        <button
+          class={menuItem}
+          role="menuitem"
+          onclick={() => {
+            resizeOpen = true;
+            close();
+          }}>Resize…</button
         >
         <button
           class={menuItem}

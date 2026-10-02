@@ -808,6 +808,96 @@ async function main(page) {
     ];
   });
 
+  // ------------------------------------------------------------------------------------ resize
+  /** The doc canvas's size, and the rig overlay's drawn box as fractions of the page. */
+  const docSize = () => docCanvas.evaluate((c) => [c.width, c.height]);
+  const rigBox = () =>
+    page.evaluate((pb) => {
+      const c = document.querySelector("canvas.z-5");
+      const r = c.getBoundingClientRect();
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (let i = 3; i < d.length; i += 4) {
+        if (!d[i]) continue;
+        const p = (i - 3) / 4;
+        const x = p % c.width;
+        const y = (p - x) / c.width;
+        x0 = Math.min(x0, x);
+        x1 = Math.max(x1, x);
+        y0 = Math.min(y0, y);
+        y1 = Math.max(y1, y);
+      }
+      const fx = (x) => (r.left + (x * r.width) / c.width - pb.x) / pb.width;
+      const fy = (y) => (r.top + (y * r.height) / c.height - pb.y) / pb.height;
+      return [fx(x0), fy(y0), fx(x1), fy(y1)];
+    }, pb);
+  /** File ▸ Resize…: `mode` "Scale drawing" or "Crop / extend", then a width (and a height). */
+  async function resize(mode, w, h) {
+    await menu("File", "Resize…");
+    const dialog = page.locator("div", { has: page.locator("h2", { hasText: /^Resize$/ }) }).last();
+    await dialog.getByRole("button", { name: mode }).tap();
+    const sizes = dialog.locator('input[type="number"]');
+    await sizes.nth(0).fill(String(w));
+    if (h !== undefined) await sizes.nth(1).fill(String(h));
+    const locked = await dialog.getByRole("button", { name: /Keep ratio/ }).isDisabled();
+    await dialog.getByRole("button", { name: "Resize", exact: true }).tap();
+    await page.waitForTimeout(600);
+    pb = await docCanvas.boundingBox();
+    return locked;
+  }
+  const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) < tol);
+
+  await step(async () => {
+    // Crop / extend, centred: the page grows round the drawing and its bones, which stay put.
+    const [W, H] = await docSize();
+    const ink0 = await ink(whole());
+    const box0 = await rigBox();
+    await resize("Crop / extend", Math.round(W * 1.25), Math.round(H * 1.25));
+    const [W1, H1] = await docSize();
+    const ink1 = await ink(whole());
+    const box1 = await rigBox();
+    const dx = Math.round((W1 - W) / 2);
+    const dy = Math.round((H1 - H) / 2);
+    const want = [
+      (box0[0] * W + dx) / W1,
+      (box0[1] * H + dy) / H1,
+      (box0[2] * W + dx) / W1,
+      (box0[3] * H + dy) / H1,
+    ];
+    const f = (b) => b.map((v) => v.toFixed(3)).join(",");
+    return [
+      W1 === Math.round(W * 1.25) && ink1 === ink0 && near(box1, want, 0.02) && !(await canUndo()),
+      `Resize, Crop / extend: ${W}×${H} → ${W1}×${H1}, ink unchanged (${ink0} → ${ink1}), rig box ${f(box0)} → ${f(box1)} (want ${f(want)}), undo cleared`,
+      "resize-extend",
+    ];
+  });
+
+  await step(async () => {
+    // Scale drawing, half size: Keep ratio is forced on, so the height follows the width; the ink
+    // shrinks to about a quarter and the rig stays where it was on the drawing.
+    const [W, H] = await docSize();
+    const ink0 = await ink(whole());
+    const box0 = await rigBox();
+    const locked = await resize("Scale drawing", Math.round(W / 2));
+    const [W1, H1] = await docSize();
+    const ink1 = await ink(whole());
+    const box1 = await rigBox();
+    const f = (b) => b.map((v) => v.toFixed(3)).join(",");
+    return [
+      locked &&
+        W1 === Math.round(W / 2) &&
+        H1 === Math.round(H / 2) &&
+        ink1 > ink0 * 0.2 &&
+        ink1 < ink0 * 0.3 &&
+        near(box1, box0, 0.02),
+      `Resize, Scale drawing: ${W}×${H} → ${W1}×${H1} (Keep ratio locked ${locked}), ink ${ink0} → ${ink1}, rig box ${f(box0)} → ${f(box1)}`,
+      "resize-scale",
+    ];
+  });
+
   // ---------------------------------------------------------------------- save, open, autosave
   /** The saved project, reused by Open below. */
   let saved = null;

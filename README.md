@@ -21,6 +21,9 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 - The slop family look (dark, File / Edit / View menus, tool-options row, status bar) shared with
   slop-paint and slop-animator
 - PSD import (flattened pixel layers) and zip project save/load
+- File ▸ Resize…: Crop / extend the canvas around an anchor (the drawing and bones keep their size
+  and place), or Scale drawing (with Keep ratio always on: bones, reach and mesh density scale with
+  it). The Spine export's origin stays at the canvas centre
 - Select / transform / warp on pixels
 - Pose preview with rotation wobble (optional translation)
 - Derived mesh + Euclidean weights, reach capsules, per-layer bone excludes
