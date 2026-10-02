@@ -25,6 +25,7 @@ export interface Preferences {
   charcoalTexture: CharcoalTexture;
   fillValue: string;
   fillOpacity: number;
+  fillSoftEdge: number;
   fillTolerance: number;
   fillExpand: number;
   fillGap: number;

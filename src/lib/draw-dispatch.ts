@@ -110,9 +110,13 @@ export function fillAllEnclosed() {
     flashStatus("Fill enclosed — the layer's transparency is locked");
     return;
   }
+  // With Soft, Expand is applied when painting (`fillRegionBehind`), so its edge is feathered;
+  // at Soft 0 the region comes back grown in whole pixels, as before.
+  const soft = ui.fillSoftEdge;
+  const expand = Math.max(0, Math.floor(ui.fillExpand));
   const { region, area } = enclosedFillRegion(layer.canvas, {
     gap: clampGap(ui.fillGap),
-    expand: Math.max(0, Math.floor(ui.fillExpand)),
+    expand: soft > 0 ? 0 : expand,
   });
   if (area === 0) {
     flashStatus("Nothing enclosed — the outline isn't closed, or is already filled");
@@ -122,7 +126,13 @@ export function fillAllEnclosed() {
   const ch = layer.canvas.height;
   const before = ctx.getImageData(0, 0, cw, ch);
   fillThroughClip(ctx, (target) => {
-    fillRegionBehind(target, region, hexToRgba(ui.fillValue, ui.fillOpacity));
+    fillRegionBehind(
+      target,
+      region,
+      hexToRgba(ui.fillValue, ui.fillOpacity),
+      soft,
+      soft > 0 ? expand : 0,
+    );
   });
   markLayerDirty(layer.id);
   const after = ctx.getImageData(0, 0, cw, ch);
@@ -447,6 +457,9 @@ export function createDrawDispatch(opts?: {
             (target) => {
               floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.fillOpacity), {
                 tolerance: ui.fillTolerance,
+                // Bridge closes line breaks for the bucket too (slop-paint ccd6bd1).
+                gap: clampGap(ui.fillGap),
+                softEdge: ui.fillSoftEdge,
                 // Expand grows the fill BEHIND existing content, which alpha lock refuses outright;
                 // without it the fill recolours the region and source-atop keeps it on the pixels.
                 expand: layer.alphaLock ? 0 : ui.fillExpand,
