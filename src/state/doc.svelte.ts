@@ -11,12 +11,14 @@ import { splitBoneAt, boneTip } from "../rig/chain";
 import { ui } from "./ui.svelte";
 import { history } from "./history.svelte";
 import { pixelCommand } from "../core/history";
+import { halvingSteps } from "../core/resize";
+import { anchorOffset, resizeRig, type ResizeSpec } from "../rig/resize-rig";
 
 /** The single open document. Mutated in place (push/splice/property writes) so the
  *  exported binding never needs reassigning — see the mutations below. */
 export const document = $state<RigDocument>(emptyDocument());
 
-/** Bumped by loadDocument. Lets views drop per-document transient state — the selection marquee,
+/** Bumped by loadDocument and resizeDocument. Lets views drop per-document transient state — the selection marquee,
  *  a live pose drag — even when the incoming document happens to have the same canvas size as the
  *  outgoing one. Deliberately NOT a field on `document`: that object is serialised straight into
  *  autosave and saved project files, and a counter has no business in either. */
@@ -588,6 +590,74 @@ export function newDocument(width: number, height: number) {
   const w = Math.max(16, Math.min(8192, Math.round(width)));
   const h = Math.max(16, Math.min(8192, Math.round(height)));
   loadDocument(emptyDocument(w, h));
+}
+
+/**
+ * File ▸ Resize… (2026-10-02, after slop-paint bb3ef4e). "canvas" crops or extends the page around
+ * the anchor: every layer's pixels and every bone shift by the anchor offset, nothing scales.
+ * "scale" resamples every layer to the new size — through halving steps for a large shrink, so it
+ * doesn't alias (`halvingSteps`) — and scales the rig with it (`resizeRig`: positions, lengths,
+ * reach and mesh densities). Layer canvases are resized IN PLACE, so whatever holds one stays
+ * valid. Undo is cleared (its snapshots are the old size) and `docLoad` bumped, which drops a live
+ * pose and the selection marquee, both in the old coordinates. The caller applies a lifted float
+ * first. Not undoable, as slop-paint's.
+ */
+export function resizeDocument(
+  width: number,
+  height: number,
+  anchorX: number,
+  anchorY: number,
+  mode: ResizeSpec["mode"],
+) {
+  const w = Math.max(16, Math.min(8192, Math.round(width)));
+  const h = Math.max(16, Math.min(8192, Math.round(height)));
+  const spec: ResizeSpec = {
+    mode,
+    from: [document.canvas.width, document.canvas.height],
+    to: [w, h],
+    anchor: [anchorX, anchorY],
+  };
+  for (const layer of document.layers) resizeLayerCanvas(layer.canvas, spec);
+  const rig = resizeRig(document, spec);
+  document.canvas = { width: w, height: h };
+  document.bones = rig.bones;
+  document.slots = rig.slots;
+  document.density = rig.density;
+  for (const layer of document.layers) layer.revision++;
+  invalidate();
+  history.clear();
+  docLoad.count++;
+}
+
+function resizeLayerCanvas(canvas: HTMLCanvasElement, spec: ResizeSpec) {
+  const [toW, toH] = spec.to;
+  let src = globalThis.document.createElement("canvas");
+  src.width = canvas.width;
+  src.height = canvas.height;
+  src.getContext("2d")!.drawImage(canvas, 0, 0);
+  canvas.width = toW; // clears it
+  canvas.height = toH;
+  const ctx = canvas.getContext("2d")!;
+  if (spec.mode === "canvas") {
+    ctx.drawImage(
+      src,
+      anchorOffset(spec.from[0], toW, spec.anchor[0]),
+      anchorOffset(spec.from[1], toH, spec.anchor[1]),
+    );
+    return;
+  }
+  const steps = halvingSteps(src.width, src.height, toW, toH);
+  for (const step of steps.slice(0, -1)) {
+    const next = globalThis.document.createElement("canvas");
+    next.width = step.w;
+    next.height = step.h;
+    const nctx = next.getContext("2d")!;
+    nctx.imageSmoothingQuality = "high";
+    nctx.drawImage(src, 0, 0, step.w, step.h);
+    src = next;
+  }
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(src, 0, 0, toW, toH);
 }
 
 export function loadDocument(doc: RigDocument) {
