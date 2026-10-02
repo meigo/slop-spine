@@ -5,6 +5,7 @@ import { clampPress, PRESS_DEFAULT } from "../core/brush";
 import { MAX_NIB_FLATNESS } from "../core/calligraphy-brush";
 import { PENCIL_GRADES, type PencilGrade } from "../core/stamp-brush";
 import { CHARCOAL_TEXTURES, type CharcoalTexture } from "../core/brush-textures";
+import { SOFT_STEPS, softStepIndex } from "../core/fill";
 import type { Preferences, LegacyPreferences, CurvePrefs } from "../persist/preferences";
 
 export type Tool = "brush" | "eraser" | "fill" | "eyedropper" | "select" | "lasso" | "bone";
@@ -174,6 +175,9 @@ export const ui = $state({
   fillValue: "#ffffff",
   /** Fill's own opacity, as slop-paint (it used to share the brush's). */
   fillOpacity: 100,
+  /** Fill's Soft edge, px (one of `SOFT_STEPS`): antialiases the fill into a soft line's edge, and
+   *  with Expand feathers the grown edge (slop-paint, 2026-10-02). 0 = hard pixel edge. */
+  fillSoftEdge: 1,
   /** Fill tool. Same defaults as animator. */
   fillTolerance: 32,
   fillExpand: 2,
@@ -352,6 +356,7 @@ export function gatherPreferences(): Preferences {
     charcoalTexture: ui.charcoalTexture,
     fillValue: ui.fillValue,
     fillOpacity: ui.fillOpacity,
+    fillSoftEdge: ui.fillSoftEdge,
     fillTolerance: ui.fillTolerance,
     fillExpand: ui.fillExpand,
     fillGap: ui.fillGap,
@@ -415,6 +420,8 @@ export function applyPreferences(p: Partial<Preferences> & Partial<LegacyPrefere
     ui.pencilGrade = p.pencilGrade as PencilGrade;
   if (CHARCOAL_TEXTURES.includes(p.charcoalTexture as CharcoalTexture))
     ui.charcoalTexture = p.charcoalTexture as CharcoalTexture;
+  const soft = finiteNum(p.fillSoftEdge);
+  if (soft !== null) ui.fillSoftEdge = SOFT_STEPS[softStepIndex(soft)];
   const fillOpacity = intIn(p.fillOpacity, 1, 100);
   if (fillOpacity !== null) ui.fillOpacity = fillOpacity;
   const tol = intIn(p.fillTolerance, 0, 128);

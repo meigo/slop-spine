@@ -535,6 +535,52 @@ async function main(page) {
   });
 
   await step(async () => {
+    // Soft edge (in the fill gear): the fill antialiases into the outline's soft inner edge instead
+    // of stopping at a whole-pixel staircase, so less see-through is left in the line's edge
+    // between fill and line. At Expand 0: Expand grows the fill under the line and hides the staircase anyway.
+    const halfClear = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('[class*="paper-"] + canvas');
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let n = 0; // how much see-through is left in the half-clear pixels, in alpha units
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 0 && d[i] < 255) n += 255 - d[i];
+        return n;
+      });
+    const setting = (name) =>
+      page.locator("label", { hasText: new RegExp(`^\\s*${name}`) }).locator("input");
+    /** Opens the fill gear, sets `name` to `value`, closes it (a tap outside also closes it). */
+    const set = async (name, value) => {
+      await tapButton("Fill settings");
+      const v = await setting(name).inputValue();
+      await setting(name).fill(String(value));
+      await tapButton("Fill settings");
+      return v;
+    };
+    const expand0 = await set("Expand", 0);
+    const fillAt = async (index) => {
+      await tapButton("Undo");
+      await set("Soft", index);
+      await penTap(at(0.5, 0.5));
+      await page.waitForTimeout(400);
+      await shot(`fill-soft-${index}`);
+      return halfClear();
+    };
+    const hard = await fillAt(0); // Soft 0
+    const one = await fillAt(4); // Soft 1, the default (SOFT_STEPS[4])
+    const shown = await page.locator('button[title^="Fill settings"]').getAttribute("title");
+    // Back to the defaults, with the fill as the steps below expect it (Expand as it was).
+    await set("Expand", expand0);
+    await tapButton("Undo");
+    await penTap(at(0.5, 0.5));
+    await page.waitForTimeout(400);
+    return [
+      one < hard * 0.97 && /Soft 1px/.test(shown ?? ""),
+      `[sim] the bucket's Soft edge antialiases into the line (see-through left at Expand 0: Soft 0 ${hard}, Soft 1 ${one}; gear says "${shown}")`,
+      "fill-soft",
+    ];
+  });
+
+  await step(async () => {
     // The eraser's own Opacity: at 40% it fades the ink (alpha stays above half), not removes it.
     await tapButton("Eraser (E)");
     const opacity = page

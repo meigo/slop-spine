@@ -41,6 +41,7 @@
   import { selectionCommands } from "../state/selection-commands";
   import { createCurveEditor } from "../core/pressure-curve";
   import { MAX_GAP, clampGap } from "../core/fill-holes";
+  import { SOFT_STEPS, softStepIndex } from "../core/fill";
   import { MAX_NIB_FLATNESS } from "../core/calligraphy-brush";
   import { PENCIL_GRADES } from "../core/stamp-brush";
   import { CHARCOAL_TEXTURES } from "../core/brush-textures";
@@ -290,6 +291,8 @@
 
   // --- Brush settings popover: set-once options and the active tool's pressure curve. ---
   let settingsOpen = $state(false);
+  /** The fill's gear: Expand, Soft and Bridge. */
+  let fillSettingsOpen = $state(false);
   let curveHostEl = $state<HTMLDivElement | null>(null);
   let curveEditors: Record<"brush" | "eraser", HTMLElement & { redraw: () => void }> | null = null;
 
@@ -359,6 +362,9 @@
         ? "Paste (Ctrl+V)"
         : "Paste (Ctrl+V) — nothing copied yet",
   );
+
+  /** The Soft slider's position: its stops are uneven (`SOFT_STEPS`). */
+  const softIndex = $derived(softStepIndex(ui.fillSoftEdge));
 
   const brushTypes: { value: BrushType; label: string }[] = [
     { value: "smooth", label: "Smooth" },
@@ -1013,18 +1019,6 @@
       />
       <span class={readout}>{ui.fillTolerance}</span>
     </label>
-    <label class={sliderLabel} title="Grow the filled region under the outline (px)">
-      Expand
-      <input
-        type="range"
-        min="0"
-        max="8"
-        class="w-16"
-        style={sliderFill(ui.fillExpand, 0, 8)}
-        bind:value={ui.fillExpand}
-      />
-      <span class={readout}>{ui.fillExpand}px</span>
-    </label>
     <label class={sliderLabel}>
       Opacity
       <input
@@ -1038,22 +1032,70 @@
       <span class={readout}>{ui.fillOpacity}%</span>
     </label>
     <div class={divider}></div>
-    <label
-      class={sliderLabel}
-      title="Fill enclosed: close breaks in the outline up to about twice this many pixels"
-    >
-      Bridge
-      <input
-        type="range"
-        min="0"
-        max={MAX_GAP}
-        class="w-16"
-        style={sliderFill(ui.fillGap, 0, MAX_GAP)}
-        value={ui.fillGap}
-        oninput={(e) => (ui.fillGap = clampGap(e.currentTarget.value))}
-      />
-      <span class="min-w-4 text-[11px] text-text-muted">{ui.fillGap}</span>
-    </label>
+    <!-- Expand, Soft and Bridge behind a gear, as the brush's set-once options: with Soft the row
+         no longer fit an iPad in portrait (834 px) and wrapped to two lines (2026-10-02). -->
+    <div class="relative" use:clickOutside={() => (fillSettingsOpen = false)}>
+      <button
+        class="{iconBtn} {fillSettingsOpen ? 'ui-on' : iconIdle}"
+        aria-pressed={fillSettingsOpen}
+        aria-haspopup="dialog"
+        onclick={() => (fillSettingsOpen = !fillSettingsOpen)}
+        title="Fill settings — Expand {ui.fillExpand}px, Soft {ui.fillSoftEdge}px, Bridge {ui.fillGap}"
+      >
+        <Settings size={18} />
+      </button>
+      {#if fillSettingsOpen}
+        <div
+          class="absolute top-full right-0 z-30 mt-1 flex w-72 flex-col gap-2 rounded-lg border border-border bg-surface p-3 shadow-lg"
+        >
+          <label class={rowCls} title="Grow the filled region under the outline (px)">
+            <span class={labelCls}>Expand</span>
+            <input
+              type="range"
+              min="0"
+              max="8"
+              class="min-w-0 flex-1"
+              style={sliderFill(ui.fillExpand, 0, 8)}
+              bind:value={ui.fillExpand}
+            />
+            <span class={valueCls}>{ui.fillExpand}px</span>
+          </label>
+          <label
+            class={rowCls}
+            title="Soft edge: antialiases the fill where it meets a soft line (0.5–1), higher fades further into it; with Expand it feathers the grown edge (up to 16 px at 8); 0 = hard pixel edge"
+          >
+            <span class={labelCls}>Soft</span>
+            <input
+              type="range"
+              min="0"
+              max={SOFT_STEPS.length - 1}
+              step="1"
+              class="min-w-0 flex-1"
+              value={softIndex}
+              style={sliderFill(softIndex, 0, SOFT_STEPS.length - 1)}
+              oninput={(e) => (ui.fillSoftEdge = SOFT_STEPS[Number(e.currentTarget.value)])}
+            />
+            <span class={valueCls}>{ui.fillSoftEdge}px</span>
+          </label>
+          <label
+            class={rowCls}
+            title="Close breaks in the lines up to about twice this many pixels, so the fill doesn't leak through (the bucket and Fill enclosed)"
+          >
+            <span class={labelCls}>Bridge</span>
+            <input
+              type="range"
+              min="0"
+              max={MAX_GAP}
+              class="min-w-0 flex-1"
+              style={sliderFill(ui.fillGap, 0, MAX_GAP)}
+              value={ui.fillGap}
+              oninput={(e) => (ui.fillGap = clampGap(e.currentTarget.value))}
+            />
+            <span class={valueCls}>{ui.fillGap}</span>
+          </label>
+        </div>
+      {/if}
+    </div>
     <button
       class="h-7 rounded-md border border-border bg-surface-raised px-2 text-xs whitespace-nowrap text-text-secondary transition-colors hover:bg-surface-hover {dimmable}"
       title={editBlock

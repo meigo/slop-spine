@@ -20,6 +20,8 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
   sharp corners where you pause
 - The slop family look (dark, File / Edit / View menus, tool-options row, status bar) shared with
   slop-paint and slop-animator
+- Fill: bucket and Fill enclosed, behind the lines; a gear holds Expand, Soft (antialiases the fill
+  into a soft line's edge, and feathers Expand) and Bridge (closes line breaks for both)
 - PSD import (flattened pixel layers) and zip project save/load
 - File ▸ Resize…: Crop / extend the canvas around an anchor (the drawing and bones keep their size
   and place), or Scale drawing (with Keep ratio always on: bones, reach and mesh density scale with

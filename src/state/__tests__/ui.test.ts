@@ -230,6 +230,19 @@ describe("applyPreferences / gatherPreferences", () => {
     ui.charcoalTexture = "medium";
   });
 
+  it("restores the fill's Soft edge, onto one of the slider's stops", () => {
+    expect(ui.fillSoftEdge).toBe(1);
+    applyPreferences({ fillSoftEdge: 2.5 } as never);
+    expect(gatherPreferences()).toMatchObject({ fillSoftEdge: 2.5 });
+    applyPreferences({ fillSoftEdge: 99 } as never);
+    expect(ui.fillSoftEdge).toBe(8);
+    applyPreferences({ fillSoftEdge: 0.6 } as never);
+    expect(ui.fillSoftEdge).toBe(0.5);
+    applyPreferences({ fillSoftEdge: "x" } as never);
+    expect(ui.fillSoftEdge).toBe(0.5);
+    ui.fillSoftEdge = 1;
+  });
+
   it("snaps size to the slider's 0.5 step", () => {
     applyPreferences({ stroke: { brush: { size: 2.3 } } } as never);
     expect(ui.stroke.brush.size).toBe(2.5);

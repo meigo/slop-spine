@@ -14,7 +14,7 @@ usually apply here too.
   slop-paint 2026-10-01): the app in WebKit at iPad Pro 11 with touch, in a fresh PERSISTENT temp
   profile (ephemeral WebKit refuses Blobs in IndexedDB, so every autosave failed). Starts its own
   dev server; `npm run test:ipad -- <url>` checks a URL. ~20 checks: first layer, pen stroke, undo/redo
-  and two-finger-tap undo, fingers and Ctrl+Z during a pen stroke, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
+  and two-finger-tap undo, fingers and Ctrl+Z during a pen stroke, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, the fill's Soft edge (in the fill gear), eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
   Pose bends the drawing, Export Spine (the zip is unzipped: bones, mesh, atlas, PNG), Resize (Crop / extend and Scale drawing, the rig follows), add layer,
   double-tap rename, a hidden layer refuses the pen and Clear layer, Duplicate with a lifted
   selection, the layer-row finger drag (ghost, gap,
@@ -53,10 +53,6 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   per layer) against the last save, and more layers emptied than undo steps since pauses autosave
   and offers the restore. It also shows the layers' memory in the Document menu, warning on iPad
   above 600 MB
-- **Bridge for the bucket** (`ccd6bd1`): the Bridge slider (`ui.fillGap`, `Toolbar.svelte:916-942`)
-  reaches only Fill enclosed. slop-paint's `fillMask` / `growWithin` (`src/fill.ts`, tested) let
-  one setting close line breaks for the bucket too. Its traps: grow back in 8-connected steps (a
-  round dilation leaves inside corners unfilled), and refuse a diagonal step between two wall pixels
 - **Lifted selection drawn inside its layer** (`f15dbf6`): the float here is drawn on the overlay,
   above every layer and ignoring its layer's opacity (`core/selection.ts:~893`); the compositor
   (`Canvas.svelte:286-306`) never sees it. Draw layer + float in the layer's slot; the overlay keeps

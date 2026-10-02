@@ -63,6 +63,7 @@ const sample: Preferences = {
   dryTaper: 25,
   fillValue: "#00ff88",
   fillOpacity: 90,
+  fillSoftEdge: 0.5,
   fillTolerance: 16,
   fillExpand: 1,
   fillGap: 3,
