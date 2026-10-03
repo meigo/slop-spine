@@ -9,9 +9,9 @@ import { SOFT_STEPS, softStepIndex } from "../core/fill";
 import type { Preferences, LegacyPreferences, CurvePrefs } from "../persist/preferences";
 
 export type Tool = "brush" | "eraser" | "fill" | "eyedropper" | "select" | "lasso" | "bone";
-/** The seven brushes slop-paint offers, in its order. */
+/** The eight brushes slop-paint offers, in its order. */
 export type BrushType =
-  "smooth" | "ink" | "calligraphy" | "dry" | "pencil" | "charcoal" | "airbrush";
+  "smooth" | "ink" | "calligraphy" | "dry" | "watercolor" | "pencil" | "charcoal" | "airbrush";
 export type BoneMode = "edit" | "create" | "pose";
 export type SelectionState = "idle" | "selected" | "transforming" | "warping";
 
@@ -165,6 +165,15 @@ export const ui = $state({
   /** Dry brush: 0–100, how short of paint the bristles are, and how long each hair tapers. */
   dryness: 50,
   dryTaper: 10,
+  /** Watercolour (slop-paint, 2026-10-03): its rim, paper grain, uneven outline (0–100) and Mix
+   *  colours (glazes multiply). */
+  washEdge: 50,
+  washGrain: 40,
+  washWobble: 30,
+  washMultiply: true,
+  /** Wobble for Smooth and for Calligraphy, 0–100, each its own; 0 = a clean edge. */
+  smoothWobble: 0,
+  nibWobble: 0,
   /** Pencil grade (`PENCIL_GRADES`) and Charcoal texture (`CHARCOAL_TEXTURES`), as slop-paint. */
   pencilGrade: "HB" as PencilGrade,
   charcoalTexture: "medium" as CharcoalTexture,
@@ -265,6 +274,7 @@ const BRUSH_TYPES: readonly BrushType[] = [
   "ink",
   "calligraphy",
   "dry",
+  "watercolor",
   "pencil",
   "charcoal",
   "airbrush",
@@ -352,6 +362,12 @@ export function gatherPreferences(): Preferences {
     dwellPool: ui.dwellPool,
     dryness: ui.dryness,
     dryTaper: ui.dryTaper,
+    washEdge: ui.washEdge,
+    washGrain: ui.washGrain,
+    washWobble: ui.washWobble,
+    washMultiply: ui.washMultiply,
+    smoothWobble: ui.smoothWobble,
+    nibWobble: ui.nibWobble,
     pencilGrade: ui.pencilGrade,
     charcoalTexture: ui.charcoalTexture,
     fillValue: ui.fillValue,
@@ -416,6 +432,11 @@ export function applyPreferences(p: Partial<Preferences> & Partial<LegacyPrefere
   if (dryness !== null) ui.dryness = dryness;
   const dryTaper = intIn(p.dryTaper, 0, 100);
   if (dryTaper !== null) ui.dryTaper = dryTaper;
+  for (const k of ["washEdge", "washGrain", "washWobble", "smoothWobble", "nibWobble"] as const) {
+    const v = intIn(p[k], 0, 100);
+    if (v !== null) ui[k] = v;
+  }
+  if (typeof p.washMultiply === "boolean") ui.washMultiply = p.washMultiply;
   if (PENCIL_GRADES.includes(p.pencilGrade as PencilGrade))
     ui.pencilGrade = p.pencilGrade as PencilGrade;
   if (CHARCOAL_TEXTURES.includes(p.charcoalTexture as CharcoalTexture))

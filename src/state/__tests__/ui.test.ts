@@ -243,6 +243,44 @@ describe("applyPreferences / gatherPreferences", () => {
     ui.fillSoftEdge = 1;
   });
 
+  it("restores the Watercolour brush and its settings, and the Wobble sliders, clamped", () => {
+    expect(ui).toMatchObject({
+      washEdge: 50,
+      washGrain: 40,
+      washWobble: 30,
+      washMultiply: true,
+      smoothWobble: 0,
+      nibWobble: 0,
+    });
+    applyPreferences({
+      stroke: { brush: { brushType: "watercolor" }, eraser: { brushType: "watercolor" } },
+      washEdge: 70,
+      washGrain: 10,
+      washWobble: 0,
+      washMultiply: false,
+      smoothWobble: 25,
+      nibWobble: 120,
+    } as never);
+    expect(ui.stroke.brush.brushType).toBe("watercolor");
+    expect(ui.stroke.eraser.brushType).toBe("watercolor");
+    expect(gatherPreferences()).toMatchObject({
+      washEdge: 70,
+      washGrain: 10,
+      washWobble: 0,
+      washMultiply: false,
+      smoothWobble: 25,
+      nibWobble: 100,
+    });
+    Object.assign(ui, {
+      washEdge: 50,
+      washGrain: 40,
+      washWobble: 30,
+      washMultiply: true,
+      smoothWobble: 0,
+      nibWobble: 0,
+    });
+  });
+
   it("snaps size to the slider's 0.5 step", () => {
     applyPreferences({ stroke: { brush: { size: 2.3 } } } as never);
     expect(ui.stroke.brush.size).toBe(2.5);
