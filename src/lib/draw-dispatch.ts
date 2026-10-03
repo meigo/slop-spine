@@ -18,7 +18,8 @@ import type { InputPoint } from "../core/input";
 import { drawStroke, widthRange, type BrushSettings } from "../core/brush";
 import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
 import { drawDryStroke } from "../core/dry-brush";
-import { pathSmoothRadius } from "../core/stroke-smoothing";
+import { drawWatercolorStroke } from "../core/watercolor-brush";
+import { pathSmoothRadius, REST_PX } from "../core/stroke-smoothing";
 import { settledIndex } from "../core/stroke-freeze";
 import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
@@ -175,6 +176,8 @@ export function createDrawDispatch(opts?: {
       opacity: slot.opacity,
       smoothing: slot.smoothing,
       pathSmoothRadius: pathSmoothRadius(slot.smoothing, opts?.getZoom?.() ?? 1),
+      // A resting pen's jitter is on screen too (`holdRestPressure`).
+      restRadius: REST_PX / (opts?.getZoom?.() ?? 1),
       sharpCorners: ui.sharpCorners,
       isEraser,
       // Brush only, as slop-paint: the eraser ignores draw-behind.
@@ -185,6 +188,12 @@ export function createDrawDispatch(opts?: {
       dwellPool: ui.dwellPool,
       dryness: ui.dryness,
       dryTaper: ui.dryTaper,
+      washEdge: ui.washEdge,
+      washGrain: ui.washGrain,
+      washWobble: ui.washWobble,
+      washMultiply: ui.washMultiply,
+      smoothWobble: ui.smoothWobble,
+      nibWobble: ui.nibWobble,
       pencilGrade: ui.pencilGrade,
       charcoalTexture: ui.charcoalTexture,
       taper: ui.taper,
@@ -400,14 +409,15 @@ export function createDrawDispatch(opts?: {
     const settings = buildBrushSettings(tool, strokeLayer);
     const brushType = ui.stroke[slotFor(tool)].brushType;
 
-    // Smooth, ink, calligraphy and dry redraw the WHOLE stroke each frame from the pre-stroke
-    // copy: a per-segment redraw re-composites each overlap and hardens the antialiased edge (see
+    // Smooth, ink, calligraphy, dry and watercolor redraw the WHOLE stroke each frame from the
+    // pre-stroke copy: a per-segment redraw re-composites each overlap and hardens the antialiased edge (see
     // ink-brush.ts). The stamp tips draw incrementally.
     if (
       brushType === "smooth" ||
       brushType === "ink" ||
       brushType === "calligraphy" ||
-      brushType === "dry"
+      brushType === "dry" ||
+      brushType === "watercolor"
     ) {
       // Ink and Calligraphy draw a range: from the frozen part on (see `frozenTo`).
       const ranged = (target: CanvasRenderingContext2D, from: number, to = Infinity) => {
@@ -420,6 +430,8 @@ export function createDrawDispatch(opts?: {
       withClip(ctx, () => {
         if (brushType === "ink" || brushType === "calligraphy") ranged(ctx, unfrozenFrom());
         else if (brushType === "dry") drawDryStroke(ctx, curved, settings, sizeRange);
+        else if (brushType === "watercolor")
+          drawWatercolorStroke(ctx, curved, settings, sizeRange, done);
         else drawStroke(ctx, curved, settings, done, sizeRange);
       });
     } else {

@@ -454,6 +454,72 @@ async function main(page) {
   });
 
   await step(async () => {
+    // Watercolour: across a stroke the rim is darker than the middle; where one stroke crosses
+    // itself it is no darker (one wet patch); a second stroke over it is (a glaze). Grain 0, so the
+    // samples aren't grain. Read as the stroke's alpha on the document (black paint), not the screen.
+    const select = page.locator('select[title="Brush"]');
+    await select.selectOption("watercolor");
+    const size = page.locator('input[type="range"][step="0.5"]').first();
+    const grain = () => page.locator("label", { hasText: /^\s*Grain/ }).locator("input");
+    await tapButton("Brush settings");
+    await grain().fill("0");
+    await tapButton("Brush settings");
+    await size.fill("40");
+    const alphaAt = (p) =>
+      page.evaluate((p) => {
+        const c = document.querySelector('[class*="paper-"] + canvas');
+        const r = c.getBoundingClientRect();
+        const x = Math.floor(((p.x - r.left) * c.width) / r.width);
+        const y = Math.floor(((p.y - r.top) * c.height) / r.height);
+        return c.getContext("2d").getImageData(x, y, 1, 1).data[3];
+      }, p);
+    const y = 0.4;
+    // One stroke: right along y, up, back left, then down through its own first leg.
+    const legs = [
+      at(0.66, y),
+      at(0.94, y),
+      at(0.94, y - 0.12),
+      at(0.8, y - 0.12),
+      at(0.8, y + 0.12),
+    ];
+    const poly = (t) => {
+      const f = t * (legs.length - 1);
+      const i = Math.min(legs.length - 2, Math.floor(f));
+      return line(legs[i], legs[i + 1])(f - i);
+    };
+    await pen(poly, { n: 120, p: () => 0.6 });
+    await page.waitForTimeout(300);
+    // The profile across the first leg, away from the crossing.
+    const x = at(0.72, y).x;
+    const profile = [];
+    for (let dy = -30; dy <= 30; dy += 0.5) profile.push(await alphaAt({ x, y: at(0, y).y + dy }));
+    const covered = profile.filter((a) => a > 10);
+    const middle = profile[profile.length >> 1];
+    const rim = Math.max(...covered);
+    const crossing = await alphaAt(at(0.8, y));
+    // A second stroke over the first leg.
+    await pen(line(at(0.7, y - 0.08), at(0.7, y + 0.08)), { n: 40, p: () => 0.6 });
+    await page.waitForTimeout(300);
+    const glazed = await alphaAt(at(0.7, y));
+    await shot("watercolour");
+    await tapButton("Undo");
+    await tapButton("Undo");
+    await tapButton("Brush settings");
+    await grain().fill("40");
+    await tapButton("Brush settings");
+    await size.fill("12");
+    await select.selectOption("smooth");
+    return [
+      covered.length > 4 &&
+        rim > middle + 15 &&
+        Math.abs(crossing - middle) < 15 &&
+        glazed > middle + 15,
+      `[sim] Watercolour: the rim is darker than the middle (alpha ${rim} vs ${middle}, ${covered.length} samples across); where the stroke crosses itself it is as light (${crossing}); a second stroke over it darkens it (${glazed})`,
+      "watercolour",
+    ];
+  });
+
+  await step(async () => {
     // The stamp tips: from the tip image at size 12, as soft discs at size 2 (8 device px or less).
     const band = rect(0.05, 0.03, 0.9, 0.14);
     const stroke = line(at(0.1, 0.1), at(0.9, 0.1));

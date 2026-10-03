@@ -21,6 +21,12 @@ export interface Preferences {
   dwellPool: number;
   dryness: number;
   dryTaper: number;
+  washEdge: number;
+  washGrain: number;
+  washWobble: number;
+  washMultiply: boolean;
+  smoothWobble: number;
+  nibWobble: number;
   pencilGrade: PencilGrade;
   charcoalTexture: CharcoalTexture;
   fillValue: string;

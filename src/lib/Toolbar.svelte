@@ -371,6 +371,7 @@
     { value: "ink", label: "Ink" },
     { value: "calligraphy", label: "Calligraphy" },
     { value: "dry", label: "Dry brush" },
+    { value: "watercolor", label: "Watercolour" },
     { value: "pencil", label: "Pencil" },
     { value: "charcoal", label: "Charcoal" },
     { value: "airbrush", label: "Airbrush" },
@@ -817,7 +818,7 @@
         <div
           class="absolute top-full right-0 z-30 mt-1 flex w-72 flex-col gap-2 rounded-lg border border-border bg-surface p-3 shadow-lg"
         >
-          {#if slot.brushType === "smooth"}
+          {#if slot.brushType === "smooth" || slot.brushType === "watercolor"}
             <label
               class={rowCls}
               title="Smooth — rounds out wobble in the stroke's path, with no lag (the tip settles as you draw)"
@@ -876,6 +877,18 @@
                 oninput={(e) => (ui.nibFlatness = Number(e.currentTarget.value) / 100)}
               />
               <span class={valueCls}>{Math.round(ui.nibFlatness * 100)}</span>
+            </label>
+            <label class={rowCls} title="How uneven the stroke's outline is — 0 is a clean edge">
+              <span class={labelCls}>Wobble</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                class="min-w-0 flex-1"
+                style={sliderFill(ui.nibWobble, 0, 100)}
+                bind:value={ui.nibWobble}
+              />
+              <span class={valueCls}>{ui.nibWobble}</span>
             </label>
           {/if}
 
@@ -976,7 +989,68 @@
             </label>
           {/if}
 
+          {#if slot.brushType === "watercolor"}
+            <label
+              class={rowCls}
+              title="How much darker the rim is, where the pigment gathers as it dries — 0 is an even wash"
+            >
+              <span class={labelCls}>Edge</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                class="min-w-0 flex-1"
+                style={sliderFill(ui.washEdge, 0, 100)}
+                bind:value={ui.washEdge}
+              />
+              <span class={valueCls}>{ui.washEdge}</span>
+            </label>
+            <label class={rowCls} title="How strongly the paper's grain shows in the wash">
+              <span class={labelCls}>Grain</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                class="min-w-0 flex-1"
+                style={sliderFill(ui.washGrain, 0, 100)}
+                bind:value={ui.washGrain}
+              />
+              <span class={valueCls}>{ui.washGrain}</span>
+            </label>
+            <label class={rowCls} title="How uneven the stroke's outline is">
+              <span class={labelCls}>Wobble</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                class="min-w-0 flex-1"
+                style={sliderFill(ui.washWobble, 0, 100)}
+                bind:value={ui.washWobble}
+              />
+              <span class={valueCls}>{ui.washWobble}</span>
+            </label>
+            <label
+              class="flex items-center gap-2 text-xs text-text-secondary"
+              title="Mix with the paint already on the layer, as glazes do: yellow over blue makes green. Off, a stroke covers what's under it. Draw behind and alpha lock don't mix"
+            >
+              <input type="checkbox" bind:checked={ui.washMultiply} />
+              Mix colours
+            </label>
+          {/if}
+
           {#if slot.brushType === "smooth"}
+            <label class={rowCls} title="How uneven the stroke's outline is — 0 is a clean edge">
+              <span class={labelCls}>Wobble</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                class="min-w-0 flex-1"
+                style={sliderFill(ui.smoothWobble, 0, 100)}
+                bind:value={ui.smoothWobble}
+              />
+              <span class={valueCls}>{ui.smoothWobble}</span>
+            </label>
             <label
               class="flex items-center gap-2 text-xs text-text-secondary"
               title="Taper the stroke's ends to a point instead of capping them"
