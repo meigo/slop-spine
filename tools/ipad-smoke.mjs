@@ -647,6 +647,55 @@ async function main(page) {
   });
 
   await step(async () => {
+    // Distort / Mesh warp applied with no handle moved must leave the drawing as it was. Each warp
+    // triangle is clipped to its shape with an antialiased edge, and two part-covered edges laid
+    // over each other never add up to opaque: faint seams along every triangle edge (slop-paint
+    // 5f708ce, seen on the iPad).
+    const keep = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('[class*="paper-"] + canvas');
+        window.__before = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      });
+    const changed = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('[class*="paper-"] + canvas');
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const b = window.__before;
+          if (
+            Math.abs(d[i] - b[i]) > 2 ||
+            Math.abs(d[i + 1] - b[i + 1]) > 2 ||
+            Math.abs(d[i + 2] - b[i + 2]) > 2 ||
+            Math.abs(d[i + 3] - b[i + 3]) > 2
+          )
+            n++;
+        }
+        return n;
+      });
+    await tapButton("Rect select");
+    const result = {};
+    for (const mode of ["Distort", "Mesh warp"]) {
+      await keep();
+      await tapButton("Select all");
+      await tapButton(mode);
+      await page.waitForTimeout(300);
+      await tapButton("Apply");
+      await page.waitForTimeout(400);
+      result[mode] = await changed();
+      await shot(`warp-${mode.split(" ")[0].toLowerCase()}`);
+      if (await canUndo()) await tapButton("Undo");
+      if (await button("Deselect").isEnabled()) await tapButton("Deselect");
+    }
+    await tapButton("Brush (B)");
+    return [
+      result["Distort"] === 0 && result["Mesh warp"] === 0,
+      `[sim] Distort and Mesh warp applied with no handle moved leave the drawing as it was (px changed: Distort ${result["Distort"]}, Mesh warp ${result["Mesh warp"]})`,
+      "warp-seams",
+    ];
+  });
+
+  await step(async () => {
     // The eraser's own Opacity: at 40% it fades the ink (alpha stays above half), not removes it.
     await tapButton("Eraser (E)");
     const opacity = page
