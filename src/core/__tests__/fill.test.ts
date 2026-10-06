@@ -171,4 +171,20 @@ describe("floodFill", () => {
     expect(px(2, 0)).toEqual([0, 0, 0, 255]);
     expect(px(3, 0)).toEqual([0, 0, 0, 0]);
   });
+
+  it("with Soft, recolouring a painted square on a transparent layer paints nothing around it", () => {
+    // slop-paint b63a5b3: from a painted seed the transparent space round the art read as
+    // full-strength line, and Soft filled a ring up to 32 px wide outside the square.
+    const { ctx, px, paint } = fakeLayer(60, 60);
+    for (let y = 20; y < 40; y++) for (let x = 20; x < 40; x++) paint(x, y, [255, 0, 0, 255]);
+    floodFill(ctx, 30, 30, { r: 0, g: 0, b: 255, a: 255 }, { tolerance: 32, softEdge: 1 });
+    let outside = 0;
+    for (let y = 0; y < 60; y++)
+      for (let x = 0; x < 60; x++) {
+        const inSquare = x >= 20 && x < 40 && y >= 20 && y < 40;
+        if (!inSquare && px(x, y)[3] > 0) outside++;
+      }
+    expect(px(30, 30)).toEqual([0, 0, 255, 255]);
+    expect(outside).toBe(0);
+  });
 });
