@@ -27,7 +27,8 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 - Fill: bucket and Fill enclosed, behind the lines; a gear holds Expand, Soft (fills under a soft or
   grainy line's inner half up to its middle, antialiased; feathers Expand) and Bridge (closes line
   breaks for both)
-- PSD import (flattened pixel layers) and zip project save/load
+- PSD import (flattened pixel layers) and zip project save/load. A file dragged onto the app does
+  nothing (the browser used to open it in place of the app): use File ▸ Open… or Import PSD…
 - File ▸ Resize…: Crop / extend the canvas around an anchor (the drawing and bones keep their size
   and place), or Scale drawing (with Keep ratio always on: bones, reach and mesh density scale with
   it). The Spine export's origin stays at the canvas centre

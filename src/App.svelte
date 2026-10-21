@@ -115,6 +115,15 @@
     prefsTimer = setTimeout(() => savePreferences(prefs), 400);
   });
 
+  /** A FILE dragged over or dropped anywhere is refused: the browser's own drop opened it in the
+   *  tab in the app's place, unsaved work and all (slop-paint eb1e5df). Dragged text still drops
+   *  into a field. File ▸ Open… / Import PSD… instead. */
+  function refuseFileDrop(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "none";
+  }
+
   /** A failing autosave says so until one works: the warning stays (ms 0) so it isn't missed,
    *  and is taken down by the next save that works, unless another message has replaced it. */
   let autosaveWarning = "";
@@ -142,7 +151,12 @@
   });
 </script>
 
-<svelte:window onresize={applyPanelPrefs} bind:innerWidth={viewportW} />
+<svelte:window
+  onresize={applyPanelPrefs}
+  ondragover={refuseFileDrop}
+  ondrop={refuseFileDrop}
+  bind:innerWidth={viewportW}
+/>
 
 <main
   class="flex h-dvh w-dvw flex-col bg-surface text-text"
