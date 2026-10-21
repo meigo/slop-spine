@@ -35,7 +35,7 @@
   import { selectionCommands } from "../state/selection-commands";
   import { boneTip, reparentDropTarget } from "../rig/chain";
   import type { Tool } from "../state/ui.svelte";
-  import { Viewport } from "../core/viewport";
+  import { Viewport, wheelPx, wheelZoomFactor } from "../core/viewport";
   import { setupInput, isStageChromeTarget } from "../core/input";
   import { computeImagePlacement } from "../core/image-fit";
   import { setupTouchGestures } from "../core/touch-gestures";
@@ -731,8 +731,9 @@
   function onWheel(e: WheelEvent) {
     if (!viewport) return;
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey) viewport.zoomAt(e.clientX, e.clientY, e.deltaY);
-    else viewport.panBy(-e.deltaX, -e.deltaY); // content follows the scroll
+    if (e.ctrlKey || e.metaKey)
+      viewport.zoomAt(e.clientX, e.clientY, wheelZoomFactor(e.deltaY, e.deltaMode));
+    else viewport.panBy(-wheelPx(e.deltaX, e.deltaMode), -wheelPx(e.deltaY, e.deltaMode)); // content follows the scroll
   }
 
   // --- Bone-tool gestures. Runs alongside setupInput's own listeners on stage (handleStroke

@@ -10,7 +10,7 @@
  * Apple Pencil (pointerType "pen") bypasses this entirely — it goes to input.ts for drawing.
  */
 
-import { Viewport } from "./viewport";
+import { Viewport, clampZoom } from "./viewport";
 import { isStageChromeTarget } from "./input";
 
 interface ActiveTouch {
@@ -100,6 +100,7 @@ export function setupTouchGestures(
 
     workspace.setPointerCapture(e.pointerId);
 
+    const starting = touches.size === 0;
     if (callbacks.isDrawing?.()) suppressed = true;
     touches.set(e.pointerId, {
       id: e.pointerId,
@@ -110,8 +111,15 @@ export function setupTouchGestures(
       startTime: e.timeStamp,
     });
 
-    gestureDidMove = false;
-    maxSimultaneousTouches = Math.max(maxSimultaneousTouches, touches.size);
+    // A finger joining a gesture that already moved must not reclassify it as a tap, and a
+    // finished pan or pinch must not leave its touch count for the next stationary tap to inherit
+    // (that tap would undo or redo).
+    if (starting) {
+      gestureDidMove = false;
+      maxSimultaneousTouches = 1;
+    } else {
+      maxSimultaneousTouches = Math.max(maxSimultaneousTouches, touches.size);
+    }
 
     if (touches.size === 1) {
       // Start single-finger pan
@@ -136,6 +144,12 @@ export function setupTouchGestures(
     t.x = e.clientX;
     t.y = e.clientY;
     if (suppressed) return; // a hand resting during a stroke: no pan, pinch or tap until it lifts
+    // A pan or pinch already under way when the pen lands stops there: moving the view under an
+    // open stroke moved the line (a pen held still drew across the page).
+    if (callbacks.isDrawing?.()) {
+      suppressed = true;
+      return;
+    }
 
     // Check if this counts as movement
     const dx = t.x - t.startX;
@@ -143,6 +157,10 @@ export function setupTouchGestures(
     if (Math.abs(dx) > TAP_MAX_DISTANCE || Math.abs(dy) > TAP_MAX_DISTANCE) {
       gestureDidMove = true;
     }
+    // A gesture that ever had three fingers is a redo tap or nothing: it never moves the view.
+    // (When one of the first two lifted, the other two were measured against the first pair's
+    // start: a tap rotated the view ~40° and panned it ~80 px.)
+    if (maxSimultaneousTouches >= 3) return;
 
     if (touches.size === 1 && singlePanActive) {
       // Single finger pan
@@ -184,6 +202,7 @@ export function setupTouchGestures(
 
     singlePanActive = false;
     restartSinglePan();
+    restartPinch();
   }
 
   function onPointerCancel(e: PointerEvent) {
@@ -199,6 +218,12 @@ export function setupTouchGestures(
     // pinchActive set also meant the next lift snapped on those stale numbers.
     pinchActive = false;
     restartSinglePan();
+    restartPinch();
+  }
+
+  /** Down to two fingers from more: measure the pinch from this pair, where it is now. */
+  function restartPinch() {
+    if (touches.size === 2) initPinch();
   }
 
   /** The resting hand has lifted: drop what its fingers started (a pan, a pinch, a tap count), so
@@ -261,7 +286,7 @@ export function setupTouchGestures(
 
     // New zoom & rotation
     const scale = currentDist / pinchStartDist;
-    const newZoom = Math.max(0.1, Math.min(20, pinchStartZoom * scale));
+    const newZoom = clampZoom(pinchStartZoom, pinchStartZoom * scale);
     const newRotation = pinchStartRotation + (currentAngle - pinchStartAngle);
 
     // The canvas point under the original pinch midpoint (using start state)
