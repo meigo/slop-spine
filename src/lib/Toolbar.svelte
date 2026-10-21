@@ -36,7 +36,7 @@
   import { focusNow } from "./focus-now";
   import ColorSwatch from "./ColorSwatch.svelte";
   import { exportBundle, ExportError } from "../export/bundle";
-  import { historyState, undo, redo } from "../state/history.svelte";
+  import { historyState, undo, redo, endPress } from "../state/history.svelte";
   import { clearSelectedLayer, fillAllEnclosed } from "./draw-dispatch";
   import { clipboard } from "../state/clipboard.svelte";
   import { selectionCommands } from "../state/selection-commands";
@@ -156,6 +156,9 @@
 
   function onNewDocument(width: number, height: number) {
     newDocOpen = false;
+    // A press still down (the Pencil resting while a finger taps Create) ends first: its next frame
+    // drew the old document's pre-stroke copy over the new one (slop-paint 8fdba64).
+    endPress();
     void clearAutosave();
     newDocument(width, height);
     window.dispatchEvent(new Event("slop-spine:fit-view"));
@@ -175,7 +178,9 @@
       flashStatus("Same size — nothing changed");
       return;
     }
-    // A lifted float is in the old canvas's coordinates: apply it first (as slop-paint).
+    // A press still down ends first, and a lifted float, in the old canvas's coordinates, is
+    // applied (as slop-paint).
+    endPress();
     selectionCommands.applyFloat?.();
     resizeDocument(width, height, anchorX, anchorY, mode);
     window.dispatchEvent(new Event("slop-spine:fit-view"));
@@ -245,7 +250,9 @@
     input.value = "";
     if (!file) return;
     try {
-      loadDocument(await loadProject(file));
+      const loaded = await loadProject(file);
+      endPress();
+      loadDocument(loaded);
       window.dispatchEvent(new Event("slop-spine:fit-view"));
     } catch (err) {
       console.error("load failed", err);
@@ -260,6 +267,7 @@
     if (!file) return;
     try {
       const imported = importPsd(await file.arrayBuffer());
+      endPress();
       loadDocument(imported);
       if (imported.layers.length)
         ui.selectedLayerId = imported.layers[imported.layers.length - 1].id;

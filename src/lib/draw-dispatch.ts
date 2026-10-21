@@ -18,7 +18,9 @@ import {
   pressureCurves,
   flashStatus,
   type Tool,
+  type BrushType,
 } from "../state/ui.svelte";
+import type { PressureCurve } from "../core/pressure-curve";
 import type { InputPoint } from "../core/input";
 import { drawStroke, widthRange, type BrushSettings } from "../core/brush";
 import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
@@ -32,7 +34,7 @@ import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../c
 import { clampGap } from "../core/fill-holes";
 import type { Layer } from "../rig/document";
 import type { Selection } from "../core/selection";
-import { setStrokeOpen } from "../state/history.svelte";
+import { endPress, setOpenPress } from "../state/history.svelte";
 import { selectionCommands } from "../state/selection-commands";
 
 let getSelection: () => Selection | null = () => null;
@@ -96,6 +98,7 @@ function pressFor(tool: Tool): number {
  *  with the reason, where the pen is refused (slop-paint e745612): it used to wipe a hidden layer,
  *  an edit you couldn't see. */
 export function clearSelectedLayer() {
+  endPress();
   const layer = doc.layers.find((l) => l.id === ui.selectedLayerId);
   const block = whyNotEditable(layer);
   if (block || !layer) {
@@ -110,6 +113,7 @@ export function clearSelectedLayer() {
 
 /** Fill every ink-enclosed region on the selected layer, behind the strokes. */
 export function fillAllEnclosed() {
+  endPress();
   const layer = doc.layers.find((l) => l.id === ui.selectedLayerId);
   const ctx = layer?.canvas.getContext("2d");
   if (!layer || !ctx || whyNotEditable(layer)) return;
@@ -214,6 +218,20 @@ export function createDrawDispatch(opts?: {
   // painting, even if ui.tool becomes a paint tool before release. `null` means no gesture is in
   // flight; reset there on every `done` call so the next gesture re-latches.
   let strokeTool: Tool | null = null;
+  /** The rest of a press whose stroke `finishStroke` already committed: ignored until it lifts. */
+  let dropUntilUp = false;
+
+  /** What a stroke draws with, fixed at its press: a finger on a size preset, the brush-type menu
+   *  or the curve mid-stroke changed it under way — stamps already laid at the old size fell outside
+   *  the undo rect worked out from the new one, and a frozen Ink part kept the old size (slop-paint
+   *  ac2bd70). */
+  type StrokeSetup = {
+    curve: PressureCurve;
+    sizeRange: number;
+    settings: BrushSettings;
+    brushType: BrushType;
+  };
+  let setup: StrokeSetup | null = null;
 
   // Undo capture. One scratch canvas reused for every stroke: at stroke start the layer is
   // blitted into it with `drawImage` (a GPU copy, no `getImageData`), so at stroke end `before`
@@ -341,10 +359,6 @@ export function createDrawDispatch(opts?: {
     return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
   }
 
-  /** Pushes one undo command for a pixel edit confined to `rect` on `layer`. Both directions
-   *  restore with `putImageData` (replace, not composite — required to keep transparent areas
-   *  transparent) then call `markLayerDirty`, so `deriveSlot`'s cache never serves a mesh derived
-   *  from pixels an undo/redo just replaced. */
   function endStroke() {
     if (drawRaf) {
       cancelAnimationFrame(drawRaf);
@@ -353,9 +367,38 @@ export function createDrawDispatch(opts?: {
     lastPoints = [];
     strokeLayer = null;
     strokeCtx = null;
+    setup = null;
     frozenTo = 0;
     frozen = null;
-    setStrokeOpen(false);
+    setOpenPress(null);
+  }
+
+  /** Draw the stroke's last frame and record it: its release, or `finishStroke`. */
+  function commitStroke(points: InputPoint[]) {
+    if (!strokeLayer || !strokeCtx || !setup) return;
+    if (drawRaf) {
+      cancelAnimationFrame(drawRaf);
+      drawRaf = 0;
+    }
+    paintStroke(points, true);
+    markLayerDirty(strokeLayer.id);
+    if (scratchCtx) {
+      const rect = computeDirtyRect(points, strokeLayer, setup.settings.size, setup.sizeRange);
+      const before = scratchCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
+      const after = strokeCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
+      // An eraser over nothing, or a stroke wholly outside the marquee, pushes no step.
+      pushLayerPixels(strokeCtx, strokeLayer.id, before, after, rect.x, rect.y);
+    }
+    endStroke();
+  }
+
+  /** The open press's finish (`endPress`): commit the stroke where it got to and ignore the rest
+   *  of the press. */
+  function finishStroke() {
+    if (lastPoints.length > 0) commitStroke(lastPoints);
+    else endStroke();
+    strokeTool = null;
+    dropUntilUp = true;
   }
 
   /** Restore the pre-stroke layer via GPU `drawImage` of the scratch — `putImageData` of a
@@ -371,14 +414,11 @@ export function createDrawDispatch(opts?: {
     ctx.restore();
   }
 
-  function paintStroke(points: InputPoint[], done: boolean, tool: Tool) {
-    if (!strokeLayer || !strokeCtx) return;
+  function paintStroke(points: InputPoint[], done: boolean) {
+    if (!strokeLayer || !strokeCtx || !setup) return;
     const ctx = strokeCtx;
-    const curve = pressureCurves[slotFor(tool)];
+    const { curve, sizeRange, settings, brushType } = setup;
     const curved = points.map((p) => ({ ...p, pressure: curve.evaluate(p.pressure) }));
-    const sizeRange = curved[0]?.hasPressure ? pressFor(tool) : 1;
-    const settings = buildBrushSettings(tool, strokeLayer);
-    const brushType = ui.stroke[slotFor(tool)].brushType;
 
     // Smooth, ink, calligraphy, dry and watercolor redraw the WHOLE stroke each frame from the
     // pre-stroke copy: a per-segment redraw re-composites each overlap and hardens the antialiased edge (see
@@ -418,6 +458,10 @@ export function createDrawDispatch(opts?: {
     // draws, so it stands down for any gesture that didn't start under a painting tool. Latched
     // at the first call of the gesture (see strokeTool above) rather than re-read from ui.tool on
     // every call, and used in place of ui.tool for the rest of this function.
+    if (dropUntilUp) {
+      if (done) dropUntilUp = false;
+      return;
+    }
     if (strokeTool === null) strokeTool = ui.tool;
     const tool = strokeTool;
     if (done) strokeTool = null;
@@ -492,7 +536,13 @@ export function createDrawDispatch(opts?: {
       resetStampState();
       if (strokeLayer) {
         captureScratch(strokeLayer);
-        setStrokeOpen(true);
+        setup = {
+          curve: pressureCurves[slotFor(tool)],
+          sizeRange: points[0]?.hasPressure ? pressFor(tool) : 1,
+          settings: buildBrushSettings(tool, strokeLayer),
+          brushType: ui.stroke[slotFor(tool)].brushType,
+        };
+        setOpenPress(finishStroke);
       }
     }
     if (!strokeLayer || !strokeCtx) {
@@ -501,30 +551,11 @@ export function createDrawDispatch(opts?: {
     }
 
     lastPoints = points;
-    if (done) {
-      if (drawRaf) {
-        cancelAnimationFrame(drawRaf);
-        drawRaf = 0;
-      }
-      paintStroke(points, true, tool);
-      markLayerDirty(strokeLayer.id);
-      if (scratchCtx) {
-        const rect = computeDirtyRect(
-          points,
-          strokeLayer,
-          ui.stroke[slotFor(tool)].size,
-          points[0]?.hasPressure ? pressFor(tool) : 1,
-        );
-        const before = scratchCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
-        const after = strokeCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
-        // An eraser over nothing, or a stroke wholly outside the marquee, pushes no step.
-        pushLayerPixels(strokeCtx, strokeLayer.id, before, after, rect.x, rect.y);
-      }
-      endStroke();
-    } else if (!drawRaf) {
+    if (done) commitStroke(points);
+    else if (!drawRaf) {
       drawRaf = requestAnimationFrame(() => {
         drawRaf = 0;
-        paintStroke(lastPoints, false, tool);
+        paintStroke(lastPoints, false);
       });
     }
   }

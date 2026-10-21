@@ -386,6 +386,35 @@ async function main(page) {
   });
 
   await step(async () => {
+    // Clear layer tapped while the Pencil is still down ends the stroke first (endPress): its next
+    // frame used to draw the pre-stroke copy back over the cleared layer.
+    const before = await ink(whole());
+    const path = line(at(0.15, 0.92), at(0.85, 0.92));
+    const move = (t) => ({ type: "move", id: 2, kind: "pen", ...path(t), p: 0.6, wait: 8 });
+    const ts = (from, to) => Array.from({ length: 10 }, (_, i) => from + ((to - from) * i) / 9);
+    await gesture([
+      { type: "down", id: 2, kind: "pen", ...path(0), p: 0.6 },
+      ...ts(0, 0.4).map(move),
+    ]);
+    await tapButton("Clear layer");
+    await gesture([
+      ...ts(0.4, 1).map(move),
+      { type: "up", id: 2, kind: "pen", ...path(1), wait: 8 },
+    ]);
+    await page.waitForTimeout(300);
+    const cleared = await ink(whole());
+    await tapButton("Undo");
+    const stroke = await ink(whole());
+    await tapButton("Undo");
+    const outline = await ink(whole());
+    return [
+      cleared === 0 && stroke > before && outline === before,
+      `[sim] Clear layer during a pen stroke ends the stroke first (${before} → ${cleared} painted px; Undo ${stroke}, Undo ${outline})`,
+      "clear-mid-stroke",
+    ];
+  });
+
+  await step(async () => {
     // A long opaque Ink or Calligraphy stroke freezes its settled part (draw-dispatch `frozenTo`):
     // it must draw the same pixels as a full redraw (dev-only `slopNoFreeze`), and one Undo must
     // take ALL of it back (undo reads its "before" from the copy freezing must not bake into).

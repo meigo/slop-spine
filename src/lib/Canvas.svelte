@@ -42,7 +42,7 @@
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
   import { STAMP_MIN_ROPE_PX } from "../core/stroke-smoothing";
-  import { undo, redo } from "../state/history.svelte";
+  import { undo, redo, endPress, pressOpen, setOpenPress } from "../state/history.svelte";
   import { Selection } from "../core/selection";
   import { nibSemiAxes } from "../core/calligraphy-brush";
   import { rgbToHex } from "../core/fill";
@@ -657,22 +657,26 @@
     // handler already bails inside INPUT/TEXTAREA/SELECT.
     if (!e.metaKey && !e.ctrlKey && e.key === "0") {
       e.preventDefault();
+      if (pressOpen()) return; // the next point would map through the new view: a jump in the line
       viewport?.fitView(doc.canvas.width, doc.canvas.height);
       return;
     }
     if (!e.metaKey && !e.ctrlKey && e.key === "1") {
       e.preventDefault();
+      if (pressOpen()) return;
       viewport?.actualSizeView(doc.canvas.width, doc.canvas.height);
       return;
     }
     // Tool keys, matching slop-animator's App.svelte exactly.
     if (e.key === "Enter" && selection?.hasFloating) {
       e.preventDefault();
+      endPress();
       selection.commit();
       return;
     }
     if (e.key === "Escape" && selection?.active) {
       e.preventDefault();
+      endPress();
       selection.cancel();
       return;
     }
@@ -688,6 +692,7 @@
       ui.tool = "eraser";
     }
     if (e.key === "Backspace" || e.key === "Delete") {
+      endPress(); // a bone drag's release would push its press-time rig over the delete
       // Under every tool but bone an active marquee takes Delete: it is the more recent, more
       // visible intent, and Escape dismisses it, so the bone stays one keystroke away. The bone
       // tool is rig-domain and is excluded — a marquee outlives a tool switch on purpose (paint
@@ -757,6 +762,8 @@
   function onWheel(e: WheelEvent) {
     if (!viewport) return;
     e.preventDefault();
+    // Not under an open press: the next point would map through the moved view, so the line jumped.
+    if (pressOpen()) return;
     if (e.ctrlKey || e.metaKey)
       viewport.zoomAt(e.clientX, e.clientY, wheelZoomFactor(e.deltaY, e.deltaMode));
     else viewport.panBy(-wheelPx(e.deltaX, e.deltaMode), -wheelPx(e.deltaY, e.deltaMode)); // content follows the scroll
@@ -973,6 +980,7 @@
   }
 
   function enterTransform() {
+    endPress();
     if (!selection || selection.state !== "selected") return;
     liftSelection();
   }
@@ -1034,6 +1042,7 @@
   }
 
   function deleteSelection() {
+    endPress();
     if (!selection || selection.state !== "selected") return;
     const layer = commandLayer();
     const lctx = layer?.canvas.getContext("2d");
@@ -1051,6 +1060,7 @@
   }
 
   function cutSelection() {
+    endPress();
     copySelection();
     deleteSelection();
   }
@@ -1058,6 +1068,7 @@
   /** Paste the pixel clipboard as a float on the active layer. Returns false when there is nothing
    *  to paste or nowhere to put it, so Cmd+V can fall through to importing an image instead. */
   function pasteSelection(): boolean {
+    endPress();
     const clip = getClipboardPixels();
     if (!clip || !selection) return false;
     const layer = commandLayer();
@@ -1085,10 +1096,12 @@
   }
 
   function deselectSelection() {
+    endPress();
     if (selection?.state === "selected") selection.cancel();
   }
 
   function selectAll() {
+    endPress();
     if (!selection) return;
     if (selection.hasFloating) selection.commit(); // as starting a new marquee does
     selection.selectRect({ x: 0, y: 0, w: doc.canvas.width, h: doc.canvas.height });
@@ -1157,6 +1170,7 @@
   }
 
   function enterWarp(rows: number, cols: number) {
+    endPress();
     if (!selection) return;
     if (selection.state === "selected") liftSelection();
     if (selection.state === "transforming") selection.beginWarp(rows, cols);
@@ -1244,6 +1258,16 @@
       selectionMode = "create";
       selection.startCreate(pt.x, pt.y);
     }
+    setOpenPress(finishSelectionPress);
+  }
+
+  /** The open press's finish (`endPress`): the marquee or drag ends where it got to, and the rest
+   *  of the press does nothing. A Transform tapped mid-marquee kept reshaping the float's rect, and
+   *  a marquee then ending under 3 px dropped the lifted pixels with no undo step. */
+  function finishSelectionPress() {
+    if (selectionMode === "create") selection?.endCreate();
+    selection?.endDrag();
+    selectionMode = null;
   }
 
   function onSelPointerMove(e: PointerEvent) {
@@ -1255,6 +1279,7 @@
 
   function onSelPointerUp(e: PointerEvent) {
     if (!selection) return;
+    if (selectionMode) setOpenPress(null);
     if (selectionMode === "create") selection.endCreate();
     selection.endDrag();
     selectionMode = null;
@@ -1266,6 +1291,11 @@
   }
 
   function onRigPointerDown(e: PointerEvent) {
+    rigPress(e);
+    if (dragState) setOpenPress(finishRigDrag);
+  }
+
+  function rigPress(e: PointerEvent) {
     if (ui.tool !== "bone" || e.button !== 0) return;
     if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
     if (!viewport) return;
@@ -1415,6 +1445,24 @@
 
   function onRigPointerUp(e: PointerEvent) {
     if (!dragState) return;
+    setOpenPress(null);
+    finishRigDrag();
+    if (viewport && ui.tool === "bone") {
+      setRigCursor(rigHover(viewport.screenToCanvas(e.clientX, e.clientY))?.kind ?? null);
+    } else {
+      setRigCursor(null);
+    }
+    try {
+      stage.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  }
+
+  /** A bone drag's release, and the open press's finish (`endPress`), after which the rest of the
+   *  press does nothing (`dragState` is null). */
+  function finishRigDrag() {
+    if (!dragState) return;
     // Seed reach once, at the end of the drag that created the bone — not in setBoneLength, which
     // runs on every pointermove of that same drag and would otherwise lock reach to whatever the
     // hand's first few pixels of motion happened to be (see doc.svelte.ts's setBoneLength for why
@@ -1450,16 +1498,6 @@
       startPoseLoop();
     } else if (wasPose) {
       clearPose();
-    }
-    if (viewport && ui.tool === "bone") {
-      setRigCursor(rigHover(viewport.screenToCanvas(e.clientX, e.clientY))?.kind ?? null);
-    } else {
-      setRigCursor(null);
-    }
-    try {
-      stage.releasePointerCapture(e.pointerId);
-    } catch {
-      /* already released */
     }
   }
 
@@ -1552,6 +1590,8 @@
     // Bridge for Toolbar.svelte's "Fit View" button — the viewport instance is local to this
     // component (needs its own anchor element), so a window event is the smallest cross-component
     // link back to it. See Toolbar.svelte's dispatch.
+    // The view keys' "not under an open press" doesn't hold here: a New or Resize asks for a fit
+    // after it has ended the press itself.
     const onFitViewRequest = () => viewport?.fitView(doc.canvas.width, doc.canvas.height);
     const onActualSizeRequest = () => viewport?.actualSizeView(doc.canvas.width, doc.canvas.height);
     window.addEventListener("slop-spine:fit-view", onFitViewRequest);
@@ -1568,8 +1608,14 @@
     selectionCommands.densify = densify;
     selectionCommands.setDeformMode = (m) => selection?.setDeformMode(m);
     selectionCommands.resetPins = () => selection?.resetPins();
-    selectionCommands.apply = () => selection?.commit();
-    selectionCommands.cancel = () => selection?.cancel();
+    selectionCommands.apply = () => {
+      endPress();
+      selection?.commit();
+    };
+    selectionCommands.cancel = () => {
+      endPress();
+      selection?.cancel();
+    };
     selectionCommands.applyFloat = (layerId) => {
       if (!selection?.hasFloating) return false;
       if (layerId !== undefined && layerId !== selLayerId) return false;
