@@ -7,7 +7,7 @@ import {
   SOFT_STEPS,
   UNDER_LINE_MAX_PX,
 } from "../fill";
-import { distanceToMask } from "../mask-ops";
+import { dilateMask, distanceToMask } from "../mask-ops";
 
 const row = (bits: number[]) => Uint8Array.from(bits);
 /** One row: `region` 1s, then the line's strengths, then empty space beyond. */
@@ -31,6 +31,13 @@ describe("ridgeCoverage", () => {
     const c = across([50, 110, 40, 130, 60, 140, 120, 140, 60, 130, 40, 110, 50]);
     for (let i = 0; i < 5; i++) expect(c[i]).toBeGreaterThan(0);
     expect(c.slice(9)).toEqual(Array(c.length - 9).fill(0));
+  });
+
+  it("puts nothing on the paper just beyond a thin line", () => {
+    // Smoothed, the paper beside a 1px line reads as line too, which moved its middle outward.
+    for (const soft of [1, 2])
+      for (const a of [100, 160, 255])
+        expect(across([a], soft).slice(1)).toEqual(Array(10).fill(0));
   });
 
   it("fades toward 1 − the line's strongest value: a light line keeps more fill than a solid one", () => {
@@ -92,6 +99,20 @@ describe("expandedCoverage / distanceToMask", () => {
   it("is the old whole-pixel dilation at Soft 0", () => {
     const m = row([1, 0, 0, 0]);
     expect([...expandedCoverage(m, 4, 1, 2, 0)]).toEqual([255, 255, 255, 0]);
+  });
+
+  it("at Soft 0 covers exactly the round dilation's pixels", () => {
+    let seed = 12345;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const w = 40;
+    const h = 30;
+    const m = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) m[i] = rnd() < 0.01 ? 1 : 0;
+    for (const r of [1, 2, 5, 9]) {
+      const grown = dilateMask(m, w, h, r);
+      const cover = expandedCoverage(m, w, h, r, 0);
+      for (let i = 0; i < w * h; i++) expect(cover[i]).toBe(grown[i] ? 255 : 0);
+    }
   });
 });
 

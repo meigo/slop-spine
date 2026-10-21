@@ -32,6 +32,12 @@ import { history, setStrokeOpen } from "../state/history.svelte";
 
 let getSelection: () => Selection | null = () => null;
 
+function sameBytes(a: Uint8ClampedArray, b: Uint8ClampedArray): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 /** Clip subsequent draws to the marching-ants marquee. No-op when idle or floating.
  *  `finally`, because `ctx` is the layer's own long-lived context: a throw in `draw` that skipped
  *  `restore` would strand the clip there and silently confine every later stroke on that layer. */
@@ -459,15 +465,30 @@ export function createDrawDispatch(opts?: {
         const fctx = layer?.canvas.getContext("2d") ?? null;
         if (layer && fctx) {
           const p = points[0];
+          const sx = Math.floor(p.x);
+          const sy = Math.floor(p.y);
+          if (sx < 0 || sy < 0 || sx >= layer.canvas.width || sy >= layer.canvas.height) {
+            flashStatus("Tap on the page to fill");
+            fillFired = !done;
+            return;
+          }
+          // Alpha lock keeps an empty area empty, so all a tap there could change is the soft edges
+          // of the lines round it (Soft tinted them with the fill colour). slop-paint a3a16c1.
+          if (layer.alphaLock && fctx.getImageData(sx, sy, 1, 1).data[3] === 0) {
+            flashStatus("Alpha lock is on — the bucket only recolours painted pixels");
+            fillFired = !done;
+            return;
+          }
           // Fill's affected rect is the whole canvas — a getImageData either side of it, not the
           // scratch-canvas dance the stroke path below uses, because fills are rare.
           const cw = layer.canvas.width;
           const ch = layer.canvas.height;
           const before = fctx.getImageData(0, 0, cw, ch);
+          let filled = false;
           fillThroughClip(
             fctx,
             (target) => {
-              floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.fillOpacity), {
+              filled = floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.fillOpacity), {
                 tolerance: ui.fillTolerance,
                 // Bridge closes line breaks for the bucket too (slop-paint ccd6bd1).
                 gap: clampGap(ui.fillGap),
@@ -479,9 +500,20 @@ export function createDrawDispatch(opts?: {
             },
             layer.alphaLock,
           );
-          markLayerDirty(layer.id);
-          const after = fctx.getImageData(0, 0, cw, ch);
-          pushPixelCommand(layer, fctx, { x: 0, y: 0, w: cw, h: ch }, before, after);
+          const after = filled ? fctx.getImageData(0, 0, cw, ch) : before;
+          // Nothing landed (already this colour, or clipped away): an empty step would wipe redo.
+          if (!filled || sameBytes(before.data, after.data)) {
+            flashStatus(
+              !filled
+                ? "Already this colour"
+                : getSelection()?.state === "selected"
+                  ? "Nothing filled — the area is outside the selection"
+                  : "Nothing changed — the area is already this colour",
+            );
+          } else {
+            markLayerDirty(layer.id);
+            pushPixelCommand(layer, fctx, { x: 0, y: 0, w: cw, h: ch }, before, after);
+          }
         }
         fillFired = true;
       }
