@@ -212,6 +212,9 @@
   // A web page can only put a file where the user chooses via the share sheet: Safari has no save
   // picker, and a download always lands in Downloads as a new copy. (As slop-paint.)
   let shareFileReady = $state<File | null>(null);
+  $effect(() => {
+    ui.dialogOpen = newDocOpen || resizeOpen || shareFileReady !== null;
+  });
 
   /** Hand a finished file to the share sheet. Used on iPad by Export, and by Save in the Home
    *  Screen app. */

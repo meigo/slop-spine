@@ -600,9 +600,17 @@
     }
   }
 
-  function onKeyDown(e: KeyboardEvent) {
+  /** Focus is in a text field: keys and paste are its own. */
+  function inTextEntry(): boolean {
     const tag = (document.activeElement as HTMLElement | null)?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (inTextEntry()) return;
+    // A dialog owns the keyboard: behind Resize, Cmd+V pasted a float and Escape cancelled the
+    // marquee (slop-paint b354fb5).
+    if (ui.dialogOpen) return;
     if (e.key === " ") {
       spaceHeld = true;
       e.preventDefault();
@@ -669,12 +677,13 @@
       return;
     }
     if (!(e.metaKey || e.ctrlKey)) {
-      const tool = toolFromKey(e.key);
+      // Lower-cased: with Caps Lock on the tool keys did nothing (slop-paint 666b433).
+      const tool = toolFromKey(e.key.toLowerCase());
       if (tool) setTool(tool);
     }
     // Hold X for temporary eraser, matching slop-paint's App.svelte. e.repeat is checked so an
     // auto-repeated keydown doesn't re-remember "eraser" as the tool to restore on keyup.
-    if (e.key === "x" && !e.repeat && !toolBeforeEraser && ui.tool !== "eraser") {
+    if (e.key.toLowerCase() === "x" && !e.repeat && !toolBeforeEraser && ui.tool !== "eraser") {
       toolBeforeEraser = ui.tool;
       ui.tool = "eraser";
     }
@@ -697,10 +706,27 @@
   }
   function onKeyUp(e: KeyboardEvent) {
     if (e.key === " ") spaceHeld = false;
-    if (e.key === "x" && toolBeforeEraser) {
+    // Either case: with Shift down by the release the key reads "X", and the eraser stayed on.
+    if (e.key.toLowerCase() === "x" && toolBeforeEraser) {
       ui.tool = toolBeforeEraser;
       toolBeforeEraser = null;
     }
+  }
+  /** A key held when the window loses focus sends no keyup: Space stayed latched (every click
+   *  panned) and a held X kept the eraser (slop-paint c6349e3). */
+  function onWindowBlur() {
+    spaceHeld = false;
+    if (toolBeforeEraser) {
+      ui.tool = toolBeforeEraser;
+      toolBeforeEraser = null;
+    }
+  }
+  /** WebKit (Safari, iPad with a keyboard) fires `paste` for Cmd+V only while Edit ▸ Paste is
+   *  enabled: a text field focused, a text selection, or a `beforepaste` handler that prevents its
+   *  default. Over the canvas there is none of those, so Cmd+V never imported an image there
+   *  (slop-paint d3aec0a). */
+  function onBeforePaste(e: Event) {
+    if (!inTextEntry() && !ui.dialogOpen) e.preventDefault();
   }
 
   function onStagePointerDown(e: PointerEvent) {
@@ -1521,6 +1547,8 @@
     stage.addEventListener("pointercancel", onRigPointerUp);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("beforepaste", onBeforePaste);
     // Bridge for Toolbar.svelte's "Fit View" button — the viewport instance is local to this
     // component (needs its own anchor element), so a window event is the smallest cross-component
     // link back to it. See Toolbar.svelte's dispatch.
@@ -1556,7 +1584,7 @@
     // while pixels are held is what File > "Paste image as layer" is for. The listener is on window
     // because a paste has no pointer target and the stage is not focusable.
     const onWindowPaste = (e: ClipboardEvent) => {
-      if (getClipboardPixels()) return;
+      if (getClipboardPixels() || ui.dialogOpen) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const it of items) {
@@ -1599,6 +1627,8 @@
       stage.removeEventListener("pointercancel", onRigPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("beforepaste", onBeforePaste);
       window.removeEventListener("slop-spine:fit-view", onFitViewRequest);
       window.removeEventListener("slop-spine:actual-size", onActualSizeRequest);
       window.removeEventListener("paste", onWindowPaste);
