@@ -168,6 +168,12 @@
     mode: ResizeMode,
   ) {
     resizeOpen = false;
+    // The same size changes nothing: don't clear the undo history and the pose for it (slop-paint
+    // 262d921).
+    if (width === doc.canvas.width && height === doc.canvas.height) {
+      flashStatus("Same size — nothing changed");
+      return;
+    }
     // A lifted float is in the old canvas's coordinates: apply it first (as slop-paint).
     selectionCommands.applyFloat?.();
     resizeDocument(width, height, anchorX, anchorY, mode);

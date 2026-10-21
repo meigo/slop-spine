@@ -19,6 +19,15 @@ export function pixelCommand(
   return { undo, redo, bytes: before.data.byteLength + after.data.byteLength };
 }
 
+/** Pixel-identical: an edit that changed nothing pushes no step, which would wipe redo. */
+export function samePixels(a: ImageData, b: ImageData): boolean {
+  const x = a.data;
+  const y = b.data;
+  if (x.length !== y.length) return false;
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+  return true;
+}
+
 export class History {
   /** Fired after any change to either stack. The UI mirrors `canUndo`/`canRedo` into `$state`
    *  through this: a plain class getter is not a reactive dependency, so a button bound directly

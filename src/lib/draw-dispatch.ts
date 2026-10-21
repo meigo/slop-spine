@@ -3,7 +3,12 @@
 // events (already parsed into document-space InputPoints by input.ts) land on ui.selectedLayerId's
 // own canvas, resolved by id (layer array order is a display concern, not identity). Mild
 // pressure-response curve, applied uniformly regardless of brush engine.
-import { document as doc, markLayerDirty, clearLayerPixels } from "../state/doc.svelte";
+import {
+  document as doc,
+  markLayerDirty,
+  clearLayerPixels,
+  pushLayerPixels,
+} from "../state/doc.svelte";
 import {
   ui,
   isPaintTool,
@@ -27,17 +32,10 @@ import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../c
 import { clampGap } from "../core/fill-holes";
 import type { Layer } from "../rig/document";
 import type { Selection } from "../core/selection";
-import { pixelCommand } from "../core/history";
-import { history, setStrokeOpen } from "../state/history.svelte";
+import { setStrokeOpen } from "../state/history.svelte";
 import { selectionCommands } from "../state/selection-commands";
 
 let getSelection: () => Selection | null = () => null;
-
-function sameBytes(a: Uint8ClampedArray, b: Uint8ClampedArray): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
 
 /** Clip subsequent draws to the marching-ants marquee. No-op when idle or floating.
  *  `finally`, because `ctx` is the layer's own long-lived context: a throw in `draw` that skipped
@@ -107,7 +105,7 @@ export function clearSelectedLayer() {
   // A lifted float isn't in its layer yet: Esc after the Clear put back the pixels from before it
   // over the cleared layer, and undo then lost the lifted ones (slop-paint 2469f87).
   selectionCommands.applyFloat?.();
-  clearLayerPixels(layer.id);
+  if (!clearLayerPixels(layer.id)) flashStatus("Clear layer — the layer is already empty");
 }
 
 /** Fill every ink-enclosed region on the selected layer, behind the strokes. */
@@ -146,21 +144,8 @@ export function fillAllEnclosed() {
     );
   });
   markLayerDirty(layer.id);
-  const after = ctx.getImageData(0, 0, cw, ch);
-  history.push(
-    pixelCommand(
-      () => {
-        ctx.putImageData(before, 0, 0);
-        markLayerDirty(layer.id);
-      },
-      () => {
-        ctx.putImageData(after, 0, 0);
-        markLayerDirty(layer.id);
-      },
-      before,
-      after,
-    ),
-  );
+  if (!pushLayerPixels(ctx, layer.id, before, ctx.getImageData(0, 0, cw, ch)))
+    flashStatus("Nothing filled — the enclosed areas are outside the selection");
 }
 
 export function createDrawDispatch(opts?: {
@@ -360,30 +345,6 @@ export function createDrawDispatch(opts?: {
    *  restore with `putImageData` (replace, not composite — required to keep transparent areas
    *  transparent) then call `markLayerDirty`, so `deriveSlot`'s cache never serves a mesh derived
    *  from pixels an undo/redo just replaced. */
-  function pushPixelCommand(
-    layer: Layer,
-    ctx: CanvasRenderingContext2D,
-    rect: Rect,
-    before: ImageData,
-    after: ImageData,
-  ) {
-    const layerId = layer.id;
-    history.push(
-      pixelCommand(
-        () => {
-          ctx.putImageData(before, rect.x, rect.y);
-          markLayerDirty(layerId);
-        },
-        () => {
-          ctx.putImageData(after, rect.x, rect.y);
-          markLayerDirty(layerId);
-        },
-        before,
-        after,
-      ),
-    );
-  }
-
   function endStroke() {
     if (drawRaf) {
       cancelAnimationFrame(drawRaf);
@@ -504,9 +465,12 @@ export function createDrawDispatch(opts?: {
             },
             layer.alphaLock,
           );
-          const after = filled ? fctx.getImageData(0, 0, cw, ch) : before;
-          // Nothing landed (already this colour, or clipped away): an empty step would wipe redo.
-          if (!filled || sameBytes(before.data, after.data)) {
+          // Nothing landed (already this colour, or clipped away): no step, which would wipe redo.
+          markLayerDirty(layer.id);
+          if (
+            !filled ||
+            !pushLayerPixels(fctx, layer.id, before, fctx.getImageData(0, 0, cw, ch))
+          ) {
             flashStatus(
               !filled
                 ? "Already this colour"
@@ -514,9 +478,6 @@ export function createDrawDispatch(opts?: {
                   ? "Nothing filled — the area is outside the selection"
                   : "Nothing changed — the area is already this colour",
             );
-          } else {
-            markLayerDirty(layer.id);
-            pushPixelCommand(layer, fctx, { x: 0, y: 0, w: cw, h: ch }, before, after);
           }
         }
         fillFired = true;
@@ -556,7 +517,8 @@ export function createDrawDispatch(opts?: {
         );
         const before = scratchCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
         const after = strokeCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
-        pushPixelCommand(strokeLayer, strokeCtx, rect, before, after);
+        // An eraser over nothing, or a stroke wholly outside the marquee, pushes no step.
+        pushLayerPixels(strokeCtx, strokeLayer.id, before, after, rect.x, rect.y);
       }
       endStroke();
     } else if (!drawRaf) {

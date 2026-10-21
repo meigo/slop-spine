@@ -17,6 +17,7 @@
     insertJoint,
     setParent,
     addLayer,
+    pushLayerPixels,
     type RigSnapshot,
   } from "../state/doc.svelte";
   import {
@@ -41,8 +42,7 @@
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
   import { STAMP_MIN_ROPE_PX } from "../core/stroke-smoothing";
-  import { history, undo, redo } from "../state/history.svelte";
-  import { pixelCommand } from "../core/history";
+  import { undo, redo } from "../state/history.svelte";
   import { Selection } from "../core/selection";
   import { nibSemiAxes } from "../core/calligraphy-brush";
   import { rgbToHex } from "../core/fill";
@@ -1016,22 +1016,9 @@
     const ch = layer.canvas.height;
     const before = lctx.getImageData(0, 0, cw, ch);
     selection.clearRegion(lctx, 1);
-    const after = lctx.getImageData(0, 0, cw, ch);
     markLayerDirty(layer.id);
-    history.push(
-      pixelCommand(
-        () => {
-          lctx.putImageData(before, 0, 0);
-          markLayerDirty(layer.id);
-        },
-        () => {
-          lctx.putImageData(after, 0, 0);
-          markLayerDirty(layer.id);
-        },
-        before,
-        after,
-      ),
-    );
+    // Over empty pixels: no step (it would wipe redo).
+    pushLayerPixels(lctx, layer.id, before, lctx.getImageData(0, 0, cw, ch));
     // Nothing is floating, so onCancel no-ops — this just drops the marquee.
     selection.cancel();
     scheduleComposite();
@@ -1178,24 +1165,14 @@
     selection.onCommit = () => {
       if (!selCtx || !selBefore || selLayerId === null || !selection) return;
       selection.renderFloatingTo(selCtx);
-      const layerId = selLayerId;
       const ctx2 = selCtx;
-      const before = selBefore;
-      const after = ctx2.getImageData(0, 0, ctx2.canvas.width, ctx2.canvas.height);
-      markLayerDirty(layerId);
-      history.push(
-        pixelCommand(
-          () => {
-            ctx2.putImageData(before, 0, 0);
-            markLayerDirty(layerId);
-          },
-          () => {
-            ctx2.putImageData(after, 0, 0);
-            markLayerDirty(layerId);
-          },
-          before,
-          after,
-        ),
+      markLayerDirty(selLayerId);
+      // Applied unmoved: no step (it would wipe redo).
+      pushLayerPixels(
+        ctx2,
+        selLayerId,
+        selBefore,
+        ctx2.getImageData(0, 0, ctx2.canvas.width, ctx2.canvas.height),
       );
       selCtx = null;
       selBefore = null;
