@@ -421,7 +421,7 @@ export function createDrawDispatch(opts?: {
     ) {
       // Ink and Calligraphy draw a range: from the frozen part on (see `frozenTo`).
       const ranged = (target: CanvasRenderingContext2D, from: number, to = Infinity) => {
-        if (brushType === "ink") drawInkStroke(target, curved, settings, sizeRange, from, to);
+        if (brushType === "ink") drawInkStroke(target, curved, settings, sizeRange, from, to, done);
         else drawCalligraphyStroke(target, curved, settings, sizeRange, from, to);
       };
       if ((brushType === "ink" || brushType === "calligraphy") && settings.opacity >= 100 && !done)
@@ -429,7 +429,7 @@ export function createDrawDispatch(opts?: {
       restorePreStroke(ctx, strokeLayer);
       withClip(ctx, () => {
         if (brushType === "ink" || brushType === "calligraphy") ranged(ctx, unfrozenFrom());
-        else if (brushType === "dry") drawDryStroke(ctx, curved, settings, sizeRange);
+        else if (brushType === "dry") drawDryStroke(ctx, curved, settings, sizeRange, done);
         else if (brushType === "watercolor")
           drawWatercolorStroke(ctx, curved, settings, sizeRange, done);
         else drawStroke(ctx, curved, settings, done, sizeRange);
