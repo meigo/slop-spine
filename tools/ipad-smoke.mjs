@@ -1157,6 +1157,30 @@ async function main(page) {
       "autosave",
     ];
   });
+
+  await step(async () => {
+    // A failing autosave says so, and the next one that works takes the warning down: it only
+    // reached the console, which an iPad hasn't got (slop-paint acaf77e).
+    await page.evaluate(() => {
+      const w = window;
+      w.__put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function () {
+        throw new DOMException("simulated full disk", "QuotaExceededError");
+      };
+    });
+    await tapButton("Add layer");
+    await page.waitForTimeout(3000);
+    const failing = await status();
+    await page.evaluate(() => (IDBObjectStore.prototype.put = window.__put));
+    await tapButton("Add layer");
+    await page.waitForTimeout(3000);
+    const working = await status();
+    return [
+      /Autosave is failing/.test(failing) && !/Autosave is failing/.test(working),
+      `a failing autosave says so until one works ("${failing.split("\n")[0]}" → "${working.split("\n")[0]}")`,
+      "autosave-failing",
+    ];
+  });
 }
 
 const profiles = [];
