@@ -17,6 +17,7 @@
     insertJoint,
     setParent,
     addLayer,
+    pushLayerPixels,
     type RigSnapshot,
   } from "../state/doc.svelte";
   import {
@@ -35,14 +36,14 @@
   import { selectionCommands } from "../state/selection-commands";
   import { boneTip, reparentDropTarget } from "../rig/chain";
   import type { Tool } from "../state/ui.svelte";
-  import { Viewport } from "../core/viewport";
+  import { Viewport, wheelPx, wheelZoomFactor } from "../core/viewport";
+  import { isTextEntry } from "./text-entry";
   import { setupInput, isStageChromeTarget } from "../core/input";
   import { computeImagePlacement } from "../core/image-fit";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
   import { STAMP_MIN_ROPE_PX } from "../core/stroke-smoothing";
-  import { history, undo, redo } from "../state/history.svelte";
-  import { pixelCommand } from "../core/history";
+  import { undo, redo, endPress, pressOpen, setOpenPress } from "../state/history.svelte";
   import { Selection } from "../core/selection";
   import { nibSemiAxes } from "../core/calligraphy-brush";
   import { rgbToHex } from "../core/fill";
@@ -600,9 +601,28 @@
     }
   }
 
+  /** Focus is in a text field: keys and paste are its own. */
+  function inTextEntry(): boolean {
+    const el = document.activeElement as HTMLElement | null;
+    // Not every <input>: a slider keeps focus after a drag (the canvas blocks the focus change on
+    // press), and Ctrl+Z and the tool keys were dead until a click elsewhere (slop-paint c7d3e8a).
+    return isTextEntry(el) || el?.tagName === "SELECT";
+  }
+
+  /** A press on the canvas leaves a text field (layer rename, bone name, size box): the canvas
+   *  blocks the browser's focus change on press, which also kept the field focused — on iPad the
+   *  keyboard stayed up and a typed name stayed uncommitted, then lost to the next bone's
+   *  (slop-paint 1c8b5fd). Blurring commits it, while the old bone is still selected. */
+  function blurTextEntry() {
+    const el = document.activeElement as HTMLElement | null;
+    if (isTextEntry(el)) el!.blur();
+  }
+
   function onKeyDown(e: KeyboardEvent) {
-    const tag = (document.activeElement as HTMLElement | null)?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (inTextEntry()) return;
+    // A dialog owns the keyboard: behind Resize, Cmd+V pasted a float and Escape cancelled the
+    // marquee (slop-paint b354fb5).
+    if (ui.dialogOpen) return;
     if (e.key === " ") {
       spaceHeld = true;
       e.preventDefault();
@@ -649,36 +669,42 @@
     // handler already bails inside INPUT/TEXTAREA/SELECT.
     if (!e.metaKey && !e.ctrlKey && e.key === "0") {
       e.preventDefault();
+      if (pressOpen()) return; // the next point would map through the new view: a jump in the line
       viewport?.fitView(doc.canvas.width, doc.canvas.height);
       return;
     }
     if (!e.metaKey && !e.ctrlKey && e.key === "1") {
       e.preventDefault();
+      if (pressOpen()) return;
       viewport?.actualSizeView(doc.canvas.width, doc.canvas.height);
       return;
     }
     // Tool keys, matching slop-animator's App.svelte exactly.
     if (e.key === "Enter" && selection?.hasFloating) {
       e.preventDefault();
+      endPress();
       selection.commit();
       return;
     }
     if (e.key === "Escape" && selection?.active) {
       e.preventDefault();
+      endPress();
       selection.cancel();
       return;
     }
     if (!(e.metaKey || e.ctrlKey)) {
-      const tool = toolFromKey(e.key);
+      // Lower-cased: with Caps Lock on the tool keys did nothing (slop-paint 666b433).
+      const tool = toolFromKey(e.key.toLowerCase());
       if (tool) setTool(tool);
     }
     // Hold X for temporary eraser, matching slop-paint's App.svelte. e.repeat is checked so an
     // auto-repeated keydown doesn't re-remember "eraser" as the tool to restore on keyup.
-    if (e.key === "x" && !e.repeat && !toolBeforeEraser && ui.tool !== "eraser") {
+    if (e.key.toLowerCase() === "x" && !e.repeat && !toolBeforeEraser && ui.tool !== "eraser") {
       toolBeforeEraser = ui.tool;
       ui.tool = "eraser";
     }
     if (e.key === "Backspace" || e.key === "Delete") {
+      endPress(); // a bone drag's release would push its press-time rig over the delete
       // Under every tool but bone an active marquee takes Delete: it is the more recent, more
       // visible intent, and Escape dismisses it, so the bone stays one keystroke away. The bone
       // tool is rig-domain and is excluded — a marquee outlives a tool switch on purpose (paint
@@ -697,10 +723,27 @@
   }
   function onKeyUp(e: KeyboardEvent) {
     if (e.key === " ") spaceHeld = false;
-    if (e.key === "x" && toolBeforeEraser) {
+    // Either case: with Shift down by the release the key reads "X", and the eraser stayed on.
+    if (e.key.toLowerCase() === "x" && toolBeforeEraser) {
       ui.tool = toolBeforeEraser;
       toolBeforeEraser = null;
     }
+  }
+  /** A key held when the window loses focus sends no keyup: Space stayed latched (every click
+   *  panned) and a held X kept the eraser (slop-paint c6349e3). */
+  function onWindowBlur() {
+    spaceHeld = false;
+    if (toolBeforeEraser) {
+      ui.tool = toolBeforeEraser;
+      toolBeforeEraser = null;
+    }
+  }
+  /** WebKit (Safari, iPad with a keyboard) fires `paste` for Cmd+V only while Edit ▸ Paste is
+   *  enabled: a text field focused, a text selection, or a `beforepaste` handler that prevents its
+   *  default. Over the canvas there is none of those, so Cmd+V never imported an image there
+   *  (slop-paint d3aec0a). */
+  function onBeforePaste(e: Event) {
+    if (!inTextEntry() && !ui.dialogOpen) e.preventDefault();
   }
 
   function onStagePointerDown(e: PointerEvent) {
@@ -731,8 +774,11 @@
   function onWheel(e: WheelEvent) {
     if (!viewport) return;
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey) viewport.zoomAt(e.clientX, e.clientY, e.deltaY);
-    else viewport.panBy(-e.deltaX, -e.deltaY); // content follows the scroll
+    // Not under an open press: the next point would map through the moved view, so the line jumped.
+    if (pressOpen()) return;
+    if (e.ctrlKey || e.metaKey)
+      viewport.zoomAt(e.clientX, e.clientY, wheelZoomFactor(e.deltaY, e.deltaMode));
+    else viewport.panBy(-wheelPx(e.deltaX, e.deltaMode), -wheelPx(e.deltaY, e.deltaMode)); // content follows the scroll
   }
 
   // --- Bone-tool gestures. Runs alongside setupInput's own listeners on stage (handleStroke
@@ -946,6 +992,7 @@
   }
 
   function enterTransform() {
+    endPress();
     if (!selection || selection.state !== "selected") return;
     liftSelection();
   }
@@ -1007,6 +1054,7 @@
   }
 
   function deleteSelection() {
+    endPress();
     if (!selection || selection.state !== "selected") return;
     const layer = commandLayer();
     const lctx = layer?.canvas.getContext("2d");
@@ -1015,28 +1063,16 @@
     const ch = layer.canvas.height;
     const before = lctx.getImageData(0, 0, cw, ch);
     selection.clearRegion(lctx, 1);
-    const after = lctx.getImageData(0, 0, cw, ch);
     markLayerDirty(layer.id);
-    history.push(
-      pixelCommand(
-        () => {
-          lctx.putImageData(before, 0, 0);
-          markLayerDirty(layer.id);
-        },
-        () => {
-          lctx.putImageData(after, 0, 0);
-          markLayerDirty(layer.id);
-        },
-        before,
-        after,
-      ),
-    );
+    // Over empty pixels: no step (it would wipe redo).
+    pushLayerPixels(lctx, layer.id, before, lctx.getImageData(0, 0, cw, ch));
     // Nothing is floating, so onCancel no-ops — this just drops the marquee.
     selection.cancel();
     scheduleComposite();
   }
 
   function cutSelection() {
+    endPress();
     copySelection();
     deleteSelection();
   }
@@ -1044,6 +1080,7 @@
   /** Paste the pixel clipboard as a float on the active layer. Returns false when there is nothing
    *  to paste or nowhere to put it, so Cmd+V can fall through to importing an image instead. */
   function pasteSelection(): boolean {
+    endPress();
     const clip = getClipboardPixels();
     if (!clip || !selection) return false;
     const layer = commandLayer();
@@ -1071,10 +1108,12 @@
   }
 
   function deselectSelection() {
+    endPress();
     if (selection?.state === "selected") selection.cancel();
   }
 
   function selectAll() {
+    endPress();
     if (!selection) return;
     if (selection.hasFloating) selection.commit(); // as starting a new marquee does
     selection.selectRect({ x: 0, y: 0, w: doc.canvas.width, h: doc.canvas.height });
@@ -1143,6 +1182,7 @@
   }
 
   function enterWarp(rows: number, cols: number) {
+    endPress();
     if (!selection) return;
     if (selection.state === "selected") liftSelection();
     if (selection.state === "transforming") selection.beginWarp(rows, cols);
@@ -1177,24 +1217,14 @@
     selection.onCommit = () => {
       if (!selCtx || !selBefore || selLayerId === null || !selection) return;
       selection.renderFloatingTo(selCtx);
-      const layerId = selLayerId;
       const ctx2 = selCtx;
-      const before = selBefore;
-      const after = ctx2.getImageData(0, 0, ctx2.canvas.width, ctx2.canvas.height);
-      markLayerDirty(layerId);
-      history.push(
-        pixelCommand(
-          () => {
-            ctx2.putImageData(before, 0, 0);
-            markLayerDirty(layerId);
-          },
-          () => {
-            ctx2.putImageData(after, 0, 0);
-            markLayerDirty(layerId);
-          },
-          before,
-          after,
-        ),
+      markLayerDirty(selLayerId);
+      // Applied unmoved: no step (it would wipe redo).
+      pushLayerPixels(
+        ctx2,
+        selLayerId,
+        selBefore,
+        ctx2.getImageData(0, 0, ctx2.canvas.width, ctx2.canvas.height),
       );
       selCtx = null;
       selBefore = null;
@@ -1240,6 +1270,16 @@
       selectionMode = "create";
       selection.startCreate(pt.x, pt.y);
     }
+    setOpenPress(finishSelectionPress);
+  }
+
+  /** The open press's finish (`endPress`): the marquee or drag ends where it got to, and the rest
+   *  of the press does nothing. A Transform tapped mid-marquee kept reshaping the float's rect, and
+   *  a marquee then ending under 3 px dropped the lifted pixels with no undo step. */
+  function finishSelectionPress() {
+    if (selectionMode === "create") selection?.endCreate();
+    selection?.endDrag();
+    selectionMode = null;
   }
 
   function onSelPointerMove(e: PointerEvent) {
@@ -1251,6 +1291,7 @@
 
   function onSelPointerUp(e: PointerEvent) {
     if (!selection) return;
+    if (selectionMode) setOpenPress(null);
     if (selectionMode === "create") selection.endCreate();
     selection.endDrag();
     selectionMode = null;
@@ -1262,6 +1303,11 @@
   }
 
   function onRigPointerDown(e: PointerEvent) {
+    rigPress(e);
+    if (dragState) setOpenPress(finishRigDrag);
+  }
+
+  function rigPress(e: PointerEvent) {
     if (ui.tool !== "bone" || e.button !== 0) return;
     if (!(e.pointerType === "mouse" || e.pointerType === "pen")) return;
     if (!viewport) return;
@@ -1411,6 +1457,24 @@
 
   function onRigPointerUp(e: PointerEvent) {
     if (!dragState) return;
+    setOpenPress(null);
+    finishRigDrag();
+    if (viewport && ui.tool === "bone") {
+      setRigCursor(rigHover(viewport.screenToCanvas(e.clientX, e.clientY))?.kind ?? null);
+    } else {
+      setRigCursor(null);
+    }
+    try {
+      stage.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  }
+
+  /** A bone drag's release, and the open press's finish (`endPress`), after which the rest of the
+   *  press does nothing (`dragState` is null). */
+  function finishRigDrag() {
+    if (!dragState) return;
     // Seed reach once, at the end of the drag that created the bone — not in setBoneLength, which
     // runs on every pointermove of that same drag and would otherwise lock reach to whatever the
     // hand's first few pixels of motion happened to be (see doc.svelte.ts's setBoneLength for why
@@ -1446,16 +1510,6 @@
       startPoseLoop();
     } else if (wasPose) {
       clearPose();
-    }
-    if (viewport && ui.tool === "bone") {
-      setRigCursor(rigHover(viewport.screenToCanvas(e.clientX, e.clientY))?.kind ?? null);
-    } else {
-      setRigCursor(null);
-    }
-    try {
-      stage.releasePointerCapture(e.pointerId);
-    } catch {
-      /* already released */
     }
   }
 
@@ -1528,6 +1582,7 @@
 
     // Capture-phase on `stage` so a pan preempts input.ts's bubble-phase listeners
     // (same precedence slop-animator's Canvas.svelte uses).
+    stage.addEventListener("pointerdown", blurTextEntry, { capture: true });
     stage.addEventListener("pointerdown", onStagePointerDown, { capture: true });
     stage.addEventListener("pointermove", onStagePointerMove, { capture: true });
     stage.addEventListener("pointerup", onStagePointerUp, { capture: true });
@@ -1543,9 +1598,13 @@
     stage.addEventListener("pointercancel", onRigPointerUp);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("beforepaste", onBeforePaste);
     // Bridge for Toolbar.svelte's "Fit View" button — the viewport instance is local to this
     // component (needs its own anchor element), so a window event is the smallest cross-component
     // link back to it. See Toolbar.svelte's dispatch.
+    // The view keys' "not under an open press" doesn't hold here: a New or Resize asks for a fit
+    // after it has ended the press itself.
     const onFitViewRequest = () => viewport?.fitView(doc.canvas.width, doc.canvas.height);
     const onActualSizeRequest = () => viewport?.actualSizeView(doc.canvas.width, doc.canvas.height);
     window.addEventListener("slop-spine:fit-view", onFitViewRequest);
@@ -1562,10 +1621,24 @@
     selectionCommands.densify = densify;
     selectionCommands.setDeformMode = (m) => selection?.setDeformMode(m);
     selectionCommands.resetPins = () => selection?.resetPins();
-    selectionCommands.apply = () => selection?.commit();
-    selectionCommands.cancel = () => selection?.cancel();
-    selectionCommands.applyFloat = () => {
-      if (selection?.hasFloating) selection.commit();
+    selectionCommands.apply = () => {
+      endPress();
+      selection?.commit();
+    };
+    selectionCommands.cancel = () => {
+      endPress();
+      selection?.cancel();
+    };
+    selectionCommands.cancelFloat = () => {
+      if (!selection?.hasFloating) return false;
+      selection.cancel();
+      return true;
+    };
+    selectionCommands.applyFloat = (layerId) => {
+      if (!selection?.hasFloating) return false;
+      if (layerId !== undefined && layerId !== selLayerId) return false;
+      selection.commit();
+      return true;
     };
 
     // Image import. Precedence is read straight off the clipboard rather than latched from the
@@ -1575,7 +1648,7 @@
     // while pixels are held is what File > "Paste image as layer" is for. The listener is on window
     // because a paste has no pointer target and the stage is not focusable.
     const onWindowPaste = (e: ClipboardEvent) => {
-      if (getClipboardPixels()) return;
+      if (getClipboardPixels() || ui.dialogOpen) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const it of items) {
@@ -1603,6 +1676,7 @@
       stage.removeEventListener("pointerup", onCursorMove);
       stage.removeEventListener("pointerleave", onCursorLeave);
       resizeObserver.disconnect();
+      stage.removeEventListener("pointerdown", blurTextEntry, { capture: true });
       stage.removeEventListener("pointerdown", onStagePointerDown, { capture: true });
       stage.removeEventListener("pointermove", onStagePointerMove, { capture: true });
       stage.removeEventListener("pointerup", onStagePointerUp, { capture: true });
@@ -1618,6 +1692,8 @@
       stage.removeEventListener("pointercancel", onRigPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("beforepaste", onBeforePaste);
       window.removeEventListener("slop-spine:fit-view", onFitViewRequest);
       window.removeEventListener("slop-spine:actual-size", onActualSizeRequest);
       window.removeEventListener("paste", onWindowPaste);

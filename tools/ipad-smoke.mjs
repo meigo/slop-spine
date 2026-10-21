@@ -386,6 +386,35 @@ async function main(page) {
   });
 
   await step(async () => {
+    // Clear layer tapped while the Pencil is still down ends the stroke first (endPress): its next
+    // frame used to draw the pre-stroke copy back over the cleared layer.
+    const before = await ink(whole());
+    const path = line(at(0.15, 0.92), at(0.85, 0.92));
+    const move = (t) => ({ type: "move", id: 2, kind: "pen", ...path(t), p: 0.6, wait: 8 });
+    const ts = (from, to) => Array.from({ length: 10 }, (_, i) => from + ((to - from) * i) / 9);
+    await gesture([
+      { type: "down", id: 2, kind: "pen", ...path(0), p: 0.6 },
+      ...ts(0, 0.4).map(move),
+    ]);
+    await tapButton("Clear layer");
+    await gesture([
+      ...ts(0.4, 1).map(move),
+      { type: "up", id: 2, kind: "pen", ...path(1), wait: 8 },
+    ]);
+    await page.waitForTimeout(300);
+    const cleared = await ink(whole());
+    await tapButton("Undo");
+    const stroke = await ink(whole());
+    await tapButton("Undo");
+    const outline = await ink(whole());
+    return [
+      cleared === 0 && stroke > before && outline === before,
+      `[sim] Clear layer during a pen stroke ends the stroke first (${before} → ${cleared} painted px; Undo ${stroke}, Undo ${outline})`,
+      "clear-mid-stroke",
+    ];
+  });
+
+  await step(async () => {
     // A long opaque Ink or Calligraphy stroke freezes its settled part (draw-dispatch `frozenTo`):
     // it must draw the same pixels as a full redraw (dev-only `slopNoFreeze`), and one Undo must
     // take ALL of it back (undo reads its "before" from the copy freezing must not bake into).
@@ -790,6 +819,41 @@ async function main(page) {
   });
 
   await step(async () => {
+    // A bone name typed and then left by clicking another bone on the canvas is kept: the canvas
+    // press blocks the focus change, so the field kept focus and the draft was swapped for the new
+    // bone's name. A real mouse here, not a dispatched pointer event: the focus change is what's
+    // tested. The neck (just created) is selected.
+    const field = page.locator("#inspector-bone-name");
+    await field.tap();
+    await field.fill("Neck");
+    await tapButton("Edit bones");
+    const click = async (p) => {
+      await page.mouse.click(p.x, p.y);
+      await page.waitForTimeout(150);
+    };
+    await click(at(0.5, 0.62)); // the spine
+    const other = await field.inputValue();
+    await click(at(0.5, 0.33)); // back to the neck
+    const name = await field.inputValue();
+    // The same with a dispatched Pencil tap, which moves no focus — as on the iPad, where the
+    // canvas press kept the field focused: the canvas blurs it itself (blurTextEntry).
+    await field.tap();
+    await field.fill("Head");
+    const tapAt = async (p) => {
+      await pen(line(p, p), { n: 2 });
+      await page.waitForTimeout(150);
+    };
+    await tapAt(at(0.5, 0.62));
+    await tapAt(at(0.5, 0.33));
+    const penName = await field.inputValue();
+    return [
+      name === "Neck" && other !== "Neck" && penName === "Head",
+      `[sim] a typed bone name survives a click or a Pencil tap on another bone (${other}, then "${name}"; Pencil "${penName}")`,
+      "bone-name",
+    ];
+  });
+
+  await step(async () => {
     await tapButton("Pose (or Alt-drag)");
     const clip = { x: pb.x, y: pb.y, width: pb.width, height: pb.height };
     const before = await page.screenshot({ clip });
@@ -925,6 +989,27 @@ async function main(page) {
       lifted && names.includes("Body copy") && copyRight > 1000,
       `[sim] Duplicate with a lifted selection copies the moved pixels (lifted ${lifted}; ${names.join(", ")}; ${copyRight} painted px of the copy where they moved)`,
       "duplicate-float",
+    ];
+  });
+
+  await step(async () => {
+    // Undo with a lifted selection puts the float back and undoes nothing else (slop-paint): it
+    // undid the step before while the float stayed up, and the Apply after it recorded the hole.
+    const before = await ink(whole());
+    await pen(line(at(0.2, 0.2), at(0.8, 0.8)), { n: 10 }); // a marquee over the body
+    await page.waitForTimeout(150);
+    await pen(line(at(0.5, 0.5), at(0.5, 0.6)), { n: 15 }); // dragged: lifted and moved
+    await page.waitForTimeout(200);
+    const lifted = (await page.locator('button[title="Apply (Enter)"]').count()) > 0;
+    await tapButton("Undo");
+    await page.waitForTimeout(200);
+    const floating = (await page.locator('button[title="Apply (Enter)"]').count()) > 0;
+    const after = await ink(whole());
+    await page.keyboard.press("Escape");
+    return [
+      lifted && !floating && after === before,
+      `[sim] Undo with a lifted selection only puts it back (lifted ${lifted}, still floating ${floating}; ${before} → ${after} painted px)`,
+      "undo-float",
     ];
   });
 
@@ -1105,6 +1190,30 @@ async function main(page) {
       back.join() === names.join() && drawn > 0 && after > drawn / 2,
       `autosave survives a reload (${back.join(", ")}; ${drawn} → ${after} painted px)`,
       "autosave",
+    ];
+  });
+
+  await step(async () => {
+    // A failing autosave says so, and the next one that works takes the warning down: it only
+    // reached the console, which an iPad hasn't got (slop-paint acaf77e).
+    await page.evaluate(() => {
+      const w = window;
+      w.__put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function () {
+        throw new DOMException("simulated full disk", "QuotaExceededError");
+      };
+    });
+    await tapButton("Add layer");
+    await page.waitForTimeout(3000);
+    const failing = await status();
+    await page.evaluate(() => (IDBObjectStore.prototype.put = window.__put));
+    await tapButton("Add layer");
+    await page.waitForTimeout(3000);
+    const working = await status();
+    return [
+      /Autosave is failing/.test(failing) && !/Autosave is failing/.test(working),
+      `a failing autosave says so until one works ("${failing.split("\n")[0]}" → "${working.split("\n")[0]}")`,
+      "autosave-failing",
     ];
   });
 }

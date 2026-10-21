@@ -19,6 +19,15 @@ export function pixelCommand(
   return { undo, redo, bytes: before.data.byteLength + after.data.byteLength };
 }
 
+/** Pixel-identical: an edit that changed nothing pushes no step, which would wipe redo. */
+export function samePixels(a: ImageData, b: ImageData): boolean {
+  const x = a.data;
+  const y = b.data;
+  if (x.length !== y.length) return false;
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+  return true;
+}
+
 export class History {
   /** Fired after any change to either stack. The UI mirrors `canUndo`/`canRedo` into `$state`
    *  through this: a plain class getter is not a reactive dependency, so a button bound directly
@@ -39,14 +48,18 @@ export class History {
     this.redoStack = [];
     this.undoStack.push(cmd);
     this.bytes += cmd.bytes ?? 0;
-    this.trim();
+    this.trim(cmd.bytes ?? 0);
     this.onChange?.();
   }
 
-  private trim(): void {
+  /** Drops the oldest steps over the count, and over the byte budget — but only when the new step
+   *  brought pixels of its own. A step with none (eye, rename, opacity) adds no memory, and evicting
+   *  for it threw away a step that alone was over the budget (a Move of many layers: one eye toggle
+   *  later it could no longer be undone). The newest step always stays. */
+  private trim(added: number): void {
     while (
       this.undoStack.length > this.maxSize ||
-      (this.bytes > this.maxBytes && this.undoStack.length > 1)
+      (added > 0 && this.bytes > this.maxBytes && this.undoStack.length > 1)
     ) {
       const old = this.undoStack.shift();
       if (!old) break;

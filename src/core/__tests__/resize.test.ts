@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { halvingSteps, linkedSize, MAX_DOC_PX } from "../resize";
+import { docSide, halvingSteps, linkedSize, MAX_DOC_PX, MIN_DOC_SIDE } from "../resize";
 
 describe("linkedSize", () => {
   it("keeps the document's ratio", () => {
@@ -16,6 +16,26 @@ describe("linkedSize", () => {
   it("falls back to the other side for a bad input", () => {
     expect(linkedSize(Number.NaN, 1920, 1080)).toBe(1080);
     expect(linkedSize(500, 0, 1080)).toBe(1080);
+  });
+});
+
+describe("docSide", () => {
+  it("rounds a typed side", () => {
+    expect(docSide(1920)).toBe(1920);
+    expect(docSide(511.6)).toBe(512);
+    expect(docSide(MIN_DOC_SIDE)).toBe(MIN_DOC_SIDE);
+    expect(docSide(MAX_DOC_PX)).toBe(MAX_DOC_PX);
+  });
+
+  it("refuses an empty, zero, negative or too large side instead of clamping it", () => {
+    expect(docSide(null)).toBeNull(); // '' through Svelte's number binding
+    expect(docSide(undefined)).toBeNull();
+    expect(docSide(Number.NaN)).toBeNull();
+    expect(docSide(0)).toBeNull();
+    expect(docSide(0.4)).toBeNull(); // rounds to 0
+    expect(docSide(-3)).toBeNull();
+    expect(docSide(MIN_DOC_SIDE - 1)).toBeNull();
+    expect(docSide(MAX_DOC_PX + 1)).toBeNull();
   });
 });
 
@@ -36,6 +56,19 @@ describe("halvingSteps", () => {
   it("is one step for growing or a shrink under 2×", () => {
     expect(halvingSteps(800, 600, 1600, 1200)).toEqual([{ w: 1600, h: 1200 }]);
     expect(halvingSteps(800, 600, 500, 400)).toEqual([{ w: 500, h: 400 }]);
+  });
+
+  it("halves a side that shrinks 2× or more even when the other doesn't", () => {
+    expect(halvingSteps(3000, 2000, 1000, 2000)).toEqual([
+      { w: 1500, h: 2000 },
+      { w: 1000, h: 2000 },
+    ]);
+    expect(halvingSteps(8000, 2000, 1000, 2400)).toEqual([
+      { w: 4000, h: 2000 },
+      { w: 2000, h: 2000 },
+      { w: 1000, h: 2000 },
+      { w: 1000, h: 2400 },
+    ]);
   });
 
   it("never shrinks a side below its target, when only one side shrinks a lot", () => {

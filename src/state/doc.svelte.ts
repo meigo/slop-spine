@@ -10,7 +10,7 @@ import { invalidate } from "../rig/derive";
 import { splitBoneAt, boneTip } from "../rig/chain";
 import { ui } from "./ui.svelte";
 import { history } from "./history.svelte";
-import { pixelCommand } from "../core/history";
+import { pixelCommand, samePixels } from "../core/history";
 import { halvingSteps } from "../core/resize";
 import { anchorOffset, resizeRig, type ResizeSpec } from "../rig/resize-rig";
 
@@ -161,30 +161,49 @@ export function toggleVisible(id: number) {
 /** Clears a layer to fully transparent, undoably (`clearRect`, never a white fill — export trims a
  *  layer to its opaque bounding box, so an opaque "clear" would trim to the full page and destroy
  *  the atlas). */
-export function clearLayerPixels(id: number) {
+export function clearLayerPixels(id: number): boolean {
   const layer = document.layers.find((l) => l.id === id);
   const ctx = layer?.canvas.getContext("2d");
-  if (!layer || !ctx) return;
+  if (!layer || !ctx) return false;
   const w = layer.canvas.width;
   const h = layer.canvas.height;
   const before = ctx.getImageData(0, 0, w, h);
   ctx.clearRect(0, 0, w, h);
   markLayerDirty(id);
-  const after = ctx.getImageData(0, 0, w, h);
+  return pushLayerPixels(ctx, id, before, ctx.getImageData(0, 0, w, h));
+}
+
+/**
+ * Record a pixel change already made to layer `id` through `ctx`: `before` and `after` are the
+ * pixels at (x, y) either side of it. Pushes nothing when no pixel changed — an empty step would
+ * wipe redo (slop-paint 0bfc562) — and says whether it pushed. A function of its own so the step's
+ * closures keep only what `bytes` counts: made inside a caller, they kept that caller's scope alive
+ * too (Fill enclosed's whole-layer mask; slop-paint b1ae15a).
+ */
+export function pushLayerPixels(
+  ctx: CanvasRenderingContext2D,
+  id: number,
+  before: ImageData,
+  after: ImageData,
+  x = 0,
+  y = 0,
+): boolean {
+  if (samePixels(before, after)) return false;
   history.push(
     pixelCommand(
       () => {
-        ctx.putImageData(before, 0, 0);
+        ctx.putImageData(before, x, y);
         markLayerDirty(id);
       },
       () => {
-        ctx.putImageData(after, 0, 0);
+        ctx.putImageData(after, x, y);
         markLayerDirty(id);
       },
       before,
       after,
     ),
   );
+  return true;
 }
 
 export function toggleAlphaLock(id: number) {

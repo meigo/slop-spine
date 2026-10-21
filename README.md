@@ -16,7 +16,8 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
   rim and paper grain; strokes mix as glazes), Pencil (grades 4H–8B), Charcoal (textures
   Rough–Dense), Airbrush; brush and eraser each keep their own size, opacity, Press and pressure
   curve; draw behind; per-layer alpha lock
-- Wobble for Smooth and Calligraphy: an uneven, hand-drawn outline (0, off, by default)
+- Wobble for Smooth and Calligraphy: an uneven, hand-drawn outline (0, off, by default); a light
+  Smooth or Watercolour stroke keeps at least half its width however strong
 - A Pencil resting with Press above 1 no longer makes the stroke's tip grow and shrink
 - Stream trails the line behind the pen on a string (small wobbles never reach it; it catches up
   at a pause and on lift); Smooth averages the Smooth brush's path with no lag, optionally keeping
@@ -26,7 +27,8 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 - Fill: bucket and Fill enclosed, behind the lines; a gear holds Expand, Soft (fills under a soft or
   grainy line's inner half up to its middle, antialiased; feathers Expand) and Bridge (closes line
   breaks for both)
-- PSD import (flattened pixel layers) and zip project save/load
+- PSD import (flattened pixel layers) and zip project save/load. A file dragged onto the app does
+  nothing (the browser used to open it in place of the app): use File ▸ Open… or Import PSD…
 - File ▸ Resize…: Crop / extend the canvas around an anchor (the drawing and bones keep their size
   and place), or Scale drawing (with Keep ratio always on: bones, reach and mesh density scale with
   it). The Spine export's origin stays at the canvas centre

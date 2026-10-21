@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { docSide, MAX_DOC_PX, MIN_DOC_SIDE } from "../core/resize";
+  import { isConfirmEnter } from "./dialog-keys";
+
   const PRESETS = [
     { label: "1024 × 1024", w: 1024, h: 1024 },
     { label: "2048 × 2048", w: 2048, h: 2048 },
@@ -28,12 +31,23 @@
 
   // No second window.confirm: the warn line in the dialog says what Create discards, and Create is
   // the confirmation (as slop-paint's New dialog).
+  // An empty, zero or out-of-range side is refused with a reason (see docSide).
+  const w = $derived(docSide(width));
+  const h = $derived(docSide(height));
+  const sizeError = $derived(
+    w === null || h === null
+      ? `Width and height must be ${MIN_DOC_SIDE} to ${MAX_DOC_PX} px`
+      : null,
+  );
+
   function confirm() {
-    onConfirm(width, height);
+    if (w === null || h === null) return;
+    onConfirm(w, h);
   }
 
   function onKey(e: KeyboardEvent) {
     if (e.key === "Enter") {
+      if (!isConfirmEnter(e)) return; // a focused button presses itself; IME input commits
       e.preventDefault();
       confirm();
     }
@@ -96,6 +110,7 @@
           {/each}
         </div>
       </div>
+      {#if sizeError}<p class="text-[11px] text-warn">{sizeError}</p>{/if}
       <p class="text-[11px] text-warn">
         Replaces the current drawing, rig, undo history and the autosaved copy. Save first (File ▸
         Save) to keep it.
@@ -106,7 +121,9 @@
           onclick={onCancel}>Cancel</button
         >
         <button
-          class="rounded bg-accent px-3 py-1.5 text-xs text-accent-text hover:opacity-90"
+          class="rounded bg-accent px-3 py-1.5 text-xs text-accent-text hover:opacity-90 aria-disabled:opacity-40"
+          aria-disabled={sizeError !== null}
+          title={sizeError ?? "Create the new document"}
           onclick={confirm}>Create</button
         >
       </div>

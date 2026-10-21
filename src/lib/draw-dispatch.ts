@@ -3,7 +3,12 @@
 // events (already parsed into document-space InputPoints by input.ts) land on ui.selectedLayerId's
 // own canvas, resolved by id (layer array order is a display concern, not identity). Mild
 // pressure-response curve, applied uniformly regardless of brush engine.
-import { document as doc, markLayerDirty, clearLayerPixels } from "../state/doc.svelte";
+import {
+  document as doc,
+  markLayerDirty,
+  clearLayerPixels,
+  pushLayerPixels,
+} from "../state/doc.svelte";
 import {
   ui,
   isPaintTool,
@@ -13,13 +18,15 @@ import {
   pressureCurves,
   flashStatus,
   type Tool,
+  type BrushType,
 } from "../state/ui.svelte";
+import type { PressureCurve } from "../core/pressure-curve";
 import type { InputPoint } from "../core/input";
 import { drawStroke, widthRange, type BrushSettings } from "../core/brush";
 import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
 import { drawDryStroke } from "../core/dry-brush";
 import { drawWatercolorStroke } from "../core/watercolor-brush";
-import { pathSmoothRadius, REST_PX } from "../core/stroke-smoothing";
+import { pathSmoothRadius, REST_PX, STILL_PX } from "../core/stroke-smoothing";
 import { settledIndex } from "../core/stroke-freeze";
 import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
@@ -27,8 +34,8 @@ import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../c
 import { clampGap } from "../core/fill-holes";
 import type { Layer } from "../rig/document";
 import type { Selection } from "../core/selection";
-import { pixelCommand } from "../core/history";
-import { history, setStrokeOpen } from "../state/history.svelte";
+import { endPress, setOpenPress } from "../state/history.svelte";
+import { selectionCommands } from "../state/selection-commands";
 
 let getSelection: () => Selection | null = () => null;
 
@@ -91,17 +98,22 @@ function pressFor(tool: Tool): number {
  *  with the reason, where the pen is refused (slop-paint e745612): it used to wipe a hidden layer,
  *  an edit you couldn't see. */
 export function clearSelectedLayer() {
+  endPress();
   const layer = doc.layers.find((l) => l.id === ui.selectedLayerId);
   const block = whyNotEditable(layer);
   if (block || !layer) {
     flashStatus(`Clear layer — ${editBlockLabel(block ?? "no-layer")}`);
     return;
   }
-  clearLayerPixels(layer.id);
+  // A lifted float isn't in its layer yet: Esc after the Clear put back the pixels from before it
+  // over the cleared layer, and undo then lost the lifted ones (slop-paint 2469f87).
+  selectionCommands.applyFloat?.();
+  if (!clearLayerPixels(layer.id)) flashStatus("Clear layer — the layer is already empty");
 }
 
 /** Fill every ink-enclosed region on the selected layer, behind the strokes. */
 export function fillAllEnclosed() {
+  endPress();
   const layer = doc.layers.find((l) => l.id === ui.selectedLayerId);
   const ctx = layer?.canvas.getContext("2d");
   if (!layer || !ctx || whyNotEditable(layer)) return;
@@ -136,21 +148,8 @@ export function fillAllEnclosed() {
     );
   });
   markLayerDirty(layer.id);
-  const after = ctx.getImageData(0, 0, cw, ch);
-  history.push(
-    pixelCommand(
-      () => {
-        ctx.putImageData(before, 0, 0);
-        markLayerDirty(layer.id);
-      },
-      () => {
-        ctx.putImageData(after, 0, 0);
-        markLayerDirty(layer.id);
-      },
-      before,
-      after,
-    ),
-  );
+  if (!pushLayerPixels(ctx, layer.id, before, ctx.getImageData(0, 0, cw, ch)))
+    flashStatus("Nothing filled — the enclosed areas are outside the selection");
 }
 
 export function createDrawDispatch(opts?: {
@@ -178,6 +177,8 @@ export function createDrawDispatch(opts?: {
       pathSmoothRadius: pathSmoothRadius(slot.smoothing, opts?.getZoom?.() ?? 1),
       // A resting pen's jitter is on screen too (`holdRestPressure`).
       restRadius: REST_PX / (opts?.getZoom?.() ?? 1),
+      // And a pausing one's, for Sharp corners: the same stillness Stream's pause uses.
+      pauseRadius: STILL_PX / (opts?.getZoom?.() ?? 1),
       sharpCorners: ui.sharpCorners,
       isEraser,
       // Brush only, as slop-paint: the eraser ignores draw-behind.
@@ -219,6 +220,20 @@ export function createDrawDispatch(opts?: {
   // painting, even if ui.tool becomes a paint tool before release. `null` means no gesture is in
   // flight; reset there on every `done` call so the next gesture re-latches.
   let strokeTool: Tool | null = null;
+  /** The rest of a press whose stroke `finishStroke` already committed: ignored until it lifts. */
+  let dropUntilUp = false;
+
+  /** What a stroke draws with, fixed at its press: a finger on a size preset, the brush-type menu
+   *  or the curve mid-stroke changed it under way — stamps already laid at the old size fell outside
+   *  the undo rect worked out from the new one, and a frozen Ink part kept the old size (slop-paint
+   *  ac2bd70). */
+  type StrokeSetup = {
+    curve: PressureCurve;
+    sizeRange: number;
+    settings: BrushSettings;
+    brushType: BrushType;
+  };
+  let setup: StrokeSetup | null = null;
 
   // Undo capture. One scratch canvas reused for every stroke: at stroke start the layer is
   // blitted into it with `drawImage` (a GPU copy, no `getImageData`), so at stroke end `before`
@@ -346,34 +361,6 @@ export function createDrawDispatch(opts?: {
     return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
   }
 
-  /** Pushes one undo command for a pixel edit confined to `rect` on `layer`. Both directions
-   *  restore with `putImageData` (replace, not composite — required to keep transparent areas
-   *  transparent) then call `markLayerDirty`, so `deriveSlot`'s cache never serves a mesh derived
-   *  from pixels an undo/redo just replaced. */
-  function pushPixelCommand(
-    layer: Layer,
-    ctx: CanvasRenderingContext2D,
-    rect: Rect,
-    before: ImageData,
-    after: ImageData,
-  ) {
-    const layerId = layer.id;
-    history.push(
-      pixelCommand(
-        () => {
-          ctx.putImageData(before, rect.x, rect.y);
-          markLayerDirty(layerId);
-        },
-        () => {
-          ctx.putImageData(after, rect.x, rect.y);
-          markLayerDirty(layerId);
-        },
-        before,
-        after,
-      ),
-    );
-  }
-
   function endStroke() {
     if (drawRaf) {
       cancelAnimationFrame(drawRaf);
@@ -382,9 +369,38 @@ export function createDrawDispatch(opts?: {
     lastPoints = [];
     strokeLayer = null;
     strokeCtx = null;
+    setup = null;
     frozenTo = 0;
     frozen = null;
-    setStrokeOpen(false);
+    setOpenPress(null);
+  }
+
+  /** Draw the stroke's last frame and record it: its release, or `finishStroke`. */
+  function commitStroke(points: InputPoint[]) {
+    if (!strokeLayer || !strokeCtx || !setup) return;
+    if (drawRaf) {
+      cancelAnimationFrame(drawRaf);
+      drawRaf = 0;
+    }
+    paintStroke(points, true);
+    markLayerDirty(strokeLayer.id);
+    if (scratchCtx) {
+      const rect = computeDirtyRect(points, strokeLayer, setup.settings.size, setup.sizeRange);
+      const before = scratchCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
+      const after = strokeCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
+      // An eraser over nothing, or a stroke wholly outside the marquee, pushes no step.
+      pushLayerPixels(strokeCtx, strokeLayer.id, before, after, rect.x, rect.y);
+    }
+    endStroke();
+  }
+
+  /** The open press's finish (`endPress`): commit the stroke where it got to and ignore the rest
+   *  of the press. */
+  function finishStroke() {
+    if (lastPoints.length > 0) commitStroke(lastPoints);
+    else endStroke();
+    strokeTool = null;
+    dropUntilUp = true;
   }
 
   /** Restore the pre-stroke layer via GPU `drawImage` of the scratch — `putImageData` of a
@@ -400,14 +416,11 @@ export function createDrawDispatch(opts?: {
     ctx.restore();
   }
 
-  function paintStroke(points: InputPoint[], done: boolean, tool: Tool) {
-    if (!strokeLayer || !strokeCtx) return;
+  function paintStroke(points: InputPoint[], done: boolean) {
+    if (!strokeLayer || !strokeCtx || !setup) return;
     const ctx = strokeCtx;
-    const curve = pressureCurves[slotFor(tool)];
+    const { curve, sizeRange, settings, brushType } = setup;
     const curved = points.map((p) => ({ ...p, pressure: curve.evaluate(p.pressure) }));
-    const sizeRange = curved[0]?.hasPressure ? pressFor(tool) : 1;
-    const settings = buildBrushSettings(tool, strokeLayer);
-    const brushType = ui.stroke[slotFor(tool)].brushType;
 
     // Smooth, ink, calligraphy, dry and watercolor redraw the WHOLE stroke each frame from the
     // pre-stroke copy: a per-segment redraw re-composites each overlap and hardens the antialiased edge (see
@@ -421,7 +434,7 @@ export function createDrawDispatch(opts?: {
     ) {
       // Ink and Calligraphy draw a range: from the frozen part on (see `frozenTo`).
       const ranged = (target: CanvasRenderingContext2D, from: number, to = Infinity) => {
-        if (brushType === "ink") drawInkStroke(target, curved, settings, sizeRange, from, to);
+        if (brushType === "ink") drawInkStroke(target, curved, settings, sizeRange, from, to, done);
         else drawCalligraphyStroke(target, curved, settings, sizeRange, from, to);
       };
       if ((brushType === "ink" || brushType === "calligraphy") && settings.opacity >= 100 && !done)
@@ -429,7 +442,7 @@ export function createDrawDispatch(opts?: {
       restorePreStroke(ctx, strokeLayer);
       withClip(ctx, () => {
         if (brushType === "ink" || brushType === "calligraphy") ranged(ctx, unfrozenFrom());
-        else if (brushType === "dry") drawDryStroke(ctx, curved, settings, sizeRange);
+        else if (brushType === "dry") drawDryStroke(ctx, curved, settings, sizeRange, done);
         else if (brushType === "watercolor")
           drawWatercolorStroke(ctx, curved, settings, sizeRange, done);
         else drawStroke(ctx, curved, settings, done, sizeRange);
@@ -447,6 +460,10 @@ export function createDrawDispatch(opts?: {
     // draws, so it stands down for any gesture that didn't start under a painting tool. Latched
     // at the first call of the gesture (see strokeTool above) rather than re-read from ui.tool on
     // every call, and used in place of ui.tool for the rest of this function.
+    if (dropUntilUp) {
+      if (done) dropUntilUp = false;
+      return;
+    }
     if (strokeTool === null) strokeTool = ui.tool;
     const tool = strokeTool;
     if (done) strokeTool = null;
@@ -459,15 +476,30 @@ export function createDrawDispatch(opts?: {
         const fctx = layer?.canvas.getContext("2d") ?? null;
         if (layer && fctx) {
           const p = points[0];
+          const sx = Math.floor(p.x);
+          const sy = Math.floor(p.y);
+          if (sx < 0 || sy < 0 || sx >= layer.canvas.width || sy >= layer.canvas.height) {
+            flashStatus("Tap on the page to fill");
+            fillFired = !done;
+            return;
+          }
+          // Alpha lock keeps an empty area empty, so all a tap there could change is the soft edges
+          // of the lines round it (Soft tinted them with the fill colour). slop-paint a3a16c1.
+          if (layer.alphaLock && fctx.getImageData(sx, sy, 1, 1).data[3] === 0) {
+            flashStatus("Alpha lock is on — the bucket only recolours painted pixels");
+            fillFired = !done;
+            return;
+          }
           // Fill's affected rect is the whole canvas — a getImageData either side of it, not the
           // scratch-canvas dance the stroke path below uses, because fills are rare.
           const cw = layer.canvas.width;
           const ch = layer.canvas.height;
           const before = fctx.getImageData(0, 0, cw, ch);
+          let filled = false;
           fillThroughClip(
             fctx,
             (target) => {
-              floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.fillOpacity), {
+              filled = floodFill(target, p.x, p.y, hexToRgba(ui.fillValue, ui.fillOpacity), {
                 tolerance: ui.fillTolerance,
                 // Bridge closes line breaks for the bucket too (slop-paint ccd6bd1).
                 gap: clampGap(ui.fillGap),
@@ -479,9 +511,20 @@ export function createDrawDispatch(opts?: {
             },
             layer.alphaLock,
           );
+          // Nothing landed (already this colour, or clipped away): no step, which would wipe redo.
           markLayerDirty(layer.id);
-          const after = fctx.getImageData(0, 0, cw, ch);
-          pushPixelCommand(layer, fctx, { x: 0, y: 0, w: cw, h: ch }, before, after);
+          if (
+            !filled ||
+            !pushLayerPixels(fctx, layer.id, before, fctx.getImageData(0, 0, cw, ch))
+          ) {
+            flashStatus(
+              !filled
+                ? "Already this colour"
+                : getSelection()?.state === "selected"
+                  ? "Nothing filled — the area is outside the selection"
+                  : "Nothing changed — the area is already this colour",
+            );
+          }
         }
         fillFired = true;
       }
@@ -495,7 +538,13 @@ export function createDrawDispatch(opts?: {
       resetStampState();
       if (strokeLayer) {
         captureScratch(strokeLayer);
-        setStrokeOpen(true);
+        setup = {
+          curve: pressureCurves[slotFor(tool)],
+          sizeRange: points[0]?.hasPressure ? pressFor(tool) : 1,
+          settings: buildBrushSettings(tool, strokeLayer),
+          brushType: ui.stroke[slotFor(tool)].brushType,
+        };
+        setOpenPress(finishStroke);
       }
     }
     if (!strokeLayer || !strokeCtx) {
@@ -504,29 +553,11 @@ export function createDrawDispatch(opts?: {
     }
 
     lastPoints = points;
-    if (done) {
-      if (drawRaf) {
-        cancelAnimationFrame(drawRaf);
-        drawRaf = 0;
-      }
-      paintStroke(points, true, tool);
-      markLayerDirty(strokeLayer.id);
-      if (scratchCtx) {
-        const rect = computeDirtyRect(
-          points,
-          strokeLayer,
-          ui.stroke[slotFor(tool)].size,
-          points[0]?.hasPressure ? pressFor(tool) : 1,
-        );
-        const before = scratchCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
-        const after = strokeCtx.getImageData(rect.x, rect.y, rect.w, rect.h);
-        pushPixelCommand(strokeLayer, strokeCtx, rect, before, after);
-      }
-      endStroke();
-    } else if (!drawRaf) {
+    if (done) commitStroke(points);
+    else if (!drawRaf) {
       drawRaf = requestAnimationFrame(() => {
         drawRaf = 0;
-        paintStroke(lastPoints, false, tool);
+        paintStroke(lastPoints, false);
       });
     }
   }

@@ -33,9 +33,10 @@
   import ShareReadyDialog from "./ShareReadyDialog.svelte";
   import { canShareFile, isStandalone, saveToFilesAvailable, shareFile } from "./share";
   import { downloadBlob } from "./download";
+  import { focusNow } from "./focus-now";
   import ColorSwatch from "./ColorSwatch.svelte";
   import { exportBundle, ExportError } from "../export/bundle";
-  import { historyState, undo, redo } from "../state/history.svelte";
+  import { historyState, undo, redo, endPress } from "../state/history.svelte";
   import { clearSelectedLayer, fillAllEnclosed } from "./draw-dispatch";
   import { clipboard } from "../state/clipboard.svelte";
   import { selectionCommands } from "../state/selection-commands";
@@ -155,6 +156,9 @@
 
   function onNewDocument(width: number, height: number) {
     newDocOpen = false;
+    // A press still down (the Pencil resting while a finger taps Create) ends first: its next frame
+    // drew the old document's pre-stroke copy over the new one (slop-paint 8fdba64).
+    endPress();
     void clearAutosave();
     newDocument(width, height);
     window.dispatchEvent(new Event("slop-spine:fit-view"));
@@ -168,7 +172,15 @@
     mode: ResizeMode,
   ) {
     resizeOpen = false;
-    // A lifted float is in the old canvas's coordinates: apply it first (as slop-paint).
+    // The same size changes nothing: don't clear the undo history and the pose for it (slop-paint
+    // 262d921).
+    if (width === doc.canvas.width && height === doc.canvas.height) {
+      flashStatus("Same size — nothing changed");
+      return;
+    }
+    // A press still down ends first, and a lifted float, in the old canvas's coordinates, is
+    // applied (as slop-paint).
+    endPress();
     selectionCommands.applyFloat?.();
     resizeDocument(width, height, anchorX, anchorY, mode);
     window.dispatchEvent(new Event("slop-spine:fit-view"));
@@ -205,6 +217,9 @@
   // A web page can only put a file where the user chooses via the share sheet: Safari has no save
   // picker, and a download always lands in Downloads as a new copy. (As slop-paint.)
   let shareFileReady = $state<File | null>(null);
+  $effect(() => {
+    ui.dialogOpen = newDocOpen || resizeOpen || shareFileReady !== null;
+  });
 
   /** Hand a finished file to the share sheet. Used on iPad by Export, and by Save in the Home
    *  Screen app. */
@@ -235,7 +250,9 @@
     input.value = "";
     if (!file) return;
     try {
-      loadDocument(await loadProject(file));
+      const loaded = await loadProject(file);
+      endPress();
+      loadDocument(loaded);
       window.dispatchEvent(new Event("slop-spine:fit-view"));
     } catch (err) {
       console.error("load failed", err);
@@ -250,6 +267,7 @@
     if (!file) return;
     try {
       const imported = importPsd(await file.arrayBuffer());
+      endPress();
       loadDocument(imported);
       if (imported.layers.length)
         ui.selectedLayerId = imported.layers[imported.layers.length - 1].id;
@@ -324,7 +342,11 @@
   }
 
   function commitSize() {
-    const v = parseFloat(sizeInputValue);
+    // Escape already closed the field; Chrome's blur as it goes must not commit it (slop-paint
+    // 86aba98).
+    if (!editingSize) return;
+    // A comma decimal ("2,5") read as 2 (slop-paint b1c1a31).
+    const v = parseFloat(sizeInputValue.replace(",", "."));
     if (!isNaN(v) && v >= SIZE_MIN && v <= SIZE_MAX) slot.size = Math.round(v * 2) / 2;
     editingSize = false;
   }
@@ -717,13 +739,12 @@
         bind:value={slot.size}
       />
       {#if editingSize}
-        <!-- svelte-ignore a11y_autofocus -->
         <input
           class="h-7 w-12 rounded-md border border-border bg-surface-raised px-1 text-center text-[11px] text-text"
           type="text"
           inputmode="decimal"
           bind:value={sizeInputValue}
-          autofocus
+          use:focusNow
           onblur={commitSize}
           onkeydown={(e: KeyboardEvent) => {
             if (e.key === "Enter") {

@@ -10,7 +10,7 @@
     duplicateLayer,
     setLayerOpacity,
   } from "../state/doc.svelte";
-  import { ui } from "../state/ui.svelte";
+  import { ui, flashStatus } from "../state/ui.svelte";
   import type { Layer } from "../rig/document";
   import { autoScrollStep, ghostTop, pastThreshold, slideOffsets } from "./layer-drag-visual";
   import { dropTarget, type Drop, type RowBox } from "./layer-drop";
@@ -18,6 +18,7 @@
   import { sliderFill } from "./slider-fill";
   import { clearSelectedLayer } from "./draw-dispatch";
   import { selectionCommands } from "../state/selection-commands";
+  import { focusNow } from "./focus-now";
   import {
     Plus,
     Trash2,
@@ -387,11 +388,10 @@
             use:thumbnail={{ canvas: layer.canvas, rev: layer.revision }}
           ></canvas>
           {#if editingId === layer.id}
-            <!-- svelte-ignore a11y_autofocus -->
             <input
               class="layer-rename-input"
               bind:value={draftName}
-              autofocus
+              use:focusNow
               onblur={commitRename}
               onkeydown={onRenameKey}
               onclick={(e) => e.stopPropagation()}
@@ -428,6 +428,10 @@
             title={layer.visible ? "Visible — click to hide" : "Hidden — click to show"}
             onclick={(e) => {
               e.stopPropagation();
+              // A float lifted from this layer is applied first: hidden, its Apply would still draw
+              // into the layer, an edit a hidden layer otherwise refuses (slop-paint e392604).
+              if (layer.visible && selectionCommands.applyFloat?.(layer.id))
+                flashStatus("Applied the lifted selection before hiding its layer");
               toggleVisible(layer.id);
             }}
           >

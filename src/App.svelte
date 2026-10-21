@@ -6,7 +6,7 @@
   import Inspector from "./lib/Inspector.svelte";
   import StatusBar from "./lib/StatusBar.svelte";
   import { document as doc, loadDocument } from "./state/doc.svelte";
-  import { ui, applyPreferences, gatherPreferences } from "./state/ui.svelte";
+  import { ui, applyPreferences, gatherPreferences, flashStatus } from "./state/ui.svelte";
   import { armAutosave, restore } from "./persist/autosave";
   import { loadPreferences, savePreferences } from "./persist/preferences";
   import {
@@ -115,6 +115,28 @@
     prefsTimer = setTimeout(() => savePreferences(prefs), 400);
   });
 
+  /** A FILE dragged over or dropped anywhere is refused: the browser's own drop opened it in the
+   *  tab in the app's place, unsaved work and all (slop-paint eb1e5df). Dragged text still drops
+   *  into a field. File ▸ Open… / Import PSD… instead. */
+  function refuseFileDrop(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "none";
+  }
+
+  /** A failing autosave says so until one works: the warning stays (ms 0) so it isn't missed,
+   *  and is taken down by the next save that works, unless another message has replaced it. */
+  let autosaveWarning = "";
+  function autosaveResult(e: unknown | null) {
+    if (e) {
+      autosaveWarning = `Autosave is failing (${e instanceof Error ? e.message : String(e)}) — use File ▸ Save so this work isn't lost.`;
+      flashStatus(autosaveWarning, 0);
+    } else if (autosaveWarning) {
+      if (ui.statusMessage === autosaveWarning) flashStatus("");
+      autosaveWarning = "";
+    }
+  }
+
   $effect(() => {
     // Deep-read the document so this effect reruns on ANY mutation. JSON.stringify walks every own
     // enumerable property through the $state proxy's get/ownKeys traps, which registers a dependency
@@ -125,11 +147,16 @@
     JSON.stringify(doc);
 
     if (!ready || restoreFailed) return;
-    armAutosave(() => doc);
+    armAutosave(() => doc, autosaveResult);
   });
 </script>
 
-<svelte:window onresize={applyPanelPrefs} bind:innerWidth={viewportW} />
+<svelte:window
+  onresize={applyPanelPrefs}
+  ondragover={refuseFileDrop}
+  ondrop={refuseFileDrop}
+  bind:innerWidth={viewportW}
+/>
 
 <main
   class="flex h-dvh w-dvw flex-col bg-surface text-text"

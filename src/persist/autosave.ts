@@ -9,13 +9,23 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 
 /** Call on every document change. (Re)starts a 2s debounce; once it settles, zips the current
  *  document (via `getDoc`, called only then, so it captures the latest state) into the single
- *  autosave slot. */
-export function armAutosave(getDoc: () => RigDocument): void {
+ *  autosave slot. `onResult` hears whether it worked: a failure (encoding, or a full disk) only
+ *  reached the console, which an iPad hasn't got (slop-paint acaf77e). */
+export function armAutosave(
+  getDoc: () => RigDocument,
+  onResult?: (error: unknown | null) => void,
+): void {
   clearTimeout(timer);
   timer = setTimeout(() => {
     void saveProject(getDoc())
       .then((blob) => idbDo(KV_STORE, "readwrite", (s) => s.put(blob, KEY)))
-      .catch((e) => console.error("autosave failed", e));
+      .then(
+        () => onResult?.(null),
+        (e) => {
+          console.warn("autosave failed", e);
+          onResult?.(e);
+        },
+      );
   }, DEBOUNCE_MS);
 }
 

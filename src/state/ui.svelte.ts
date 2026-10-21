@@ -142,6 +142,9 @@ export function needsEditableLayer(tool: Tool): boolean {
 }
 
 export const ui = $state({
+  /** New, Resize or the share dialog is open: it owns the keyboard and the clipboard. Set by
+   *  Toolbar, which owns them. */
+  dialogOpen: false,
   selectedLayerId: null as number | null,
   selectedBone: null as string | null,
   tool: "brush" as Tool,
