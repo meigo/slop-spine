@@ -14,7 +14,7 @@ usually apply here too.
   slop-paint 2026-10-01): the app in WebKit at iPad Pro 11 with touch, in a fresh PERSISTENT temp
   profile (ephemeral WebKit refuses Blobs in IndexedDB, so every autosave failed). Starts its own
   dev server; `npm run test:ipad -- <url>` checks a URL. ~20 checks: first layer, pen stroke, undo/redo
-  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, Undo with a lifted selection, a failing autosave said in the status bar, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
+  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, Undo with a lifted selection, a typed bone name kept on a click on another bone, a failing autosave said in the status bar, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
   Pose bends the drawing, Export Spine (the zip is unzipped: bones, mesh, atlas, PNG), Resize (Crop / extend and Scale drawing, the rig follows), add layer,
   double-tap rename, a hidden layer refuses the pen and Clear layer, Duplicate with a lifted
   selection, the layer-row finger drag (ghost, gap,
@@ -64,7 +64,8 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   handles open over it. slop-paint applies it on the switch, with a status message (Apply is
   undoable, Cancel isn't)
 - **Autosave** (`4064b59`): the 2 s debounce here (`persist/autosave.ts:6-20`, `App.svelte:123-128`)
-  doesn't wait for the pen, there's no save on tab hide, and a failure only reaches the console.
+  doesn't wait for the pen and there's no save on tab hide (a failure is said in the status bar since
+  2026-10-21).
   The zip save is mostly async, so hitches rather than one long freeze
 - **Clipboard paste** (`f388495`, `b5e837b`): errors are generic (`Canvas.svelte:1133-1135`), and a
   clipboard item with no `image/*` type says "No image found". slop-paint gives the browser's
@@ -86,8 +87,9 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   64-px tiles (`changedTiles` / `cropPixels`)
 - **Not taken from slop-paint's second review** (`fix/code-review`, 2026-10-17..21, ported here
   2026-10-21 on `fix/paint-code-review`): `e24e250`'s open half (`readPsd` decodes the thumbnail and composite too: `skipCompositeImageData`
-  would leave a file of only empty/ignored layers with none); the bone name field's draft may be
-  lost when the selected bone changes before blur (unverified, like paint's `cc0bafa`); `addLayer`
+  would leave a file of only empty/ignored layers with none); the bone name field: checked 2026-10-21, a mouse click on another bone blurs and commits it
+  first (test:ipad), but on the iPad a canvas press may keep the field focused (item (f)), which
+  would lose the draft; `addLayer`
   pushes no undo step, so an image pasted as a layer can't be undone.
 
 ### Doesn't apply
