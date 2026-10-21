@@ -835,9 +835,20 @@ async function main(page) {
     const other = await field.inputValue();
     await click(at(0.5, 0.33)); // back to the neck
     const name = await field.inputValue();
+    // The same with a dispatched Pencil tap, which moves no focus — as on the iPad, where the
+    // canvas press kept the field focused: the canvas blurs it itself (blurTextEntry).
+    await field.tap();
+    await field.fill("Head");
+    const tapAt = async (p) => {
+      await pen(line(p, p), { n: 2 });
+      await page.waitForTimeout(150);
+    };
+    await tapAt(at(0.5, 0.62));
+    await tapAt(at(0.5, 0.33));
+    const penName = await field.inputValue();
     return [
-      name === "Neck" && other !== "Neck",
-      `a typed bone name survives a click on another bone (${other}, then "${name}")`,
+      name === "Neck" && other !== "Neck" && penName === "Head",
+      `[sim] a typed bone name survives a click or a Pencil tap on another bone (${other}, then "${name}"; Pencil "${penName}")`,
       "bone-name",
     ];
   });

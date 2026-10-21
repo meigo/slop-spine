@@ -14,7 +14,7 @@ usually apply here too.
   slop-paint 2026-10-01): the app in WebKit at iPad Pro 11 with touch, in a fresh PERSISTENT temp
   profile (ephemeral WebKit refuses Blobs in IndexedDB, so every autosave failed). Starts its own
   dev server; `npm run test:ipad -- <url>` checks a URL. ~20 checks: first layer, pen stroke, undo/redo
-  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, Undo with a lifted selection, a typed bone name kept on a click on another bone, a failing autosave said in the status bar, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
+  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, Undo with a lifted selection, a typed bone name kept on a click or Pencil tap on another bone, a failing autosave said in the status bar, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
   Pose bends the drawing, Export Spine (the zip is unzipped: bones, mesh, atlas, PNG), Resize (Crop / extend and Scale drawing, the rig follows), add layer,
   double-tap rename, a hidden layer refuses the pen and Clear layer, Duplicate with a lifted
   selection, the layer-row finger drag (ghost, gap,
@@ -43,7 +43,7 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
 ### Worth porting
 
 - **More from slop-paint's code review** (added 2026-09-30, slop-paint `1c8b5fd`): (a) done
-  2026-10-21 with slop-paint's second review (below). Check too (these depend on each app's own code): (b) a structural undo step pushed when nothing changed (merge with nothing below, deleting the last layer) wipes redo — slop-paint skips it (`sameStructure`) and says why; (c) deleted/merged layers kept alive by undo but not counted in the memory budget (`detachedLayerBytes`); (d) opening a project that fails partway should leave the open document untouched (build aside, swap at the end); (e) Space-to-pan re-activates the last clicked button in Chrome unless Space's default is claimed; (f) a canvas press that prevents default never blurs a focused text field — on iPad the keyboard stays up.
+  2026-10-21 with slop-paint's second review (below). Check too (these depend on each app's own code): (b) a structural undo step pushed when nothing changed (merge with nothing below, deleting the last layer) wipes redo — slop-paint skips it (`sameStructure`) and says why; (c) deleted/merged layers kept alive by undo but not counted in the memory budget (`detachedLayerBytes`); (d) opening a project that fails partway should leave the open document untouched (build aside, swap at the end); (e) Space-to-pan re-activates the last clicked button in Chrome unless Space's default is claimed; (f) done 2026-10-21 (`blurTextEntry`, with `isTextEntry`, which also ended the slider-keeps-shortcuts-dead item, `c7d3e8a`).
 - **Autosave copies and a blank-layers guard** (`2c53625`, added 2026-09-30): on iPad a
   backgrounded 40-layer slop-paint document came back with every layer listed and EMPTY (iOS
   reclaimed the page's image memory), and the next autosave would have replaced the only copy.
@@ -71,9 +71,6 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   clipboard item with no `image/*` type says "No image found". slop-paint gives the browser's
   reason, lists what the clipboard holds, and fetches an image copied only as its address
   (`imageUrlFromClipboard` in `paste.ts`)
-- **Shortcuts after touching a slider** (`c7d3e8a`; read, not tested): `Canvas.svelte:598-599`
-  ignores keys while any `<input>` has focus, and a slider keeps focus after a drag. Copy
-  slop-paint's `lib/text-entry.ts` `isTextEntry`
 - **Open picker on iPad Safari** (`313496d`): `accept=".psd"` / `".zip"` only
   (`Toolbar.svelte:358-359`) can grey the files out; add the MIME types
 - **Select the whole text on focus** (`085d9af`, `lib/select-on-focus.ts`): layer rename
@@ -87,9 +84,7 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   64-px tiles (`changedTiles` / `cropPixels`)
 - **Not taken from slop-paint's second review** (`fix/code-review`, 2026-10-17..21, ported here
   2026-10-21 on `fix/paint-code-review`): `e24e250`'s open half (`readPsd` decodes the thumbnail and composite too: `skipCompositeImageData`
-  would leave a file of only empty/ignored layers with none); the bone name field: checked 2026-10-21, a mouse click on another bone blurs and commits it
-  first (test:ipad), but on the iPad a canvas press may keep the field focused (item (f)), which
-  would lose the draft; `addLayer`
+  would leave a file of only empty/ignored layers with none); `addLayer`
   pushes no undo step, so an image pasted as a layer can't be undone.
 
 ### Doesn't apply

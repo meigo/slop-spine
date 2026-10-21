@@ -37,6 +37,7 @@
   import { boneTip, reparentDropTarget } from "../rig/chain";
   import type { Tool } from "../state/ui.svelte";
   import { Viewport, wheelPx, wheelZoomFactor } from "../core/viewport";
+  import { isTextEntry } from "./text-entry";
   import { setupInput, isStageChromeTarget } from "../core/input";
   import { computeImagePlacement } from "../core/image-fit";
   import { setupTouchGestures } from "../core/touch-gestures";
@@ -602,8 +603,19 @@
 
   /** Focus is in a text field: keys and paste are its own. */
   function inTextEntry(): boolean {
-    const tag = (document.activeElement as HTMLElement | null)?.tagName;
-    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    const el = document.activeElement as HTMLElement | null;
+    // Not every <input>: a slider keeps focus after a drag (the canvas blocks the focus change on
+    // press), and Ctrl+Z and the tool keys were dead until a click elsewhere (slop-paint c7d3e8a).
+    return isTextEntry(el) || el?.tagName === "SELECT";
+  }
+
+  /** A press on the canvas leaves a text field (layer rename, bone name, size box): the canvas
+   *  blocks the browser's focus change on press, which also kept the field focused — on iPad the
+   *  keyboard stayed up and a typed name stayed uncommitted, then lost to the next bone's
+   *  (slop-paint 1c8b5fd). Blurring commits it, while the old bone is still selected. */
+  function blurTextEntry() {
+    const el = document.activeElement as HTMLElement | null;
+    if (isTextEntry(el)) el!.blur();
   }
 
   function onKeyDown(e: KeyboardEvent) {
@@ -1570,6 +1582,7 @@
 
     // Capture-phase on `stage` so a pan preempts input.ts's bubble-phase listeners
     // (same precedence slop-animator's Canvas.svelte uses).
+    stage.addEventListener("pointerdown", blurTextEntry, { capture: true });
     stage.addEventListener("pointerdown", onStagePointerDown, { capture: true });
     stage.addEventListener("pointermove", onStagePointerMove, { capture: true });
     stage.addEventListener("pointerup", onStagePointerUp, { capture: true });
@@ -1663,6 +1676,7 @@
       stage.removeEventListener("pointerup", onCursorMove);
       stage.removeEventListener("pointerleave", onCursorLeave);
       resizeObserver.disconnect();
+      stage.removeEventListener("pointerdown", blurTextEntry, { capture: true });
       stage.removeEventListener("pointerdown", onStagePointerDown, { capture: true });
       stage.removeEventListener("pointermove", onStagePointerMove, { capture: true });
       stage.removeEventListener("pointerup", onStagePointerUp, { capture: true });
