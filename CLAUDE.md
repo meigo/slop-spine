@@ -14,7 +14,7 @@ usually apply here too.
   slop-paint 2026-10-01): the app in WebKit at iPad Pro 11 with touch, in a fresh PERSISTENT temp
   profile (ephemeral WebKit refuses Blobs in IndexedDB, so every autosave failed). Starts its own
   dev server; `npm run test:ipad -- <url>` checks a URL. ~20 checks: first layer, pen stroke, undo/redo
-  and two-finger-tap undo, fingers and Ctrl+Z during a pen stroke, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
+  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
   Pose bends the drawing, Export Spine (the zip is unzipped: bones, mesh, atlas, PNG), Resize (Crop / extend and Scale drawing, the rig follows), add layer,
   double-tap rename, a hidden layer refuses the pen and Clear layer, Duplicate with a lifted
   selection, the layer-row finger drag (ghost, gap,
@@ -42,7 +42,8 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
 
 ### Worth porting
 
-- **More from slop-paint's code review** (added 2026-09-30, slop-paint `1c8b5fd`): (a) `core/selection.ts` `copyPixels` copies whole device pixels (`Math.round(r.x * dpr)`…) but leaves the selection rect fractional, so clearRegion clears and renderFloatingTo redraws off-grid: a marquee with fractional edges (zoom, Pencil) blurs the art on every move-and-Apply — slop-paint sets `this.rect` to the snapped pixels there (verified: move 10 px and back was identical with it, changed without). Check too (these depend on each app's own code): (b) a structural undo step pushed when nothing changed (merge with nothing below, deleting the last layer) wipes redo — slop-paint skips it (`sameStructure`) and says why; (c) deleted/merged layers kept alive by undo but not counted in the memory budget (`detachedLayerBytes`); (d) opening a project that fails partway should leave the open document untouched (build aside, swap at the end); (e) Space-to-pan re-activates the last clicked button in Chrome unless Space's default is claimed; (f) a canvas press that prevents default never blurs a focused text field — on iPad the keyboard stays up.
+- **More from slop-paint's code review** (added 2026-09-30, slop-paint `1c8b5fd`): (a) done
+  2026-10-21 with slop-paint's second review (below). Check too (these depend on each app's own code): (b) a structural undo step pushed when nothing changed (merge with nothing below, deleting the last layer) wipes redo — slop-paint skips it (`sameStructure`) and says why; (c) deleted/merged layers kept alive by undo but not counted in the memory budget (`detachedLayerBytes`); (d) opening a project that fails partway should leave the open document untouched (build aside, swap at the end); (e) Space-to-pan re-activates the last clicked button in Chrome unless Space's default is claimed; (f) a canvas press that prevents default never blurs a focused text field — on iPad the keyboard stays up.
 - **Autosave copies and a blank-layers guard** (`2c53625`, added 2026-09-30): on iPad a
   backgrounded 40-layer slop-paint document came back with every layer listed and EMPTY (iOS
   reclaimed the page's image memory), and the next autosave would have replaced the only copy.
@@ -83,8 +84,13 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   (`draw-dispatch.ts:391-399`), but fill, selection commit and Clear store the whole layer
   (`:347,362`, `Canvas.svelte:928,1177`, `doc.svelte.ts:168`). slop-paint keeps only the changed
   64-px tiles (`changedTiles` / `cropPixels`)
-- **Touch gestures**, when syncing the file: `core/touch-gestures.ts:~107` resets `gestureDidMove`
-  on every finger-down, so a finger joining a moved pan can read as a tap (slop-paint `e61dc5a`)
+- **Not taken from slop-paint's second review** (`fix/code-review`, 2026-10-17..21, ported here
+  2026-10-21 on `fix/paint-code-review`): Undo/Redo with a float lifted isn't guarded (paint cancels
+  the float first); `acaf77e` autosave errors only reach the console (part of Autosave above);
+  `e24e250`'s open half (`readPsd` decodes the thumbnail and composite too: `skipCompositeImageData`
+  would leave a file of only empty/ignored layers with none); the bone name field's draft may be
+  lost when the selected bone changes before blur (unverified, like paint's `cc0bafa`); `addLayer`
+  pushes no undo step, so an image pasted as a layer can't be undone.
 
 ### Doesn't apply
 
