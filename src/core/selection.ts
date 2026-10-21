@@ -257,6 +257,10 @@ export class Selection {
   }
 
   endCreate() {
+    // A paste mid-press ended the create (pasteFloat): the release must not treat the float as
+    // the marquee — it dropped a small paste as a tap and reset the float's matrix (slop-paint
+    // 18ace55; Canvas's paste also ends the press first).
+    if (!this.isCreating) return;
     this.isCreating = false;
     // A tap (or a drag under 3 SCREEN px a side) makes no marquee. It was 3 page px: zoomed out a
     // tap's jitter kept a speck of a marquee that clipped the next stroke, and zoomed in a
@@ -407,6 +411,7 @@ export class Selection {
   /** Enter a floating transform from externally-supplied pixels (paste): position at `rect` as a
    *  rectangular float and go to "transforming" (beginTransform resets the matrix to identity). */
   pasteFloat(pixels: HTMLCanvasElement, rect: SelectionRect): void {
+    this.isCreating = false; // the rest of a held marquee press would rewrite the float's rect
     this.rect = { ...rect };
     this.mode = "rect";
     this.lassoPath = null;
