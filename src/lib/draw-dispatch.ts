@@ -29,6 +29,7 @@ import type { Layer } from "../rig/document";
 import type { Selection } from "../core/selection";
 import { pixelCommand } from "../core/history";
 import { history, setStrokeOpen } from "../state/history.svelte";
+import { selectionCommands } from "../state/selection-commands";
 
 let getSelection: () => Selection | null = () => null;
 
@@ -103,6 +104,9 @@ export function clearSelectedLayer() {
     flashStatus(`Clear layer — ${editBlockLabel(block ?? "no-layer")}`);
     return;
   }
+  // A lifted float isn't in its layer yet: Esc after the Clear put back the pixels from before it
+  // over the cleared layer, and undo then lost the lifted ones (slop-paint 2469f87).
+  selectionCommands.applyFloat?.();
   clearLayerPixels(layer.id);
 }
 

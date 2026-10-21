@@ -1565,8 +1565,11 @@
     selectionCommands.resetPins = () => selection?.resetPins();
     selectionCommands.apply = () => selection?.commit();
     selectionCommands.cancel = () => selection?.cancel();
-    selectionCommands.applyFloat = () => {
-      if (selection?.hasFloating) selection.commit();
+    selectionCommands.applyFloat = (layerId) => {
+      if (!selection?.hasFloating) return false;
+      if (layerId !== undefined && layerId !== selLayerId) return false;
+      selection.commit();
+      return true;
     };
 
     // Image import. Precedence is read straight off the clipboard rather than latched from the
