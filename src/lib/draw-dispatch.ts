@@ -26,7 +26,7 @@ import { drawStroke, widthRange, type BrushSettings } from "../core/brush";
 import { drawInkStroke, MAX_DWELL_SWELL } from "../core/ink-brush";
 import { drawDryStroke } from "../core/dry-brush";
 import { drawWatercolorStroke } from "../core/watercolor-brush";
-import { pathSmoothRadius, REST_PX } from "../core/stroke-smoothing";
+import { pathSmoothRadius, REST_PX, STILL_PX } from "../core/stroke-smoothing";
 import { settledIndex } from "../core/stroke-freeze";
 import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
@@ -177,6 +177,8 @@ export function createDrawDispatch(opts?: {
       pathSmoothRadius: pathSmoothRadius(slot.smoothing, opts?.getZoom?.() ?? 1),
       // A resting pen's jitter is on screen too (`holdRestPressure`).
       restRadius: REST_PX / (opts?.getZoom?.() ?? 1),
+      // And a pausing one's, for Sharp corners: the same stillness Stream's pause uses.
+      pauseRadius: STILL_PX / (opts?.getZoom?.() ?? 1),
       sharpCorners: ui.sharpCorners,
       isEraser,
       // Brush only, as slop-paint: the eraser ignores draw-behind.
