@@ -33,6 +33,7 @@
   import ShareReadyDialog from "./ShareReadyDialog.svelte";
   import { canShareFile, isStandalone, saveToFilesAvailable, shareFile } from "./share";
   import { downloadBlob } from "./download";
+  import { focusNow } from "./focus-now";
   import ColorSwatch from "./ColorSwatch.svelte";
   import { exportBundle, ExportError } from "../export/bundle";
   import { historyState, undo, redo } from "../state/history.svelte";
@@ -330,7 +331,11 @@
   }
 
   function commitSize() {
-    const v = parseFloat(sizeInputValue);
+    // Escape already closed the field; Chrome's blur as it goes must not commit it (slop-paint
+    // 86aba98).
+    if (!editingSize) return;
+    // A comma decimal ("2,5") read as 2 (slop-paint b1c1a31).
+    const v = parseFloat(sizeInputValue.replace(",", "."));
     if (!isNaN(v) && v >= SIZE_MIN && v <= SIZE_MAX) slot.size = Math.round(v * 2) / 2;
     editingSize = false;
   }
@@ -723,13 +728,12 @@
         bind:value={slot.size}
       />
       {#if editingSize}
-        <!-- svelte-ignore a11y_autofocus -->
         <input
           class="h-7 w-12 rounded-md border border-border bg-surface-raised px-1 text-center text-[11px] text-text"
           type="text"
           inputmode="decimal"
           bind:value={sizeInputValue}
-          autofocus
+          use:focusNow
           onblur={commitSize}
           onkeydown={(e: KeyboardEvent) => {
             if (e.key === "Enter") {

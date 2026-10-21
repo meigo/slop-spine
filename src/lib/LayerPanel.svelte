@@ -18,6 +18,7 @@
   import { sliderFill } from "./slider-fill";
   import { clearSelectedLayer } from "./draw-dispatch";
   import { selectionCommands } from "../state/selection-commands";
+  import { focusNow } from "./focus-now";
   import {
     Plus,
     Trash2,
@@ -387,11 +388,10 @@
             use:thumbnail={{ canvas: layer.canvas, rev: layer.revision }}
           ></canvas>
           {#if editingId === layer.id}
-            <!-- svelte-ignore a11y_autofocus -->
             <input
               class="layer-rename-input"
               bind:value={draftName}
-              autofocus
+              use:focusNow
               onblur={commitRename}
               onkeydown={onRenameKey}
               onclick={(e) => e.stopPropagation()}
