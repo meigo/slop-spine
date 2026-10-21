@@ -1,4 +1,5 @@
 import { History } from "../core/history";
+import { selectionCommands } from "./selection-commands";
 
 /** The single undo/redo stack for the document's pixel edits. */
 export const history = new History();
@@ -42,10 +43,15 @@ export function endPress(): void {
   finish?.();
 }
 
+/** With a lifted float, Undo and Redo only put it back, as slop-paint: the float holds the layer as
+ *  it was before the lift, so stepping history under it was lost to the Apply that followed — the
+ *  undone step dropped out of redo, and undoing the Apply brought it back. */
 export function undo(): void {
-  if (!openPress) history.undo();
+  if (openPress || selectionCommands.cancelFloat?.()) return;
+  history.undo();
 }
 
 export function redo(): void {
-  if (!openPress) history.redo();
+  if (openPress || selectionCommands.cancelFloat?.()) return;
+  history.redo();
 }

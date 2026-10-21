@@ -958,6 +958,27 @@ async function main(page) {
   });
 
   await step(async () => {
+    // Undo with a lifted selection puts the float back and undoes nothing else (slop-paint): it
+    // undid the step before while the float stayed up, and the Apply after it recorded the hole.
+    const before = await ink(whole());
+    await pen(line(at(0.2, 0.2), at(0.8, 0.8)), { n: 10 }); // a marquee over the body
+    await page.waitForTimeout(150);
+    await pen(line(at(0.5, 0.5), at(0.5, 0.6)), { n: 15 }); // dragged: lifted and moved
+    await page.waitForTimeout(200);
+    const lifted = (await page.locator('button[title="Apply (Enter)"]').count()) > 0;
+    await tapButton("Undo");
+    await page.waitForTimeout(200);
+    const floating = (await page.locator('button[title="Apply (Enter)"]').count()) > 0;
+    const after = await ink(whole());
+    await page.keyboard.press("Escape");
+    return [
+      lifted && !floating && after === before,
+      `[sim] Undo with a lifted selection only puts it back (lifted ${lifted}, still floating ${floating}; ${before} → ${after} painted px)`,
+      "undo-float",
+    ];
+  });
+
+  await step(async () => {
     // At least three rows, so a drop one slot down moves only the top two (the rest stay put).
     await tapButton("Add layer");
     const before = await rowNames();

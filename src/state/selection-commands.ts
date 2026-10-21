@@ -29,6 +29,8 @@ export const selectionCommands: {
    *  copy the hole the float left (slop-paint e745612), and Clear layer. With `layerId`, only a
    *  float lifted from that layer. True when it baked one. */
   applyFloat: ((layerId?: number) => boolean) | null;
+  /** Drop a lifted float, if any, putting its pixels back (as Esc). True when there was one. */
+  cancelFloat: (() => boolean) | null;
 } = {
   copy: null,
   cut: null,
@@ -44,4 +46,5 @@ export const selectionCommands: {
   apply: null,
   cancel: null,
   applyFloat: null,
+  cancelFloat: null,
 };

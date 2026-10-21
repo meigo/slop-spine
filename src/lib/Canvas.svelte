@@ -1616,6 +1616,11 @@
       endPress();
       selection?.cancel();
     };
+    selectionCommands.cancelFloat = () => {
+      if (!selection?.hasFloating) return false;
+      selection.cancel();
+      return true;
+    };
     selectionCommands.applyFloat = (layerId) => {
       if (!selection?.hasFloating) return false;
       if (layerId !== undefined && layerId !== selLayerId) return false;
