@@ -763,6 +763,61 @@ async function main(page) {
   });
 
   await step(async () => {
+    // The Blend tool moves the paint already there: a stroke across the outline changes its pixels
+    // and one Undo puts them back exactly. It keeps its own size (the brush's is untouched), shows
+    // no brush-type menu, and that menu has no Blend. Its time is set against the same stroke with
+    // the brush: the layers here are not CPU canvases, as slop-paint's are, and Blend reads every dab.
+    const snap = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('[class*="paper-"] + canvas');
+        window.__before = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      });
+    const changed = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('[class*="paper-"] + canvas');
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i++) if (Math.abs(d[i] - window.__before[i]) > 2) n++;
+        return n;
+      });
+    const across = line(at(0.3, 0.45), at(0.46, 0.55));
+    const timed = async () => {
+      const t0 = Date.now();
+      await pen(across, { n: 60, wait: 4, p: () => 0.8 });
+      return Date.now() - t0;
+    };
+    await tapButton("Brush (B)");
+    const brushSize = await button("Click to type exact size").innerText();
+    const brushMs = await timed();
+    await page.waitForTimeout(200);
+    await tapButton("Undo");
+    await snap();
+    await tapButton("Blend (J)");
+    const noTypeMenu = (await page.locator('select[title="Brush"]').count()) === 0;
+    const blendSize = await button("Click to type exact size").innerText();
+    const blendMs = await timed();
+    await page.waitForTimeout(300);
+    const moved = await changed();
+    await tapButton("Undo");
+    await page.waitForTimeout(200);
+    const left = await changed();
+    await tapButton("Brush (B)");
+    const brushAfter = await button("Click to type exact size").innerText();
+    const menuHasBlend =
+      (await page.locator('select[title="Brush"] option[value="blend"]').count()) > 0;
+    return [
+      moved > 500 &&
+        left === 0 &&
+        noTypeMenu &&
+        !menuHasBlend &&
+        blendSize === "20" &&
+        brushAfter === brushSize,
+      `[sim] the Blend tool smudges the outline (${moved} channel values changed), one Undo puts it back (${left} left); its size is its own (${blendSize}, the brush's still ${brushAfter}); no type menu under it, no Blend in the brush's; the stroke took ${blendMs} ms against the brush's ${brushMs} ms`,
+      "blend",
+    ];
+  });
+
+  await step(async () => {
     const z0 = await zoom();
     await gesture([
       { type: "down", id: 11, kind: "touch", ...at(0.45, 0.5) },
@@ -1266,7 +1321,15 @@ try {
       return r1.scrollWidth <= r1.clientWidth;
     });
     const heights = [];
-    for (const t of ["Brush (B)", "Eraser (E)", "Fill (G)", "Rect select", "Lasso", "Rig (R)"]) {
+    for (const t of [
+      "Brush (B)",
+      "Eraser (E)",
+      "Blend (J)",
+      "Fill (G)",
+      "Rect select",
+      "Lasso",
+      "Rig (R)",
+    ]) {
       await pp.locator(`button[title^="${t}"]`).first().tap();
       await pp.waitForTimeout(200);
       const h = await pp.evaluate(

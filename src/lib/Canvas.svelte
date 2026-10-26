@@ -24,6 +24,7 @@
     ui,
     overlayFlags,
     isSelectTool,
+    isStrokeTool,
     toolFromKey,
     whyNotEditable,
     editBlockLabel,
@@ -514,13 +515,13 @@
   let brushCursorVisible = false;
 
   /** The canvas cursor for every tool but Rig (which sets its own on the paper canvas), as
-   *  slop-paint's: the nib for brush/eraser, a crosshair for the others, and over a selection's
+   *  slop-paint's: the nib for brush/eraser/Blend, a crosshair for the others, and over a selection's
    *  handles the cursor for what that handle does. A blocked layer leaves the stage's own
    *  not-allowed class showing. */
   function updateBrushCursor(e: PointerEvent) {
     if (!brushCursorEl || !brushDotEl || !viewport) return;
     if (e.pointerType === "touch") return;
-    const isBrushTool = ui.tool === "brush" || ui.tool === "eraser";
+    const isBrushTool = isStrokeTool(ui.tool);
     if (!isBrushTool || spaceHeld || panning || e.buttons !== 0 || editBlock) {
       hideBrushCursor();
       if (spaceHeld || panning) stage.style.cursor = panning ? "grabbing" : "grab";
@@ -1559,14 +1560,12 @@
     // Streamline is a brush preference: on the other tools it would make a marquee or the
     // eyedropper trail the pen (as slop-paint).
     const cleanupInput = setupInput(stage, handleStroke, transformCoords, {
-      streamline: () =>
-        ui.tool === "brush" || ui.tool === "eraser"
-          ? ui.stroke[slotFor(ui.tool)].streamline / 100
-          : 0,
-      // The stamp tips follow the points exactly, so they always get a short string
+      streamline: () => (isStrokeTool(ui.tool) ? ui.stroke[slotFor(ui.tool)].streamline / 100 : 0),
+      // The stamp tips and Blend follow the points exactly, so they always get a short string
       // (STAMP_MIN_ROPE_PX): at Stream 0 a thin Pencil line came out stepped on iPad (slop-paint).
       minRopePx: () => {
-        if (ui.tool !== "brush" && ui.tool !== "eraser") return 0;
+        if (ui.tool === "blend") return STAMP_MIN_ROPE_PX;
+        if (!isStrokeTool(ui.tool)) return 0;
         const type = ui.stroke[slotFor(ui.tool)].brushType;
         return type === "pencil" || type === "charcoal" || type === "airbrush"
           ? STAMP_MIN_ROPE_PX

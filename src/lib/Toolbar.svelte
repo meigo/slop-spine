@@ -4,6 +4,7 @@
     ui,
     isPaintTool,
     isSelectTool,
+    isStrokeTool,
     bumpCurve,
     whyNotEditable,
     editBlockLabel,
@@ -16,6 +17,7 @@
     SIZE_PRESETS,
     type Tool,
     type BrushType,
+    type SlotName,
   } from "../state/ui.svelte";
   import {
     document as doc,
@@ -45,7 +47,7 @@
   import { SOFT_STEPS, softStepIndex } from "../core/fill";
   import { MAX_NIB_FLATNESS } from "../core/calligraphy-brush";
   import { PENCIL_GRADES } from "../core/stamp-brush";
-  import { CHARCOAL_TEXTURES } from "../core/brush-textures";
+  import { BLEND_TIPS, CHARCOAL_TEXTURES } from "../core/brush-textures";
   import { PRESS_MAX, PRESS_MIN } from "../core/brush";
   import { clickOutside } from "./click-outside";
   import { sliderFill } from "./slider-fill";
@@ -53,6 +55,7 @@
   import {
     Paintbrush,
     Eraser,
+    Droplet,
     PaintBucket,
     Pipette,
     BoxSelect,
@@ -94,8 +97,14 @@
   const toolsDimmed = $derived(editBlock === "no-layer");
   const canPaint = $derived(editBlock === null);
 
-  // The active stroke tool's own settings (the eraser's, or the brush's for every other tool).
+  // The active stroke tool's own settings (the eraser's, Blend's, or the brush's for every other
+  // tool).
   const slot = $derived(ui.stroke[slotFor(ui.tool)]);
+  /** The Blend tool moves paint instead of laying it down: its Opacity is how strongly, and it has
+   *  no type, colour or Draw behind. */
+  const blending = $derived(ui.tool === "blend");
+  /** Whose options the gear shows: Blend's slot holds a brush type it never draws with. */
+  const brushOptions = $derived(blending ? null : slot.brushType);
 
   // --- Class strings, as slop-paint's Toolbar. ---
   const toolBtn =
@@ -130,6 +139,12 @@
     [
       { tool: "brush", icon: Paintbrush, title: "Brush (B)", needsLayer: true },
       { tool: "eraser", icon: Eraser, title: "Eraser (E)", needsLayer: true },
+      {
+        tool: "blend",
+        icon: Droplet,
+        title: "Blend (J) — blur, smudge or smear the paint on the layer",
+        needsLayer: true,
+      },
       { tool: "fill", icon: PaintBucket, title: "Fill (G)", needsLayer: true },
       {
         tool: "eyedropper",
@@ -312,15 +327,16 @@
   /** The fill's gear: Expand, Soft and Bridge. */
   let fillSettingsOpen = $state(false);
   let curveHostEl = $state<HTMLDivElement | null>(null);
-  let curveEditors: Record<"brush" | "eraser", HTMLElement & { redraw: () => void }> | null = null;
+  let curveEditors: Record<SlotName, HTMLElement & { redraw: () => void }> | null = null;
 
-  // Brush and eraser have their own curve, so there is an editor per tool. The host only exists
+  // Brush, eraser and Blend have their own curve, so there is an editor per tool. The host only exists
   // while the popover is open, so attach the active tool's editor whenever either changes.
   $effect(() => {
     if (!curveHostEl) return;
     curveEditors ??= {
       brush: createCurveEditor(pressureCurves.brush, bumpCurve),
       eraser: createCurveEditor(pressureCurves.eraser, bumpCurve),
+      blend: createCurveEditor(pressureCurves.blend, bumpCurve),
     };
     const editor = curveEditors[slotFor(ui.tool)];
     // The host is empty in the markup, so Svelte owns none of what this swaps.
@@ -411,7 +427,8 @@
 <ShareReadyDialog file={shareFileReady} onClose={() => (shareFileReady = null)} />
 
 <!-- Row 1: tools, visibility, history, zoom readout, menus. Fixed 48px, as slop-paint's. No
-     `overflow` here: it would clip the menus. -->
+     `overflow` here: it would clip the menus. Its wide dividers narrow below 960px: with Blend the
+     row was 4px too wide for an iPad in portrait (834px). -->
 <!-- grid-area: App.svelte lays the two rows out in its grid (row 1 always full width). -->
 <div
   class="z-20 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-4"
@@ -434,7 +451,7 @@
     </div>
   {/each}
 
-  <div class="mx-2 {divider}"></div>
+  <div class="mx-2 {divider} max-[960px]:mx-1"></div>
 
   <!-- Visibility toggles, kept on the bar because they are switched constantly while rigging; the
        View menu has matching entries. -->
@@ -461,7 +478,7 @@
     >
   </div>
 
-  <div class="mx-2 {divider}"></div>
+  <div class="mx-2 {divider} max-[960px]:mx-1"></div>
 
   <button
     class="{iconBtnClass} {dimmable}"
@@ -480,7 +497,7 @@
     }}><Redo2 size={20} /></button
   >
 
-  <div class="mx-2 {divider}"></div>
+  <div class="mx-2 {divider} max-[960px]:mx-1"></div>
 
   <span class="min-w-12 shrink-0 text-center text-[11px] text-text-muted" title="Zoom"
     >{ui.zoomText}</span
@@ -716,16 +733,18 @@
   class="z-10 flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-4 py-1 *:shrink-0 max-[960px]:gap-x-2"
   style:grid-area="row2"
 >
-  {#if ui.tool === "brush" || ui.tool === "eraser"}
-    <select
-      class="h-7 cursor-pointer rounded-md border border-border bg-surface-raised px-1.5 text-xs text-text-secondary"
-      title={ui.tool === "eraser" ? "Eraser tip" : "Brush"}
-      bind:value={slot.brushType}
-    >
-      {#each brushTypes as { value, label } (value)}
-        <option {value}>{label}</option>
-      {/each}
-    </select>
+  {#if isStrokeTool(ui.tool)}
+    {#if !blending}
+      <select
+        class="h-7 cursor-pointer rounded-md border border-border bg-surface-raised px-1.5 text-xs text-text-secondary"
+        title={ui.tool === "eraser" ? "Eraser tip" : "Brush"}
+        bind:value={slot.brushType}
+      >
+        {#each brushTypes as { value, label } (value)}
+          <option {value}>{label}</option>
+        {/each}
+      </select>
+    {/if}
 
     <div class={sliderLabel}>
       Size
@@ -794,8 +813,8 @@
       <span class={readout}>{slot.press}×</span>
     </label>
 
-    <label class={sliderLabel}>
-      Opacity
+    <label class={sliderLabel} title={blending ? "Strength — how strongly it blends" : undefined}>
+      {blending ? "Strength" : "Opacity"}
       <input
         type="range"
         min="1"
@@ -806,6 +825,25 @@
       />
       <span class={readout}>{slot.opacity}%</span>
     </label>
+
+    <!-- Smear is what you change while blending (blur ↔ smear), so it is on the bar. -->
+    {#if blending}
+      <label
+        class={sliderLabel}
+        title="Smear — 0 blurs in place; higher carries the paint along the stroke: a smudge, then a long painterly smear"
+      >
+        Smear
+        <input
+          type="range"
+          min="0"
+          max="100"
+          class="w-16"
+          style={sliderFill(ui.blendSmear, 0, 100)}
+          bind:value={ui.blendSmear}
+        />
+        <span class={readout}>{ui.blendSmear}</span>
+      </label>
+    {/if}
 
     <!-- Draw behind is toggled while drawing (flats under line art), so it sits on the bar, not
          behind the gear. Brush only: the eraser ignores it. -->
@@ -831,7 +869,11 @@
         onclick={() => (settingsOpen = !settingsOpen)}
         title="{ui.tool === 'eraser'
           ? 'Eraser'
-          : 'Brush'} settings — stream, pressure curve, and options for this brush"
+          : blending
+            ? 'Blend'
+            : 'Brush'} settings — stream, pressure curve, and options for this {blending
+          ? 'tool'
+          : 'brush'}"
       >
         <Settings size={18} />
       </button>
@@ -839,7 +881,7 @@
         <div
           class="absolute top-full right-0 z-30 mt-1 flex w-72 flex-col gap-2 rounded-lg border border-border bg-surface p-3 shadow-lg"
         >
-          {#if slot.brushType === "smooth" || slot.brushType === "watercolor"}
+          {#if brushOptions === "smooth" || brushOptions === "watercolor"}
             <label
               class={rowCls}
               title="Smooth — rounds out wobble in the stroke's path, with no lag (the tip settles as you draw)"
@@ -873,7 +915,7 @@
             <span class={valueCls}>{slot.streamline}</span>
           </label>
 
-          {#if slot.brushType === "calligraphy"}
+          {#if brushOptions === "calligraphy"}
             <label class={rowCls}>
               <span class={labelCls}>Nib angle</span>
               <input
@@ -913,7 +955,7 @@
             </label>
           {/if}
 
-          {#if slot.brushType === "ink"}
+          {#if brushOptions === "ink"}
             <label
               class={rowCls}
               title="Swell the mark where the pen lingers, the way ink soaks in — 0 is off"
@@ -931,7 +973,7 @@
             </label>
           {/if}
 
-          {#if slot.brushType === "pencil"}
+          {#if brushOptions === "pencil"}
             <div
               class={rowCls}
               title="Pencil grade, as on real pencils: H is hard — lighter, more paper grain; B is soft — darker, even at a light touch"
@@ -953,7 +995,7 @@
             </div>
           {/if}
 
-          {#if slot.brushType === "charcoal"}
+          {#if brushOptions === "charcoal"}
             <div
               class={rowCls}
               title="Charcoal texture: Rough has big holes in it, Dense hardly any"
@@ -977,7 +1019,7 @@
             </div>
           {/if}
 
-          {#if slot.brushType === "dry"}
+          {#if brushOptions === "dry"}
             <label
               class={rowCls}
               title="How short of paint the bristles are: more dry breaks and sparser edges — 0 is a wet, solid stroke"
@@ -1010,7 +1052,7 @@
             </label>
           {/if}
 
-          {#if slot.brushType === "watercolor"}
+          {#if brushOptions === "watercolor"}
             <label
               class={rowCls}
               title="How much darker the rim is, where the pigment gathers as it dries — 0 is an even wash"
@@ -1059,7 +1101,7 @@
             </label>
           {/if}
 
-          {#if slot.brushType === "smooth"}
+          {#if brushOptions === "smooth"}
             <label class={rowCls} title="How uneven the stroke's outline is — 0 is a clean edge">
               <span class={labelCls}>Wobble</span>
               <input
@@ -1088,9 +1130,33 @@
             </label>
           {/if}
 
+          {#if blending}
+            <div
+              class={rowCls}
+              title="The tip's edge: Soft and Hard are smooth, Grain and Rough textured"
+            >
+              <span class={labelCls}>Tip</span>
+              <div class="flex min-w-0 flex-1 gap-px">
+                {#each BLEND_TIPS as t (t)}
+                  <button
+                    class="h-6 min-w-0 flex-1 rounded-md text-[10px] capitalize transition-colors {ui.blendTip ===
+                    t
+                      ? 'ui-on'
+                      : 'text-text-muted hover:bg-surface-hover hover:text-text'}"
+                    aria-pressed={ui.blendTip === t}
+                    title="{t[0].toUpperCase() + t.slice(1)} tip{t === 'soft'
+                      ? ' — the default'
+                      : ''}"
+                    onclick={() => (ui.blendTip = t)}>{t}</button
+                  >
+                {/each}
+              </div>
+            </div>
+          {/if}
+
           <div class="mt-1 flex flex-col gap-1 border-t border-border pt-2">
             <span class="text-xs text-text-secondary"
-              >Pressure curve{ui.tool === "eraser" ? " (eraser)" : ""}</span
+              >Pressure curve{ui.tool === "eraser" ? " (eraser)" : blending ? " (blend)" : ""}</span
             >
             <div bind:this={curveHostEl} class="curve-editor flex flex-col items-center"></div>
           </div>

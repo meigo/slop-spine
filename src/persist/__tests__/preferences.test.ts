@@ -49,6 +49,7 @@ const sample: Preferences = {
   stroke: {
     brush: { brushType: "ink", size: 20, opacity: 80, smoothing: 40, streamline: 10, press: 4 },
     eraser: { brushType: "smooth", size: 30, opacity: 100, smoothing: 50, streamline: 0, press: 2 },
+    blend: { brushType: "smooth", size: 24, opacity: 70, smoothing: 0, streamline: 5, press: 3 },
   },
   brushValue: "#ff00aa",
   drawBehind: true,
@@ -56,6 +57,8 @@ const sample: Preferences = {
   sharpCorners: true,
   pencilGrade: "2B",
   charcoalTexture: "fine",
+  blendSmear: 60,
+  blendTip: "rough",
   nibAngle: 30,
   nibFlatness: 0.5,
   dwellPool: 20,
@@ -82,6 +85,7 @@ const sample: Preferences = {
   curves: {
     brush: { cp1: { x: 0.1, y: 0.2 }, cp2: { x: 0.8, y: 0.9 } },
     eraser: { cp1: { x: 0.25, y: 0.25 }, cp2: { x: 0.75, y: 0.75 } },
+    blend: { cp1: { x: 0.3, y: 0.1 }, cp2: { x: 0.6, y: 0.95 } },
   },
 };
 
