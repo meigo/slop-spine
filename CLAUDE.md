@@ -14,7 +14,7 @@ usually apply here too.
   slop-paint 2026-10-01): the app in WebKit at iPad Pro 11 with touch, in a fresh PERSISTENT temp
   profile (ephemeral WebKit refuses Blobs in IndexedDB, so every autosave failed). Starts its own
   dev server; `npm run test:ipad -- <url>` checks a URL. ~20 checks: first layer, pen stroke, undo/redo
-  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, Undo with a lifted selection, a typed bone name kept on a click or Pencil tap on another bone, a failing autosave said in the status bar, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
+  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, Undo with a lifted selection, a typed bone name kept on a click or Pencil tap on another bone, a failing autosave said in the status bar, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, the Blend tool (smudges, one Undo, its own size; its time against the brush's is printed), bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
   Pose bends the drawing, Export Spine (the zip is unzipped: bones, mesh, atlas, PNG), Resize (Crop / extend and Scale drawing, the rig follows), add layer,
   double-tap rename, a hidden layer refuses the pen and Clear layer, Duplicate with a lifted
   selection, the layer-row finger drag (ghost, gap,
@@ -24,7 +24,7 @@ usually apply here too.
   machine: `npx playwright install webkit`. In the sandbox the dev server needs local port binding.
   It is desktop WebKit, not iPadOS: the real Pencil, the share sheet, the keyboard and memory limits
   stay owed on the device. Run it after UI or input changes. The hidden-layer, Clear, Duplicate and layer-drag
-  checks were seen to FAIL with the behaviour broken on purpose.
+  checks were seen to FAIL with the behaviour broken on purpose, and the Blend check.
 
 ## Workflow
 
@@ -86,6 +86,16 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   2026-10-21 on `fix/paint-code-review`): `e24e250`'s open half (`readPsd` decodes the thumbnail and composite too: `skipCompositeImageData`
   would leave a file of only empty/ignored layers with none); `addLayer`
   pushes no undo step, so an image pasted as a layer can't be undone.
+- **Layer tint** (`806daba`, offered 2026-10-26, not taken for now): a layer drawn in one flat
+  colour, pixels untouched. Here the Spine export reads the pixels, so it would need baking into a
+  copy at export and a field in the project zip; Spine's slot colour multiplies, so it is only the
+  same on white/grey art.
+- **Blend tool on a GPU layer** (ported 2026-10-26 from `db26300`, `7c8e8e1`, `7449d2a`): its
+  engine reads the layer under every dab (`getImageData`). slop-paint's layers are CPU canvases
+  (`willReadFrequently`); these aren't (`createLayer` in `doc.svelte.ts`). In desktop WebKit a
+  60-point stroke took ~1.2 s against the brush's ~0.5 s (test:ipad prints both). Not measured on
+  an iPad; if it lags there, try `willReadFrequently` on the layers (it changes how every layer is
+  drawn, so measure the compositor too).
 
 ### Doesn't apply
 

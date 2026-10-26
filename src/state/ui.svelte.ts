@@ -4,19 +4,26 @@ import { PressureCurve, type CurvePoint } from "../core/pressure-curve";
 import { clampPress, PRESS_DEFAULT } from "../core/brush";
 import { MAX_NIB_FLATNESS } from "../core/calligraphy-brush";
 import { PENCIL_GRADES, type PencilGrade } from "../core/stamp-brush";
-import { CHARCOAL_TEXTURES, type CharcoalTexture } from "../core/brush-textures";
+import {
+  BLEND_TIPS,
+  CHARCOAL_TEXTURES,
+  type BlendTip,
+  type CharcoalTexture,
+} from "../core/brush-textures";
 import { SOFT_STEPS, softStepIndex } from "../core/fill";
 import type { Preferences, LegacyPreferences, CurvePrefs } from "../persist/preferences";
 
-export type Tool = "brush" | "eraser" | "fill" | "eyedropper" | "select" | "lasso" | "bone";
+export type Tool =
+  "brush" | "eraser" | "blend" | "fill" | "eyedropper" | "select" | "lasso" | "bone";
 /** The eight brushes slop-paint offers, in its order. */
 export type BrushType =
   "smooth" | "ink" | "calligraphy" | "dry" | "watercolor" | "pencil" | "charcoal" | "airbrush";
 export type BoneMode = "edit" | "create" | "pose";
 export type SelectionState = "idle" | "selected" | "transforming" | "warping";
 
-/** Stroke settings that brush and eraser each keep their own copy of (as slop-paint's
- *  tool-settings.ts). Colour, draw-behind and the per-brush options are the brush's alone. */
+/** Stroke settings that brush, eraser and Blend each keep their own copy of (as slop-paint's
+ *  tool-settings.ts). Colour, draw-behind and the per-brush options are the brush's alone. Blend's
+ *  `brushType` is never read: a Blend tool stroke always blends. */
 export interface StrokeSlot {
   brushType: BrushType;
   /** Nominal width in document px, 1–80 in 0.5 steps. */
@@ -30,11 +37,11 @@ export interface StrokeSlot {
   /** Pen pressure multiplier: light → size/press, full → size*press. */
   press: number;
 }
-export type SlotName = "brush" | "eraser";
+export type SlotName = "brush" | "eraser" | "blend";
 
-/** The eraser has its own slot; every other tool draws with (or shows) the brush's. */
+/** The eraser and Blend have their own slots; every other tool draws with (or shows) the brush's. */
 export function slotFor(tool: Tool): SlotName {
-  return tool === "eraser" ? "eraser" : "brush";
+  return tool === "eraser" || tool === "blend" ? tool : "brush";
 }
 
 export const SIZE_MIN = 1;
@@ -61,6 +68,8 @@ export function toolFromKey(key: string): Tool | null {
       return "brush";
     case "e":
       return "eraser";
+    case "j":
+      return "blend";
     case "g":
       return "fill";
     case "s":
@@ -82,8 +91,26 @@ export function isPaintTool(tool: Tool): boolean {
   switch (tool) {
     case "brush":
     case "eraser":
+    case "blend":
     case "fill":
       return true;
+    case "eyedropper":
+    case "select":
+    case "lasso":
+    case "bone":
+      return false;
+  }
+}
+
+/** The tools that draw a stroke (a brush outline under the pointer, a settings slot of their own):
+ *  Brush, Eraser and Blend (slop-paint 7449d2a). */
+export function isStrokeTool(tool: Tool): boolean {
+  switch (tool) {
+    case "brush":
+    case "eraser":
+    case "blend":
+      return true;
+    case "fill":
     case "eyedropper":
     case "select":
     case "lasso":
@@ -99,6 +126,7 @@ export function isSelectTool(tool: Tool): boolean {
       return true;
     case "brush":
     case "eraser":
+    case "blend":
     case "fill":
     case "eyedropper":
     case "bone":
@@ -131,6 +159,7 @@ export function needsEditableLayer(tool: Tool): boolean {
   switch (tool) {
     case "brush":
     case "eraser":
+    case "blend":
     case "fill":
     case "select":
     case "lasso":
@@ -148,10 +177,12 @@ export const ui = $state({
   selectedLayerId: null as number | null,
   selectedBone: null as string | null,
   tool: "brush" as Tool,
-  /** The brush's and the eraser's own settings; the toolbar edits `stroke[slotFor(tool)]`. */
+  /** The brush's, the eraser's and Blend's own settings; the toolbar edits
+   *  `stroke[slotFor(tool)]`. */
   stroke: {
     brush: defaultSlot(12),
     eraser: defaultSlot(20),
+    blend: { ...defaultSlot(20), smoothing: 0 },
   } as Record<SlotName, StrokeSlot>,
   brushValue: "#000000",
   /** Paint goes under what is already on the layer (flats under line art). Brush only. */
@@ -180,6 +211,10 @@ export const ui = $state({
   /** Pencil grade (`PENCIL_GRADES`) and Charcoal texture (`CHARCOAL_TEXTURES`), as slop-paint. */
   pencilGrade: "HB" as PencilGrade,
   charcoalTexture: "medium" as CharcoalTexture,
+  /** Blend tool (slop-paint, 2026-10-24): Smear 0–100 (0 blurs in place, higher smears along the
+   *  stroke) and its tip (`BLEND_TIPS`). */
+  blendSmear: 30,
+  blendTip: "soft" as BlendTip,
   /** Fill's colour, independent of the brush's. Fills land BEHIND the strokes (fillRegionBehind),
    *  so the two tools are painting different things — outlines in one colour, flats in another —
    *  and sharing one swatch meant re-picking on every switch, or silently inking a line in the
@@ -229,11 +264,13 @@ export const ui = $state({
   curveVersion: 0,
 });
 
-/** One curve per stroke tool: the eraser has its own so a tuned brush feel isn't shared. Not
+/** One curve per stroke tool: the eraser and Blend have their own so a tuned brush feel isn't
+ *  shared. Not
  *  reactive — the curve editor is an imperative canvas widget; changes bump `ui.curveVersion`. */
 export const pressureCurves: Record<SlotName, PressureCurve> = {
   brush: new PressureCurve(),
   eraser: new PressureCurve(),
+  blend: new PressureCurve(),
 };
 
 /** Signal that a pressure curve changed, so the preferences save effect re-runs. */
@@ -264,6 +301,7 @@ export function setTool(tool: Tool) {
 export const TOOL_LABELS: Record<Tool, string> = {
   brush: "Brush",
   eraser: "Eraser",
+  blend: "Blend",
   fill: "Fill",
   eyedropper: "Eyedropper",
   select: "Rect select",
@@ -271,7 +309,16 @@ export const TOOL_LABELS: Record<Tool, string> = {
   bone: "Rig",
 };
 
-const TOOLS: readonly Tool[] = ["brush", "eraser", "fill", "eyedropper", "select", "lasso", "bone"];
+const TOOLS: readonly Tool[] = [
+  "brush",
+  "eraser",
+  "blend",
+  "fill",
+  "eyedropper",
+  "select",
+  "lasso",
+  "bone",
+];
 const BRUSH_TYPES: readonly BrushType[] = [
   "smooth",
   "ink",
@@ -355,7 +402,11 @@ export function gatherPreferences(): Preferences {
   void ui.curveVersion;
   return {
     tool: ui.tool,
-    stroke: { brush: { ...ui.stroke.brush }, eraser: { ...ui.stroke.eraser } },
+    stroke: {
+      brush: { ...ui.stroke.brush },
+      eraser: { ...ui.stroke.eraser },
+      blend: { ...ui.stroke.blend },
+    },
     brushValue: ui.brushValue,
     drawBehind: ui.drawBehind,
     taper: ui.taper,
@@ -373,6 +424,8 @@ export function gatherPreferences(): Preferences {
     nibWobble: ui.nibWobble,
     pencilGrade: ui.pencilGrade,
     charcoalTexture: ui.charcoalTexture,
+    blendSmear: ui.blendSmear,
+    blendTip: ui.blendTip,
     fillValue: ui.fillValue,
     fillOpacity: ui.fillOpacity,
     fillSoftEdge: ui.fillSoftEdge,
@@ -385,7 +438,11 @@ export function gatherPreferences(): Preferences {
     whiteBg: ui.whiteBg,
     dockWidth: ui.dockWidth,
     inspectorHeight: ui.inspectorHeight,
-    curves: { brush: curvePrefs(pressureCurves.brush), eraser: curvePrefs(pressureCurves.eraser) },
+    curves: {
+      brush: curvePrefs(pressureCurves.brush),
+      eraser: curvePrefs(pressureCurves.eraser),
+      blend: curvePrefs(pressureCurves.blend),
+    },
   };
 }
 
@@ -414,10 +471,12 @@ export function applyPreferences(p: Partial<Preferences> & Partial<LegacyPrefere
   if (p.stroke && typeof p.stroke === "object") {
     applySlot(ui.stroke.brush, p.stroke.brush);
     applySlot(ui.stroke.eraser, p.stroke.eraser);
+    applySlot(ui.stroke.blend, p.stroke.blend);
   }
   if (p.curves && typeof p.curves === "object") {
     applyCurve(pressureCurves.brush, p.curves.brush);
     applyCurve(pressureCurves.eraser, p.curves.eraser);
+    applyCurve(pressureCurves.blend, p.curves.blend);
   }
 
   if (isHexColor(p.brushValue)) ui.brushValue = p.brushValue.toLowerCase();
@@ -444,6 +503,9 @@ export function applyPreferences(p: Partial<Preferences> & Partial<LegacyPrefere
     ui.pencilGrade = p.pencilGrade as PencilGrade;
   if (CHARCOAL_TEXTURES.includes(p.charcoalTexture as CharcoalTexture))
     ui.charcoalTexture = p.charcoalTexture as CharcoalTexture;
+  const smear = intIn(p.blendSmear, 0, 100);
+  if (smear !== null) ui.blendSmear = smear;
+  if (BLEND_TIPS.includes(p.blendTip as BlendTip)) ui.blendTip = p.blendTip as BlendTip;
   const soft = finiteNum(p.fillSoftEdge);
   if (soft !== null) ui.fillSoftEdge = SOFT_STEPS[softStepIndex(soft)];
   const fillOpacity = intIn(p.fillOpacity, 1, 100);

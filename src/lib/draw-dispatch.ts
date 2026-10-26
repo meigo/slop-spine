@@ -30,6 +30,7 @@ import { pathSmoothRadius, REST_PX, STILL_PX } from "../core/stroke-smoothing";
 import { settledIndex } from "../core/stroke-freeze";
 import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
+import { drawBlendStrokeIncremental, resetBlendState } from "../core/blend-brush";
 import { floodFill, hexToRgba, enclosedFillRegion, fillRegionBehind } from "../core/fill";
 import { clampGap } from "../core/fill-holes";
 import type { Layer } from "../rig/document";
@@ -169,6 +170,7 @@ export function createDrawDispatch(opts?: {
   function buildBrushSettings(tool: Tool, layer: Layer): BrushSettings {
     const slot = ui.stroke[slotFor(tool)];
     const isEraser = tool === "eraser";
+    const isBlend = tool === "blend";
     return {
       size: slot.size,
       color: ui.brushValue,
@@ -181,8 +183,8 @@ export function createDrawDispatch(opts?: {
       pauseRadius: STILL_PX / (opts?.getZoom?.() ?? 1),
       sharpCorners: ui.sharpCorners,
       isEraser,
-      // Brush only, as slop-paint: the eraser ignores draw-behind.
-      drawBehind: !isEraser && ui.drawBehind,
+      // Brush only, as slop-paint: the eraser and Blend ignore draw-behind.
+      drawBehind: !isEraser && !isBlend && ui.drawBehind,
       alphaLock: layer.alphaLock ?? false,
       nibAngle: ui.nibAngle,
       nibFlatness: ui.nibFlatness,
@@ -198,6 +200,8 @@ export function createDrawDispatch(opts?: {
       pencilGrade: ui.pencilGrade,
       charcoalTexture: ui.charcoalTexture,
       taper: ui.taper,
+      blendSmear: ui.blendSmear,
+      blendTip: ui.blendTip,
     };
   }
 
@@ -231,7 +235,8 @@ export function createDrawDispatch(opts?: {
     curve: PressureCurve;
     sizeRange: number;
     settings: BrushSettings;
-    brushType: BrushType;
+    /** "blend" for the Blend tool, which has no brush type of its own. */
+    brushType: BrushType | "blend";
   };
   let setup: StrokeSetup | null = null;
 
@@ -424,7 +429,7 @@ export function createDrawDispatch(opts?: {
 
     // Smooth, ink, calligraphy, dry and watercolor redraw the WHOLE stroke each frame from the
     // pre-stroke copy: a per-segment redraw re-composites each overlap and hardens the antialiased edge (see
-    // ink-brush.ts). The stamp tips draw incrementally.
+    // ink-brush.ts). The stamp tips and Blend draw incrementally.
     if (
       brushType === "smooth" ||
       brushType === "ink" ||
@@ -447,6 +452,8 @@ export function createDrawDispatch(opts?: {
           drawWatercolorStroke(ctx, curved, settings, sizeRange, done);
         else drawStroke(ctx, curved, settings, done, sizeRange);
       });
+    } else if (brushType === "blend") {
+      withClip(ctx, () => drawBlendStrokeIncremental(ctx, curved, settings, sizeRange, done));
     } else {
       withClip(ctx, () =>
         drawStampStrokeIncremental(ctx, curved, { ...settings, brushType }, sizeRange),
@@ -536,13 +543,14 @@ export function createDrawDispatch(opts?: {
       strokeLayer = resolveSelectedLayer();
       strokeCtx = strokeLayer ? strokeLayer.canvas.getContext("2d") : null;
       resetStampState();
+      resetBlendState();
       if (strokeLayer) {
         captureScratch(strokeLayer);
         setup = {
           curve: pressureCurves[slotFor(tool)],
           sizeRange: points[0]?.hasPressure ? pressFor(tool) : 1,
           settings: buildBrushSettings(tool, strokeLayer),
-          brushType: ui.stroke[slotFor(tool)].brushType,
+          brushType: tool === "blend" ? "blend" : ui.stroke[slotFor(tool)].brushType,
         };
         setOpenPress(finishStroke);
       }

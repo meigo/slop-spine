@@ -13,12 +13,14 @@ import {
   pressureCurves,
   slotFor,
   setTool,
+  isStrokeTool,
 } from "../ui.svelte";
 
 describe("isPaintTool", () => {
   it("is true for every tool that paints", () => {
     expect(isPaintTool("brush")).toBe(true);
     expect(isPaintTool("eraser")).toBe(true);
+    expect(isPaintTool("blend")).toBe(true);
     expect(isPaintTool("fill")).toBe(true);
   });
 
@@ -34,9 +36,19 @@ describe("isPaintTool", () => {
   it("classifies every member of Tool, so a new tool cannot default into painting", () => {
     // If a tool is added to the union without a decision here, this fails to compile rather than
     // silently falling into the paint branch and letting a brush stroke fire on a rig gesture.
-    const all: Tool[] = ["brush", "eraser", "fill", "eyedropper", "select", "lasso", "bone"];
+    const all: Tool[] = [
+      "brush",
+      "eraser",
+      "blend",
+      "fill",
+      "eyedropper",
+      "select",
+      "lasso",
+      "bone",
+    ];
     const painting = all.filter(isPaintTool);
-    expect(painting).toEqual(["brush", "eraser", "fill"]);
+    expect(painting).toEqual(["brush", "eraser", "blend", "fill"]);
+    expect(all.filter(isStrokeTool)).toEqual(["brush", "eraser", "blend"]);
   });
 });
 
@@ -61,6 +73,7 @@ describe("editBlockLabel", () => {
 describe("needsEditableLayer", () => {
   it("is true for paint and select, false for bone", () => {
     expect(needsEditableLayer("brush")).toBe(true);
+    expect(needsEditableLayer("blend")).toBe(true);
     expect(needsEditableLayer("select")).toBe(true);
     expect(needsEditableLayer("bone")).toBe(false);
   });
@@ -70,6 +83,7 @@ describe("toolFromKey", () => {
   it("maps animator keys plus r for bone", () => {
     expect(toolFromKey("b")).toBe("brush");
     expect(toolFromKey("e")).toBe("eraser");
+    expect(toolFromKey("j")).toBe("blend");
     expect(toolFromKey("g")).toBe("fill");
     expect(toolFromKey("s")).toBe("select");
     expect(toolFromKey("l")).toBe("lasso");
@@ -156,12 +170,16 @@ describe("applyPreferences / gatherPreferences", () => {
     ui.tool = "brush";
     ui.stroke.brush = resetSlot(12);
     ui.stroke.eraser = resetSlot(20);
+    ui.stroke.blend = { ...resetSlot(20), smoothing: 0 };
+    ui.blendSmear = 30;
+    ui.blendTip = "soft";
     ui.brushValue = "#000000";
     ui.fillValue = "#ffffff";
     ui.fillOpacity = 100;
     ui.whiteBg = false;
     pressureCurves.brush.reset();
     pressureCurves.eraser.reset();
+    pressureCurves.blend.reset();
     ui.curveVersion = 0;
     ui.selectedLayerId = null;
     ui.selectedBone = null;
@@ -281,6 +299,38 @@ describe("applyPreferences / gatherPreferences", () => {
     });
   });
 
+  it("restores the Blend tool's own slot, curve, Smear and Tip, and refuses junk", () => {
+    applyPreferences({
+      tool: "blend",
+      stroke: { blend: { ...resetSlot(44), opacity: 60 } },
+      curves: { blend: { cp1: { x: 0.4, y: 0.1 }, cp2: { x: 0.9, y: 0.5 } } },
+      blendSmear: 140,
+      blendTip: "grain",
+    } as never);
+    expect(ui.tool).toBe("blend");
+    expect(ui.stroke.blend.size).toBe(44);
+    expect(ui.stroke.blend.opacity).toBe(60);
+    expect(ui.stroke.brush.size).toBe(12);
+    expect(pressureCurves.blend.cp1).toEqual({ x: 0.4, y: 0.1 });
+    expect(pressureCurves.brush.cp1).not.toEqual({ x: 0.4, y: 0.1 });
+    expect(ui.blendSmear).toBe(100);
+    expect(ui.blendTip).toBe("grain");
+    applyPreferences({ blendTip: "sponge", blendSmear: "lots" } as never);
+    expect(ui.blendTip).toBe("grain");
+    expect(ui.blendSmear).toBe(100);
+    const g = gatherPreferences();
+    expect(g.stroke.blend?.size).toBe(44);
+    expect(g.curves.blend?.cp1).toEqual({ x: 0.4, y: 0.1 });
+    expect(g.blendSmear).toBe(100);
+    expect(g.blendTip).toBe("grain");
+  });
+
+  it("keeps the Blend tool's defaults for a save from before it", () => {
+    applyPreferences({ stroke: { brush: resetSlot(8), eraser: resetSlot(30) } });
+    expect(ui.stroke.blend.size).toBe(20);
+    expect(ui.stroke.blend.smoothing).toBe(0);
+  });
+
   it("snaps size to the slider's 0.5 step", () => {
     applyPreferences({ stroke: { brush: { size: 2.3 } } } as never);
     expect(ui.stroke.brush.size).toBe(2.5);
@@ -359,8 +409,9 @@ describe("applyPreferences / gatherPreferences", () => {
 });
 
 describe("slotFor", () => {
-  it("gives the eraser its own slot and every other tool the brush's", () => {
+  it("gives the eraser and Blend their own slots and every other tool the brush's", () => {
     expect(slotFor("eraser")).toBe("eraser");
+    expect(slotFor("blend")).toBe("blend");
     for (const t of ["brush", "fill", "eyedropper", "select", "lasso", "bone"] as Tool[]) {
       expect(slotFor(t)).toBe("brush");
     }

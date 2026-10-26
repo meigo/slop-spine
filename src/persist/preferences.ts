@@ -1,7 +1,7 @@
 import type { Tool, StrokeSlot } from "../state/ui.svelte";
 import type { CurvePoint } from "../core/pressure-curve";
 import type { PencilGrade } from "../core/stamp-brush";
-import type { CharcoalTexture } from "../core/brush-textures";
+import type { BlendTip, CharcoalTexture } from "../core/brush-textures";
 
 export interface CurvePrefs {
   cp1: CurvePoint;
@@ -11,7 +11,9 @@ export interface CurvePrefs {
 /** Session tool/view prefs. Document pixels live in autosave, not here. */
 export interface Preferences {
   tool: Tool;
-  stroke: { brush: StrokeSlot; eraser: StrokeSlot };
+  /** `blend` (and its curve) since 2026-10-26; a save from before has none and keeps Blend's
+   *  defaults. */
+  stroke: { brush: StrokeSlot; eraser: StrokeSlot; blend?: StrokeSlot };
   brushValue: string;
   drawBehind: boolean;
   taper: boolean;
@@ -29,6 +31,8 @@ export interface Preferences {
   nibWobble: number;
   pencilGrade: PencilGrade;
   charcoalTexture: CharcoalTexture;
+  blendSmear: number;
+  blendTip: BlendTip;
   fillValue: string;
   fillOpacity: number;
   fillSoftEdge: number;
@@ -41,7 +45,7 @@ export interface Preferences {
   whiteBg: boolean;
   dockWidth: number;
   inspectorHeight: number;
-  curves: { brush: CurvePrefs; eraser: CurvePrefs };
+  curves: { brush: CurvePrefs; eraser: CurvePrefs; blend?: CurvePrefs };
 }
 
 /** Fields saved before brush and eraser had their own settings (2026-09-26). Still read, so an

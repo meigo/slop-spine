@@ -10,12 +10,16 @@ Built with Svelte 5, TypeScript, Vite, Tailwind 4. Export is `skeleton.spinejson
 
 ## What it does
 
-- Draw and rig in one document (brush / eraser / fill / eyedropper, layers, bones)
+- Draw and rig in one document (brush / eraser / blend / fill / eyedropper, layers, bones)
 - slop-paint's brushes: Smooth, Ink (with pooling), Calligraphy, Dry brush (bristle stripes broken
   where the paint runs out, with Dryness and Taper), Watercolour (a see-through wash with a darker
   rim and paper grain; strokes mix as glazes), Pencil (grades 4H–8B), Charcoal (textures
   Rough–Dense), Airbrush; brush and eraser each keep their own size, opacity, Press and pressure
   curve; draw behind; per-layer alpha lock
+- Blend tool (J, after the eraser): moves the paint already on the layer and never adds colour.
+  Smear on the bar runs from a blur in place (0) to a smudge and a long painterly smear (100);
+  Strength is how strongly it blends; a Soft, Hard, Grain or Rough tip in the gear. Its own size,
+  Press, Stream and pressure curve, as the eraser
 - Wobble for Smooth and Calligraphy: an uneven, hand-drawn outline (0, off, by default); a light
   Smooth or Watercolour stroke keeps at least half its width however strong
 - A Pencil resting with Press above 1 no longer makes the stroke's tip grow and shrink
