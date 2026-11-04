@@ -43,6 +43,7 @@
   import { computeImagePlacement } from "../core/image-fit";
   import { setupTouchGestures } from "../core/touch-gestures";
   import { createDrawDispatch } from "./draw-dispatch";
+  import { deviceRect, unionBox, type Box } from "../core/dirty-rect";
   import { STAMP_MIN_ROPE_PX } from "../core/stroke-smoothing";
   import { undo, redo, endPress, pressOpen, setOpenPress } from "../state/history.svelte";
   import { Selection } from "../core/selection";
@@ -285,11 +286,26 @@
     return { poseBones, poseBoneSet: poseBones ? new Set(poseBones) : null, poses };
   }
 
-  /** Composite layers onto the document-sized paper canvas. No pan/zoom — that's CSS. */
-  function compositeDisplay() {
+  /** Composite layers onto the document-sized paper canvas. No pan/zoom — that's CSS. Only `box`
+   *  (document px) of it, when given: a stroke changes a small part, and redrawing every layer
+   *  whole each frame made drawing on a large document slow (slop-paint 5796ae9). The layers are
+   *  default (GPU) canvases, whose parts Safari draws cheaply, so each is drawn with a plain
+   *  sub-rect `drawImage` — slop-paint's `getImageData` read is for its `willReadFrequently`
+   *  layers, which Safari copies whole (WebKit bug 330116), and here would only add a readback. */
+  function compositeDisplay(box: Box | null = null) {
     if (!ctx || !canvasEl) return;
+    const rect = box && deviceRect(box, 1, canvasEl.width, canvasEl.height);
+    if (box && !rect) return; // all of it off the page
+    ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    if (rect) {
+      ctx.beginPath();
+      ctx.rect(rect.x, rect.y, rect.w, rect.h);
+      ctx.clip();
+      ctx.clearRect(rect.x, rect.y, rect.w, rect.h);
+    } else {
+      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    }
     const { poseBones, poseBoneSet, poses } = currentPoses();
     if (ui.showDrawings) {
       for (const layer of doc.layers) {
@@ -301,12 +317,15 @@
         if (warped && hasInfluence) {
           const deformed = poseDeform(warped.mesh, warped.weights, poses!);
           drawWarpedLayer(ctx, layer.canvas, warped.mesh, deformed);
+        } else if (rect) {
+          const { x, y, w, h } = rect;
+          ctx.drawImage(layer.canvas, x, y, w, h, x, y, w, h);
         } else {
           ctx.drawImage(layer.canvas, 0, 0);
         }
       }
     }
-    ctx.globalAlpha = 1;
+    ctx.restore(); // also globalAlpha back to 1
   }
 
   /** Bones/meshes on a stage-sized overlay so 1px strokes stay 1 screen px (not CSS-scaled). */
@@ -350,11 +369,20 @@
     redrawRig();
   }
 
-  function scheduleComposite() {
+  /** What the next batched composite redraws: the union of the boxes asked for, or all of it once
+   *  any caller asked without one. */
+  let compositeBox: Box | null = null;
+  let compositeAll = false;
+  function scheduleComposite(box?: Box) {
+    if (box) compositeBox = unionBox(compositeBox, box);
+    else compositeAll = true;
     if (compositeRaf) return;
     compositeRaf = requestAnimationFrame(() => {
+      const part = compositeAll ? null : compositeBox;
       compositeRaf = 0;
-      compositeDisplay();
+      compositeAll = false;
+      compositeBox = null;
+      compositeDisplay(part);
     });
   }
 
@@ -1664,6 +1692,10 @@
     window.addEventListener("paste", onWindowPaste);
     const onPasteImageRequest = () => void pasteImageFromSystemClipboard();
     window.addEventListener("slop-spine:paste-image", onPasteImageRequest);
+    // Dev-only: a whole redraw, to compare with what the stroke-part redraws left (test:ipad does).
+    if (import.meta.env.DEV)
+      (window as unknown as { slopCompositeAll?: () => void }).slopCompositeAll = () =>
+        compositeDisplay();
 
     return () => {
       stopPoseLoop();

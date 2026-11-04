@@ -14,7 +14,7 @@ usually apply here too.
   slop-paint 2026-10-01): the app in WebKit at iPad Pro 11 with touch, in a fresh PERSISTENT temp
   profile (ephemeral WebKit refuses Blobs in IndexedDB, so every autosave failed). Starts its own
   dev server; `npm run test:ipad -- <url>` checks a URL. ~20 checks: first layer, pen stroke, undo/redo
-  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, Undo with a lifted selection, a typed bone name kept on a click or Pencil tap on another bone, a failing autosave said in the status bar, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, the Blend tool (smudges, one Undo, its own size; its time against the brush's is printed), bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
+  and two-finger-tap undo, fingers, Ctrl+Z and Clear layer during a pen stroke, Undo with a lifted selection, a typed bone name kept on a click or Pencil tap on another bone, a failing autosave said in the status bar, a long frozen Ink and Calligraphy stroke (same pixels as a full redraw, one Undo), a stroke redraws only its part (the layer as the stroke drawn whole, the screen mid-stroke as a whole redraw, every brush, the eraser and Blend), the Dry brush against Smooth, Watercolour (rim, self-crossing, glaze), Pencil and Charcoal stamps, Pencil grades and Charcoal textures, the Blend tool (smudges, one Undo, its own size; its time against the brush's is printed), bucket, the fill's Soft edge (in the fill gear), Distort and Mesh warp applied unmoved leave no seams, eraser (and its Opacity), pinch, Export refused with no bones, Create two bones,
   Pose bends the drawing, Export Spine (the zip is unzipped: bones, mesh, atlas, PNG), Resize (Crop / extend and Scale drawing, the rig follows), add layer,
   double-tap rename, a hidden layer refuses the pen and Clear layer, Duplicate with a lifted
   selection, the layer-row finger drag (ghost, gap,
@@ -24,7 +24,7 @@ usually apply here too.
   machine: `npx playwright install webkit`. In the sandbox the dev server needs local port binding.
   It is desktop WebKit, not iPadOS: the real Pencil, the share sheet, the keyboard and memory limits
   stay owed on the device. Run it after UI or input changes. The hidden-layer, Clear, Duplicate and layer-drag
-  checks were seen to FAIL with the behaviour broken on purpose, and the Blend check.
+  checks were seen to FAIL with the behaviour broken on purpose, and the Blend and stroke-part checks.
 
 ## Workflow
 
@@ -97,8 +97,23 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
   an iPad; if it lags there, try `willReadFrequently` on the layers (it changes how every layer is
   drawn, so measure the compositor too).
 
-- **Stroke cost follows the stroke, not the document** (`5796ae9`, merged `7ad2474`, added 2026-11-04; slop-paint's CLAUDE.md, search "Stroke cost follows"): on a 4000×6000 slop-paint document every brush drew at 25–49 ms a frame in WebKit (60 fps at 1920×1080). Each frame restored the WHOLE layer from the pre-stroke copy and redrew the WHOLE screen, and Safari copies a CPU-backed (`willReadFrequently`) canvas WHOLE whenever a part of it is drawn, whatever source rect is given and whether it changed or not (~20 ms per draw at 24 MP, Safari 27.2 on a Mac and an iPad; WebKit bug 330116, https://bugs.webkit.org/show_bug.cgi?id=330116). Playwright's WebKit shows it only for a canvas that changed (~6 ms), so measure in Safari. Safari's default (GPU) canvases draw parts cheaply (1–2 ms flat). Fix: `src/dirty-rect.ts` (`pointsBox`, `unionBox`, `deviceRect`, `strokePad` = 2 × the widest width + 16 doc px; tested). Each frame of a full-redraw brush restores and redraws only its part of the layer (this frame's points — the unfrozen ones for a frozen Ink/Calligraphy stroke — grown by the pad, joined with LAST frame's part only), clipped to it so paint can't build up outside what was restored; the compositor redraws only that box (`composite(box)`; stamps and Blend pass the box of the points since their last draw). For EVERY layer the box is read with `getImageData` into a part-sized canvas and drawn from there, which sidesteps the whole copy (slop-paint `16b3c4c`, merged `a3b5732`; `5796ae9` did it for the live layer alone and drew the others, Background included, with a sub-rect `drawImage`, ~20 ms per layer per frame in Safari). A default-canvas source (the float or tint scratch) keeps the plain sub-rect `drawImage`. The lift's undo diff (`changedTiles(…, area)`), screen redraw and thumbnail stick to the stroke's area too (the screen redraws whole if other tinted layers were drawn from the stroke's cache). Result: ~17 ms a frame for every brush, lift 33–74 ms (was 80–145). Measured with dispatched pen strokes in Playwright's WebKit on a Mac, not on an iPad, and before the every-layer read; not re-measured in Safari. Checked: after strokes with every brush, the eraser, Blend, a long frozen spiral and strokes off the page edge, the screen equals a forced full redraw pixel for pixel; every engine's composite op on the layer is bounded (source-over/atop, destination-out/over, multiply), so the clip changes nothing.
-  HERE the layers are GPU canvases (`createLayer` in `doc.svelte.ts`, see the Blend note above), which Safari draws parts of cheaply (the bug is with `willReadFrequently` canvases; the test page attached to WebKit 330116 has both kinds), so DON'T take the getImageData read: it would only add a GPU readback per layer per frame. Keep the plain sub-rect `drawImage`, and check in Safari on a large document. The box-limited restore, composite and undo diff carry over as they are.
+- **Stroke cost follows the stroke, not the document** (slop-paint `5796ae9`, `16b3c4c`): done
+  2026-11-04 on `fix/stroke-dirty-rect`. `core/dirty-rect.ts` is slop-paint's (`strokePad` = 2 ×
+  the widest width + 16 doc px). Each frame of a full-redraw brush (Smooth, Ink, Calligraphy, Dry,
+  Watercolour) restores from `scratch`/`frozen` and redraws only its part (this frame's points,
+  the unfrozen ones for a frozen stroke, grown by the pad, joined with LAST frame's part), clipped
+  to it (`paintStroke` in `draw-dispatch.ts`). `compositeDisplay(box)` in `Canvas.svelte` redraws
+  only that box (stamps and Blend pass the box of the points since their last draw;
+  `scheduleComposite` joins the boxes, and any caller without one redraws all). The layers here
+  are GPU canvases, which Safari draws parts of cheaply (WebKit bug 330116 hits only
+  `willReadFrequently` ones), so slop-paint's `getImageData` read was NOT taken: plain sub-rect
+  `drawImage`. Undo already compared only the stroke's rect here (`computeDirtyRect`), and the
+  thumbnail is one GPU downscale, so neither changed. A stroke's END still redraws the whole
+  screen: the doc `$effect` in `Canvas.svelte` (`JSON.stringify(doc)`) sees the revision bump.
+  test:ipad checks the layer against the stroke drawn whole (dev `slopStrokeCheck`) and the
+  screen mid-stroke against a whole redraw (dev `slopCompositeAll`): 0 values differ, and it
+  FAILS with the pad at 0 or the screen box shrunk. NOT measured: frame times on a large document,
+  in Safari or on an iPad.
 
 ### Doesn't apply
 
