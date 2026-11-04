@@ -28,6 +28,14 @@ import { drawDryStroke } from "../core/dry-brush";
 import { drawWatercolorStroke } from "../core/watercolor-brush";
 import { pathSmoothRadius, REST_PX, STILL_PX } from "../core/stroke-smoothing";
 import { settledIndex } from "../core/stroke-freeze";
+import {
+  deviceRect,
+  pointsBox,
+  strokePad,
+  unionBox,
+  type Box,
+  type PxRect,
+} from "../core/dirty-rect";
 import { drawCalligraphyStroke } from "../core/calligraphy-brush";
 import { drawStampStrokeIncremental, resetStampState } from "../core/stamp-brush";
 import { drawBlendStrokeIncremental, resetBlendState } from "../core/blend-brush";
@@ -154,7 +162,8 @@ export function fillAllEnclosed() {
 }
 
 export function createDrawDispatch(opts?: {
-  onPainted?: () => void;
+  /** The layer changed in `box` (document px): the screen redraws only there. */
+  onPainted?: (box: Box) => void;
   getSelection?: () => Selection | null;
   /** Screen px per document px: Smooth's radius is a screen distance (`pathSmoothRadius`). */
   getZoom?: () => number;
@@ -377,6 +386,8 @@ export function createDrawDispatch(opts?: {
     setup = null;
     frozenTo = 0;
     frozen = null;
+    strokeBox = null;
+    stampDrawnTo = 0;
     setOpenPress(null);
   }
 
@@ -408,24 +419,61 @@ export function createDrawDispatch(opts?: {
     dropUntilUp = true;
   }
 
-  /** Restore the pre-stroke layer via GPU `drawImage` of the scratch — `putImageData` of a
-   *  2048×2048 snapshot is a 16MB CPU upload per Pencil sample and is why live drawing crawled
-   *  on iPad. */
-  function restorePreStroke(ctx: CanvasRenderingContext2D, layer: Layer) {
+  /** Restore `rect` (canvas px) of the pre-stroke layer via GPU `drawImage` of the scratch —
+   *  `putImageData` of a 2048×2048 snapshot is a 16MB CPU upload per Pencil sample and is why live
+   *  drawing crawled on iPad. Only the frame's part: copying the whole layer back every frame is
+   *  what made a large document slow to draw on (slop-paint 5796ae9). */
+  function restorePreStroke(ctx: CanvasRenderingContext2D, rect: PxRect) {
     const from = frozen ?? scratch; // with the stroke's frozen part, once it has one
     if (!from) return;
+    const { x, y, w, h } = rect;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
-    ctx.drawImage(from, 0, 0);
+    ctx.clearRect(x, y, w, h);
+    ctx.drawImage(from, x, y, w, h, x, y, w, h);
     ctx.restore();
   }
+
+  /** Dev-only (`window.slopStrokeCheck`, test:ipad sets it): draw the finished stroke again
+   *  whole, unclipped, on a copy of the pre-stroke layer, and leave in `window.slopStrokeDiff` how
+   *  many channel values differ from what the part-by-part frames left on the layer. */
+  function checkWholeRedraw(
+    ctx: CanvasRenderingContext2D,
+    draw: (target: CanvasRenderingContext2D) => void,
+  ) {
+    const w = window as unknown as { slopStrokeCheck?: boolean; slopStrokeDiff?: number };
+    const from = frozen ?? scratch;
+    if (!w.slopStrokeCheck || !from) return;
+    const { width, height } = ctx.canvas;
+    const copy = document.createElement("canvas");
+    copy.width = width;
+    copy.height = height;
+    const c = copy.getContext("2d")!;
+    c.drawImage(from, 0, 0);
+    c.setTransform(ctx.getTransform());
+    draw(c);
+    const a = c.getImageData(0, 0, width, height).data;
+    const b = ctx.getImageData(0, 0, width, height).data;
+    let n = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+    w.slopStrokeDiff = n;
+  }
+
+  /** The points' part of the layer at the last frame of a full-redraw stroke (document px; see
+   *  `paintStroke`); null between strokes. */
+  let strokeBox: Box | null = null;
+  /** How many points the stamp/Blend stroke had at its last draw: the next draw's screen box
+   *  starts one before (a stamp can land anywhere along the segment from there). */
+  let stampDrawnTo = 0;
 
   function paintStroke(points: InputPoint[], done: boolean) {
     if (!strokeLayer || !strokeCtx || !setup) return;
     const ctx = strokeCtx;
     const { curve, sizeRange, settings, brushType } = setup;
     const curved = points.map((p) => ({ ...p, pressure: curve.evaluate(p.pressure) }));
+    // How far paint can reach past the points (slop-paint's, checked against a full redraw with
+    // every brush; the engines are the same files).
+    const pad = strokePad(widthRange(settings.size, sizeRange).max);
 
     // Smooth, ink, calligraphy, dry and watercolor redraw the WHOLE stroke each frame from the
     // pre-stroke copy: a per-segment redraw re-composites each overlap and hardens the antialiased edge (see
@@ -444,22 +492,52 @@ export function createDrawDispatch(opts?: {
       };
       if ((brushType === "ink" || brushType === "calligraphy") && settings.opacity >= 100 && !done)
         freezeSettled(ctx, curved, ranged, settings.size, sizeRange);
-      restorePreStroke(ctx, strokeLayer);
-      withClip(ctx, () => {
-        if (brushType === "ink" || brushType === "calligraphy") ranged(ctx, unfrozenFrom());
-        else if (brushType === "dry") drawDryStroke(ctx, curved, settings, sizeRange, done);
-        else if (brushType === "watercolor")
-          drawWatercolorStroke(ctx, curved, settings, sizeRange, done);
-        else drawStroke(ctx, curved, settings, done, sizeRange);
-      });
-    } else if (brushType === "blend") {
+      // Restore and redraw only this frame's part, clipped to it (so paint can't land outside
+      // what was restored and build up frame after frame): the points this frame draws (all, or
+      // the unfrozen ones) grown by the pad, joined with last frame's — so last frame's paint is
+      // put back too (a part just frozen). Outside it the layer already holds what a whole redraw
+      // would draw: the pre-stroke copy and the frozen paint.
+      const { width: cw, height: ch } = strokeLayer.canvas;
+      const own = pointsBox(points, pad, unfrozenFrom());
+      const frame = unionBox(strokeBox, own);
+      strokeBox = own;
+      const rect = frame && deviceRect(frame, 1, cw, ch); // layers are at document px
+      if (!frame || !rect) return; // all of it off the page
+      const draw = (target: CanvasRenderingContext2D) =>
+        withClip(target, () => {
+          if (brushType === "ink" || brushType === "calligraphy") ranged(target, unfrozenFrom());
+          else if (brushType === "dry") drawDryStroke(target, curved, settings, sizeRange, done);
+          else if (brushType === "watercolor")
+            drawWatercolorStroke(target, curved, settings, sizeRange, done);
+          else drawStroke(target, curved, settings, done, sizeRange);
+        });
+      restorePreStroke(ctx, rect);
+      ctx.save();
+      try {
+        const m = ctx.getTransform();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.beginPath();
+        ctx.rect(rect.x, rect.y, rect.w, rect.h);
+        ctx.clip();
+        ctx.setTransform(m);
+        draw(ctx);
+      } finally {
+        ctx.restore(); // the layer's own long-lived context: never strand the clip (see withClip)
+      }
+      if (import.meta.env.DEV && done) checkWholeRedraw(ctx, draw);
+      opts?.onPainted?.(frame);
+      return;
+    }
+    if (brushType === "blend") {
       withClip(ctx, () => drawBlendStrokeIncremental(ctx, curved, settings, sizeRange, done));
     } else {
       withClip(ctx, () =>
         drawStampStrokeIncremental(ctx, curved, { ...settings, brushType }, sizeRange),
       );
     }
-    opts?.onPainted?.();
+    const drawn = pointsBox(points, pad, stampDrawnTo - 1);
+    stampDrawnTo = points.length;
+    if (drawn) opts?.onPainted?.(drawn);
   }
 
   function handleStroke(points: InputPoint[], done: boolean) {

@@ -459,6 +459,91 @@ async function main(page) {
   });
 
   await step(async () => {
+    // Each stroke frame restores and redraws only the stroke's part of the layer, clipped to it,
+    // and the screen redraws only that part (slop-paint 5796ae9). (a) For every full-redraw brush,
+    // the layer at the stroke's end must be what drawing it whole draws (dev `slopStrokeCheck`;
+    // two strokes can't be compared, as Dry and Watercolour seed on the first point's time), a
+    // long frozen Ink and Calligraphy spiral too; (b) for every brush, the eraser and Blend, the
+    // screen WITH THE PEN STILL DOWN must equal a whole redraw (dev `slopCompositeAll`) — at the
+    // stroke's end the doc effect redraws the whole screen anyway, which would hide a wrong part.
+    // The waves start off the page's left edge.
+    const wave = (t) => at(-0.08 + 0.7 * t, 0.2 + 0.06 * Math.sin(t * 9));
+    const spiral = (t) => {
+      const a = t * Math.PI * 12;
+      const r = 0.04 + 0.36 * t;
+      return at(0.5 + r * Math.cos(a), 0.5 + r * Math.sin(a));
+    };
+    /** Channel values the screen changes by when redrawn whole — read, redrawn and compared in
+     *  one go once the frames have settled, so no stroke frame can land in between. */
+    const screenOff = () =>
+      page.evaluate(async () => {
+        for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+        const c = document.querySelector('[class*="paper-"] + canvas');
+        const read = () => c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        const before = read();
+        window.slopCompositeAll();
+        const after = read();
+        let n = 0;
+        for (let i = 0; i < after.length; i++) if (after[i] !== before[i]) n++;
+        return n;
+      });
+    /** A pen stroke along `path`, held down at its end while the screen is compared with a whole
+     *  redraw; returns how many channel values that changed. */
+    const heldStroke = async (path, opts) => {
+      const steps = pathSteps("pen", 2, path, opts);
+      await gesture(steps.slice(0, -1));
+      await page.waitForTimeout(100);
+      const off = await screenOff();
+      await gesture(steps.slice(-1));
+      await page.waitForTimeout(300);
+      return off;
+    };
+    const select = page.locator('select[title="Brush"]');
+    const types = await select.locator("option").evaluateAll((os) => os.map((o) => o.value));
+    const layer = [];
+    const screen = [];
+    await page.evaluate(() => (window.slopStrokeCheck = true));
+    const strokeDiff = () => page.evaluate(() => window.slopStrokeDiff);
+    for (const type of types) {
+      await select.selectOption(type);
+      const full = ["smooth", "ink", "calligraphy", "dry", "watercolor"].includes(type);
+      // Watercolour works its wash out bit by bit, and the check draws it whole: both whole.
+      await page.evaluate((wash) => {
+        window.slopStrokeDiff = undefined;
+        window.slopWashFull = wash;
+      }, type === "watercolor");
+      screen.push(`${type} ${await heldStroke(wave, { n: 40 })}`);
+      if (full) layer.push(`${type} ${await strokeDiff()}`);
+      await tapButton("Undo");
+      if (type === "ink" || type === "calligraphy") {
+        await page.evaluate(() => (window.slopStrokeDiff = undefined));
+        await pen(spiral, { n: 150, p: () => 0.7 });
+        await page.waitForTimeout(400);
+        layer.push(`${type} spiral ${await strokeDiff()}`);
+        await tapButton("Undo");
+      }
+    }
+    await page.evaluate(() => {
+      window.slopStrokeCheck = false;
+      window.slopWashFull = false;
+    });
+    await select.selectOption("smooth");
+    for (const tool of ["Eraser (E)", "Blend (J)"]) {
+      await tapButton(tool);
+      const off = await heldStroke(line(at(0.3, 0.5), at(0.7, 0.5)), { n: 40, p: () => 0.9 });
+      screen.push(`${tool.split(" ")[0]} ${off}`);
+      await tapButton("Undo");
+    }
+    await tapButton("Brush (B)");
+    const zero = (xs) => xs.every((s) => s.endsWith(" 0"));
+    return [
+      layer.length === 7 && zero(layer) && zero(screen),
+      `[sim] a stroke redraws only its part: the layer as the stroke drawn whole (${layer.join(", ")} channel values differ); the screen mid-stroke as a whole redraw (${screen.join(", ")})`,
+      "stroke-part",
+    ];
+  });
+
+  await step(async () => {
     // The Dry brush: hair stripes broken where they run dry, so fewer px than Smooth on one path.
     const band = rect(0.05, 0.03, 0.9, 0.14);
     const stroke = line(at(0.1, 0.1), at(0.9, 0.1));
