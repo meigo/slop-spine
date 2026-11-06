@@ -44,12 +44,12 @@ slop-animator carries the same list in its `CLAUDE.md` ("Port from slop-paint").
 
 - **Large document: zoom and whole-screen drags** (added 2026-11-06; slop-paint `423660a` +
   `d494056`, deployed there; the user confirmed on an iPad Pro 13 that zoom and the opacity slider
-  are fixed). (a) **Zoom — applies here as is:** `.paper-checker` (`src/app.css`) is the same four
-  CSS gradients on a document-sized element inside the zoomed box. Zoomed out on a big page
-  (squares under a screen pixel), WebKit repaints it at 27 ms a frame on the iPad (75 worst); a
-  tiled 16 px SVG `background` takes 10 ms, none 8 (6000×6000 at fit, measured in real Safari with
-  a test page; Playwright's WebKit doesn't show it). slop-paint's replacement:
-  `.canvas-checkerboard` in its `src/app.css`. (b) **Drags — probably NOT needed here:** slop-paint's
+  are fixed). (a) **Zoom — done 2026-11-06 on `fix/paper-checker-svg`:** `.paper-checker`
+  (`src/app.css`) was the same four CSS gradients on a document-sized element inside the zoomed
+  box. Zoomed out on a big page (squares under a screen pixel), WebKit repaints it at 27 ms a frame
+  on the iPad (75 worst); a tiled 16 px SVG `background` takes 10 ms, none 8 (6000×6000 at fit,
+  measured in slop-paint in real Safari with a test page; Playwright's WebKit doesn't show it). It
+  is now slop-paint's tiled SVG (`.canvas-checkerboard`). NOT measured here on an iPad. (b) **Drags — probably NOT needed here:** slop-paint's
   slider and drags redrew every layer each frame, and Safari copies a `willReadFrequently` layer
   WHOLE per draw (WebKit bug 330116: 199 ms a frame for 8 layers at 6000×6000). It now draws the
   layers below and above a drag from pre-merged copies (`LayerManager.compositeLive` in
